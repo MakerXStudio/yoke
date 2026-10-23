@@ -11,15 +11,15 @@ Body
 
 Use exactly these sections, in this order, with these headings. Never add a section and never rename one: no \`## Summary\`, no \`## Changes\`, no \`## Test plan\`.
 
-  Closes #<issue number>
+Closes #<issue number>
 
-  ## What
+## What
 
-  <2–3 sentences>
+<2–3 sentences>
 
-  ## Why
+## Why
 
-  <1–2 sentences>
+<1–2 sentences>
 
 Then, only if earned: \`## How\` (1–2 sentences).
 
