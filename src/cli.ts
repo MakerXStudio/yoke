@@ -3,7 +3,7 @@ import { relative } from 'node:path'
 import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
-import { PrValidationError, raisePr } from './pr/raise'
+import { PrValidationError, raisePr } from './features/pr/raise'
 import { skillsRoot, syncSkills } from './sync'
 
 const { version } = packageJson

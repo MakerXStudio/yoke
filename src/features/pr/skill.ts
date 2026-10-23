@@ -1,4 +1,4 @@
-import type { Skill } from '../skill'
+import type { Skill } from '../../skill'
 
 export const prSkill: Skill = {
   name: 'pr',
