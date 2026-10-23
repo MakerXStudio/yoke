@@ -58,11 +58,11 @@ Mandatory in every permission mode, including auto-accept and bypass. Write the 
 
 Create
 
-  git push -u origin HEAD
-  yoke pr raise --title "<title>" --body "$(cat <<'EOF'
-  <body>
-  EOF
-  )"
+git push -u origin HEAD
+yoke pr raise --title "<title>" --body "$(cat <<'EOF'
+<body>
+EOF
+)"
 
 Always a draft; the user marks it ready for review themselves. If \`yoke pr raise\` rejects the description, it names each rule that failed: fix those, show the revised description, and get approval again before rerunning. On success it prints the PR URL; report it.
 `
