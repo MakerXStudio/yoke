@@ -1,0 +1,21 @@
+name: PR
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: makerxstudio/shared-config/.github/workflows/node-ci.yml@28ab4b75c385b9b0880e5736ca8114caaf688ab8
+    with:
+      node-version: 24.x
+      run-build: true
+      build-script: npm run build
+      lint-script: npm run verify -- --no-tests --verbose
+      test-script: npm run test:ci
+      output-test-results: true
