@@ -109,6 +109,15 @@ describe('validateBody', () => {
     expect(validateBody(body({ What: what, Why: why, How: list }))).toEqual([])
   })
 
+  it('ignores headings inside a code fence', () => {
+    const how = '```sh\n# install\nnpm i\n```'
+    expect(validateBody(body({ What: what, Why: why, How: how }))).toEqual([])
+  })
+
+  it('does not count a fenced Why as the Why section', () => {
+    expect(rules(body({ What: `Example:\n\n~~~md\n## Why\n\n${why}\n~~~` }))).toEqual(['why-required'])
+  })
+
   it('reports every failed rule at once', () => {
     expect(rules('Some intro.\n\n## Changes\n\nStuff.')).toEqual(['preamble', 'unknown-section', 'what-required', 'why-required'])
   })

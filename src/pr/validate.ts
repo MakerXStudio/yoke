@@ -13,6 +13,7 @@ const requiredSections: SectionName[] = ['What', 'Why']
 const perFileListThreshold = 2
 
 const headingPattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/
+const fencePattern = /^\s*(```|~~~)/
 const closesPattern = /^(closes|fixes|resolves)\s+\S*#\d+\s*$/i
 const listItemPattern = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/
 const fileExtensions =
@@ -34,8 +35,10 @@ type Section = { name: string; level: number; content: string }
 function parseBody(body: string): { preamble: string; sections: Section[] } {
   const preamble: string[] = []
   const sections: Section[] = []
+  let inFence = false
   for (const line of body.split(/\r?\n/)) {
-    const heading = headingPattern.exec(line)
+    if (fencePattern.test(line)) inFence = !inFence
+    const heading = inFence ? null : headingPattern.exec(line)
     if (heading?.[1] && heading[2]) {
       sections.push({ name: heading[2], level: heading[1].length, content: '' })
       continue
