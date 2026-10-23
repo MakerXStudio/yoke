@@ -25,6 +25,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node dist/cli.js sync
+      - name: Fail if the committed skills are not the output of yoke sync
+        run: |
+          if [ -n "$(git status --porcelain .claude/skills)" ]; then
+            git status --porcelain .claude/skills
+            git diff .claude/skills
+            echo "::error::.claude/skills is out of date. Run yoke sync and commit the result."
+            exit 1
+          fi
+
   ci:
     uses: makerxstudio/shared-config/.github/workflows/node-ci.yml@28ab4b75c385b9b0880e5736ca8114caaf688ab8
     with:
