@@ -8,7 +8,7 @@ export const limits = {
 
 type SectionName = keyof typeof limits.sections
 
-const sectionOrder = Object.keys(limits.sections) as SectionName[]
+const sectionOrder: SectionName[] = ['What', 'Why', 'How']
 const requiredSections: SectionName[] = ['What', 'Why']
 const perFileListThreshold = 2
 

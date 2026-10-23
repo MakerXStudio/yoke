@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 
-import { type Violation, validatePr } from './validate.ts'
+import { type Violation, validatePr } from './validate'
 
 export type RaiseOptions = { title: string; body: string; base?: string; draft: boolean }
 

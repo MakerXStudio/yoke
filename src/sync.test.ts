@@ -4,7 +4,8 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { ownerMarker, skillsRoot, syncSkills } from './sync.ts'
+import { ownerMarker } from './skill'
+import { skillsRoot, syncSkills } from './sync'
 
 let target: string
 let destination: string

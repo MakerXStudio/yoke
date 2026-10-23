@@ -1,11 +1,11 @@
-import { cpSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-const bundledSkillsDir = fileURLToPath(new URL('../skills', import.meta.url))
+import { prSkill } from './pr/skill'
+import { ownerMarker, renderSkill, type Skill } from './skill'
 
-export const ownerMarker = 'owner: "@makerx/yoke"'
+const bundledSkills: Skill[] = [prSkill]
 
 export type SyncResult = { written: string[]; skipped: string[] }
 
@@ -13,24 +13,22 @@ export function skillsRoot(user: boolean, cwd = process.cwd(), home = homedir())
   return join(user ? home : cwd, '.claude', 'skills')
 }
 
-function isOwnedByUser(skillDir: string): boolean {
-  const skillFile = join(skillDir, 'SKILL.md')
+function isOwnedByUser(skillFile: string): boolean {
   return existsSync(skillFile) && !readFileSync(skillFile, 'utf8').includes(ownerMarker)
 }
 
-export function syncSkills(destination: string, skillsDir = bundledSkillsDir): SyncResult {
-  const skills = readdirSync(skillsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+export function syncSkills(destination: string, skills = bundledSkills): SyncResult {
   const result: SyncResult = { written: [], skipped: [] }
   for (const skill of skills) {
-    const source = join(skillsDir, skill.name)
     const target = join(destination, skill.name)
-    if (isOwnedByUser(target)) {
+    const skillFile = join(target, 'SKILL.md')
+    if (isOwnedByUser(skillFile)) {
       result.skipped.push(target)
       continue
     }
-    cpSync(source, target, { recursive: true })
-    for (const file of readdirSync(source, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()))
-      result.written.push(join(target, relative(source, join(file.parentPath, file.name))))
+    mkdirSync(target, { recursive: true })
+    writeFileSync(skillFile, renderSkill(skill))
+    result.written.push(skillFile)
   }
   return result
 }

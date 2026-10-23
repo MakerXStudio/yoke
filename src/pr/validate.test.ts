@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { limits, validateBody, validateTitle } from './validate.ts'
+import { limits, validateBody, validateTitle } from './validate'
 
 const what = 'Retake asks for confirmation before resetting results.'
 const why = 'Members lost results by tapping retake by accident.'

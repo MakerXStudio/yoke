@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { PrValidationError, raisePr } from './raise.ts'
+import { PrValidationError, raisePr } from './raise'
 
 const title = 'feat(retake): confirm before resetting'
 const body = '## What\n\nRetake asks for confirmation.\n\n## Why\n\nResults were lost by accident.\n'

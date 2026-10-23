@@ -12,8 +12,7 @@
     "yoke": "./dist/cli.js"
   },
   "files": [
-    "dist",
-    "skills"
+    "dist"
   ],
   "type": "module",
   "publishConfig": {
@@ -42,6 +41,7 @@
     "knip": "^6.42.1",
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
+    "oxlint-tsgolint": "^7.0.2004",
     "tsup": "^9.0.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.5"

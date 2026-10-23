@@ -1,12 +1,12 @@
-import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 
 import { Command } from 'commander'
 
-import { PrValidationError, raisePr } from './pr/raise.ts'
-import { skillsRoot, syncSkills } from './sync.ts'
+import packageJson from '../package.json' with { type: 'json' }
+import { PrValidationError, raisePr } from './pr/raise'
+import { skillsRoot, syncSkills } from './sync'
 
-const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
+const { version } = packageJson
 
 const program = new Command('yoke').description('Lean, user-invoked Claude Code skills and the CLI they call.').version(version)
 
