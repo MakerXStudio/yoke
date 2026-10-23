@@ -99,6 +99,16 @@ describe('validateBody', () => {
     expect(validateBody(body({ What: what, Why: why, How: list }))).toEqual([])
   })
 
+  it('allows a bullet list of slashed prose', () => {
+    const list = '- Splits read/write access\n- Moves logic from client/server boundary'
+    expect(validateBody(body({ What: what, Why: why, How: list }))).toEqual([])
+  })
+
+  it('allows a bullet list of dotted symbols', () => {
+    const list = '- Uses `Array.from` and `Set.has`\n- Reads `process.cwd()` once'
+    expect(validateBody(body({ What: what, Why: why, How: list }))).toEqual([])
+  })
+
   it('reports every failed rule at once', () => {
     expect(rules('Some intro.\n\n## Changes\n\nStuff.')).toEqual(['preamble', 'unknown-section', 'what-required', 'why-required'])
   })

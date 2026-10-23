@@ -15,7 +15,8 @@ const perFileListThreshold = 2
 const headingPattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/
 const closesPattern = /^(closes|fixes|resolves)\s+\S*#\d+\s*$/i
 const listItemPattern = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/
-const filePathPattern = /`[^`\s]*[/.][^`\s]*`|(?:^|\s)[\w.-]+\/[\w./-]+/
+const fileExtensions = 'ts|tsx|js|jsx|mjs|cjs|json|md|mdx|ya?ml|toml|css|scss|html|py|go|rs|cs|csproj|sln|java|kt|sh|ps1|sql|txt|lock|xml|svg'
+const filePathPattern = new RegExp(`(?:^|[\\s\`(])(?:[\\w.-]+/)*[\\w-][\\w.-]*\\.(?:${fileExtensions})(?=$|[\\s\`:,.)])`)
 
 export function validateTitle(title: string): Violation[] {
   const trimmed = title.trim()
