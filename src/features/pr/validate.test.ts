@@ -94,6 +94,11 @@ describe('validateBody', () => {
     expect(rules(body({ What: what, Why: why, How: list }))).toEqual(['per-file-list'])
   })
 
+  it('rejects a per-file list of root-level filenames', () => {
+    const list = '- package.json: adds scripts\n- README.md: explains setup'
+    expect(rules(body({ What: what, Why: why, How: list }))).toEqual(['per-file-list'])
+  })
+
   it('allows a bullet list that does not name files', () => {
     const list = '- Retake\n- Reset\n- Results, e.g. scores'
     expect(validateBody(body({ What: what, Why: why, How: list }))).toEqual([])
