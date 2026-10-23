@@ -3,6 +3,7 @@ import { relative } from 'node:path'
 import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
+import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
 import { skillsRoot, syncSkills } from './features/sync/sync'
 
@@ -30,6 +31,7 @@ pr.command('raise')
   .requiredOption('--body <body>', 'PR body with ## What, ## Why and optionally ## How')
   .option('--base <branch>', 'base branch (defaults to the repo default)')
   .option('--no-draft', 'create a ready-for-review PR instead of a draft')
+  .addHelpText('after', raiseGuide)
   .action((options: { title: string; body: string; base?: string; draft: boolean }) => {
     try {
       console.log(raisePr(options))
