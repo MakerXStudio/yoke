@@ -52,7 +52,7 @@ jobs:
         run: |
           tag=$(git tag --list 'v*' | grep -vxFf "$RUNNER_TEMP/tags-before" | head -n1 || true)
           if [ -z "$tag" ]; then
-            echo "No release: no \`feat\` or \`fix\` commits since $(git describe --tags --abbrev=0 2>/dev/null || echo 'the start')." >> "$GITHUB_STEP_SUMMARY"
+            echo "No new version was released (latest tag: $(git describe --tags --abbrev=0 2>/dev/null || echo 'none')). See the Release step log for the reason." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           {
