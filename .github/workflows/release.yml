@@ -44,4 +44,20 @@ jobs:
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx --yes semantic-release@25.0.9
+        run: |
+          git tag --list 'v*' > "$RUNNER_TEMP/tags-before"
+          npx --yes semantic-release@25.0.9
+
+      - name: Summary
+        run: |
+          tag=$(git tag --list 'v*' | grep -vxFf "$RUNNER_TEMP/tags-before" | head -n1 || true)
+          if [ -z "$tag" ]; then
+            echo "No release: no \`feat\` or \`fix\` commits since $(git describe --tags --abbrev=0 2>/dev/null || echo 'the start')." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Released ${tag}"
+            echo
+            echo "- npm: https://www.npmjs.com/package/@makerx/yoke/v/${tag#v}"
+            echo "- GitHub: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${tag}"
+          } >> "$GITHUB_STEP_SUMMARY"
