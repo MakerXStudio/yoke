@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import { prSkill } from '../pr/skill'
 import { ownerMarker, renderSkill, type Skill } from '../../skill'
+import { prSkill } from '../pr/skill'
 
 const bundledSkills: Skill[] = [prSkill]
 
