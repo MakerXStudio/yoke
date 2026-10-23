@@ -4,7 +4,7 @@ import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
 import { PrValidationError, raisePr } from './features/pr/raise'
-import { skillsRoot, syncSkills } from './sync'
+import { skillsRoot, syncSkills } from './features/sync/sync'
 
 const { version } = packageJson
 
