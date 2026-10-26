@@ -9,7 +9,7 @@ import { skillsRoot, syncSkills } from './features/sync/sync'
 
 const { version } = packageJson
 
-const program = new Command('yoke').description('Lean, user-invoked Claude Code skills and the CLI they call.').version(version)
+const program = new Command('yoke').description('Lean Claude Code skills and the CLI they call.').version(version)
 
 program
   .command('sync')

@@ -4,7 +4,6 @@ Claude Code skills for MakerX AI-assisted delivery, and the CLI they call.
 
 ## Principles
 
-- **User-invoked.** Skills run only when you type their slash command, unless the skill asks for your approval before acting. `/pr` is one of those, so Claude can also pick it when you ask for a PR.
 - **Overridable.** A skill of your own with the same name wins.
 - **Lean.** Few skills, short prompts; the CLI enforces the rules.
 
