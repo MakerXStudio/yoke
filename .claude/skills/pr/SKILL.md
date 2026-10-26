@@ -1,7 +1,6 @@
 ---
 name: pr
-description: Raise a PR with a concise What/Why/(How) description
-disable-model-invocation: true
+description: Raise a PR with a concise What/Why/(How) description. Use when asked to raise, open or create a pull request, or to rewrite a PR description.
 metadata:
   owner: "@makerx/yoke"
 ---
