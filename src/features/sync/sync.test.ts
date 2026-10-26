@@ -42,12 +42,15 @@ describe('syncSkills', () => {
     expect(readFileSync(path, 'utf8')).toContain('yoke pr raise')
   })
 
-  it('writes skills that only the user can invoke and that yoke owns', () => {
+  it('writes skills that yoke owns', () => {
     for (const file of syncSkills(destination).written.filter((f) => f.endsWith('SKILL.md'))) {
-      const frontmatter = readFileSync(file, 'utf8').split('---')[1]
-      expect(frontmatter).toMatch(/^disable-model-invocation: true$/m)
-      expect(frontmatter).toContain(ownerMarker)
+      expect(readFileSync(file, 'utf8').split('---')[1]).toContain(ownerMarker)
     }
+  })
+
+  it('lets the model invoke the pr skill', () => {
+    syncSkills(destination)
+    expect(readFileSync(skillPath, 'utf8')).not.toContain('disable-model-invocation')
   })
 
   it('overwrites a stale yoke-owned copy of the skill', () => {
