@@ -11,12 +11,8 @@ Claude Code skills for MakerX AI-assisted delivery, and the CLI they call.
 ## Usage
 
 ```bash
-npm i -g @makerx/yoke
-
-# then either
-yoke sync          # this repo's .claude/skills
-# or
-yoke sync --user   # ~/.claude/skills
+npm i -D @makerx/yoke   # at the repo root
+npx yoke sync           # then commit .claude/skills
 ```
 
 ## Skills
