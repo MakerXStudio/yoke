@@ -4,6 +4,7 @@ Claude Code skills for MakerX AI-assisted delivery, and the CLI they call.
 
 ## Principles
 
+- **Slash-invoked.** Every skill runs when you type its slash command. The model may also pick it, but nothing relies on that.
 - **Overridable.** A skill of your own with the same name wins.
 - **Lean.** Few skills, short prompts; the CLI enforces the rules.
 
