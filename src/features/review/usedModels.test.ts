@@ -18,32 +18,32 @@ afterEach(() => {
 
 describe('recordUsedModel', () => {
   it('records each step, without any provider or routing prefix', () => {
-    recordUsedModel(dir, 'claude', 'claude', 'claude-opus-4-1')
-    recordUsedModel(dir, 'codex', 'codex', 'azure/gpt-6.1-sol')
-    expect(readUsedModels(dir)).toEqual({ claude: 'claude-opus-4-1', codex: 'gpt-6.1-sol' })
+    recordUsedModel(dir, 'reviewer1', 'claude', 'claude-opus-4-1')
+    recordUsedModel(dir, 'reviewer2', 'codex', 'azure/gpt-6.1-sol')
+    expect(readUsedModels(dir)).toEqual({ reviewer1: 'claude-opus-4-1', reviewer2: 'gpt-6.1-sol' })
   })
 
   it("names the harness default when the model isn't known", () => {
-    recordUsedModel(dir, 'codex', 'codex', undefined)
-    expect(readUsedModels(dir)).toEqual({ codex: 'codex default' })
+    recordUsedModel(dir, 'reviewer2', 'codex', undefined)
+    expect(readUsedModels(dir)).toEqual({ reviewer2: 'codex default' })
   })
 
   it('forgets a step that failed', () => {
-    recordUsedModel(dir, 'codex', 'codex', 'gpt-5')
-    forgetUsedModel(dir, 'codex')
+    recordUsedModel(dir, 'reviewer2', 'codex', 'gpt-5')
+    forgetUsedModel(dir, 'reviewer2')
     expect(readUsedModels(dir)).toEqual({})
   })
 })
 
 describe('modelsFooter', () => {
   it('links yoke and names the reviewer and synthesis models', () => {
-    expect(modelsFooter({ claude: 'claude-opus-4-1', codex: 'gpt-6.1-sol', synthesis: 'claude-opus-4-1' })).toBe(
+    expect(modelsFooter({ reviewer1: 'claude-opus-4-1', reviewer2: 'gpt-6.1-sol', synthesis: 'claude-opus-4-1' })).toBe(
       '---\n_Adversarial review by [yoke](https://github.com/MakerXStudio/yoke): reviewed with claude-opus-4-1 and gpt-6.1-sol; combined with claude-opus-4-1._',
     )
   })
 
   it('names only the reviewers that ran', () => {
-    expect(modelsFooter({ codex: 'gpt-5', synthesis: 'gpt-5' })).toContain(': reviewed with gpt-5; combined with gpt-5._')
+    expect(modelsFooter({ reviewer2: 'gpt-5', synthesis: 'gpt-5' })).toContain(': reviewed with gpt-5; combined with gpt-5._')
   })
 
   it('still links yoke when no models were recorded', () => {

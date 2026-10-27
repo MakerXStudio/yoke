@@ -18,20 +18,20 @@ function errorOf(run: () => unknown): string {
 describe('resolveSlots', () => {
   it('runs claude and codex on your own login when no slot is set, ignoring provider settings', () => {
     expect(resolveSlots({ 'litellm.baseUrl': 'https://llm' })).toEqual({
-      claude: { harness: 'claude' },
-      codex: { harness: 'codex' },
+      reviewer1: { harness: 'claude' },
+      reviewer2: { harness: 'codex' },
       synthesis: undefined,
     })
   })
 
   it('passes a model to a harness on your own login when no provider is set', () => {
     const slots = resolveSlots({ 'review.reviewer1.model': 'opus', 'review.reviewer2.model': 'gpt-5' })
-    expect(slots.claude).toEqual({ harness: 'claude', model: 'opus', override: { args: ['--model', 'opus'], env: {} } })
-    expect(slots.codex).toEqual({ harness: 'codex', model: 'gpt-5', override: { args: ['-m', 'gpt-5'], env: {} } })
+    expect(slots.reviewer1).toEqual({ harness: 'claude', model: 'opus', override: { args: ['--model', 'opus'], env: {} } })
+    expect(slots.reviewer2).toEqual({ harness: 'codex', model: 'gpt-5', override: { args: ['-m', 'gpt-5'], env: {} } })
   })
 
   it('lets a slot swap its harness', () => {
-    expect(resolveSlots({ 'review.reviewer1.harness': 'codex' }).claude).toEqual({ harness: 'codex' })
+    expect(resolveSlots({ 'review.reviewer1.harness': 'codex' }).reviewer1).toEqual({ harness: 'codex' })
   })
 
   it('routes a slot with a provider through it and leaves the rest on your own login', () => {
@@ -42,9 +42,9 @@ describe('resolveSlots', () => {
       'review.synthesis.provider': 'foundry',
       'review.synthesis.model': 'sonnet',
     })
-    expect(slots.claude).toEqual({ harness: 'claude' })
-    expect(slots.codex).toMatchObject({ harness: 'codex', model: 'gpt-5-codex', provider: 'foundry' })
-    expect(slots.codex.override?.args).toContain('model_providers.yoke.base_url=https://res/openai/v1')
+    expect(slots.reviewer1).toEqual({ harness: 'claude' })
+    expect(slots.reviewer2).toMatchObject({ harness: 'codex', model: 'gpt-5-codex', provider: 'foundry' })
+    expect(slots.reviewer2.override?.args).toContain('model_providers.yoke.base_url=https://res/openai/v1')
     expect(slots.synthesis).toMatchObject({ harness: 'claude', model: 'sonnet', provider: 'foundry' })
     expect(slots.synthesis?.override?.env).toMatchObject({ ANTHROPIC_FOUNDRY_BASE_URL: 'https://res/anthropic' })
   })

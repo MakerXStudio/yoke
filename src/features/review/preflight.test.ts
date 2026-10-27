@@ -6,7 +6,7 @@ import { assertViable, type Checks } from './preflight'
 import type { ProbeRequest } from './provider'
 import type { ReviewSlots } from './slots'
 
-const ownAuth: ReviewSlots = { claude: { harness: 'claude' }, codex: { harness: 'codex' } }
+const ownAuth: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
 
 const probe = (url: string): ProbeRequest => ({ url, headers: {}, body: {} })
 
@@ -65,7 +65,7 @@ describe('assertViable', () => {
   })
 
   it('probes a provider slot instead of checking sign-in', async () => {
-    const slots: ReviewSlots = { ...ownAuth, codex: { harness: 'codex', model: 'gpt-5', probe: probe('https://p/v1/responses') } }
+    const slots: ReviewSlots = { ...ownAuth, reviewer2: { harness: 'codex', model: 'gpt-5', probe: probe('https://p/v1/responses') } }
     const checks = fake({ signedOut: ['codex'], unreachable: { 'https://p/v1/responses': 'HTTP 401: bad key' } })
     const message = await errorOf(() => assertViable(slots, checks))
     expect(message.split('\n')).toEqual(['Cannot review:', '- codex model "gpt-5" at https://p/v1/responses: HTTP 401: bad key'])
@@ -73,8 +73,8 @@ describe('assertViable', () => {
 
   it('checks own-auth sign-in for an unset synthesis slot even when every reviewer uses the provider', async () => {
     const slots: ReviewSlots = {
-      claude: { harness: 'claude', model: 'sonnet', probe: probe('https://p/v1/messages') },
-      codex: { harness: 'codex', model: 'gpt-5', probe: probe('https://p/v1/responses') },
+      reviewer1: { harness: 'claude', model: 'sonnet', probe: probe('https://p/v1/messages') },
+      reviewer2: { harness: 'codex', model: 'gpt-5', probe: probe('https://p/v1/responses') },
     }
     const message = await errorOf(() => assertViable(slots, fake({ signedOut: ['claude'] })))
     expect(message).toContain('- claude is not signed in (review.synthesis); run `claude auth login`')
@@ -83,7 +83,7 @@ describe('assertViable', () => {
   it('probes each distinct model once', async () => {
     const slot = { harness: 'claude' as const, model: 'sonnet', probe: probe('https://p/v1/messages') }
     const checks = fake()
-    await assertViable({ claude: slot, codex: { harness: 'codex' }, synthesis: slot }, checks)
+    await assertViable({ reviewer1: slot, reviewer2: { harness: 'codex' }, synthesis: slot }, checks)
     expect(checks.reached).toEqual(['https://p/v1/messages'])
   })
 })

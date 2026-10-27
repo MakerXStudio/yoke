@@ -2,8 +2,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { Harness } from './harness'
+import type { Reviewer } from './slots'
 
-export type StepName = 'claude' | 'codex' | 'synthesis'
+export type StepName = Reviewer | 'synthesis'
 
 export type UsedModels = Partial<Record<StepName, string>>
 
@@ -41,8 +42,8 @@ function list(items: string[]): string {
   return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '')
 }
 
-export function modelsFooter({ claude, codex, synthesis }: UsedModels): string {
-  const reviewers = [claude, codex].filter((model) => model !== undefined)
+export function modelsFooter({ reviewer1, reviewer2, synthesis }: UsedModels): string {
+  const reviewers = [reviewer1, reviewer2].filter((model) => model !== undefined)
   const used = [...(reviewers.length ? [`reviewed with ${list(reviewers)}`] : []), ...(synthesis ? [`combined with ${synthesis}`] : [])]
   return `---\n_Adversarial review by [yoke](${repoUrl})${used.length ? `: ${used.join('; ')}` : ''}._`
 }

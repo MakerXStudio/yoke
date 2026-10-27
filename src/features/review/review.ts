@@ -21,7 +21,7 @@ export function reviewRunDir(pr: PullRequest, env: NodeJS.ProcessEnv = process.e
   return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yoke', 'reviews', `${pr.number}-${pr.headRefOid}`)
 }
 
-const cachedOutputs = ['claude.md', 'codex.md', 'synthesis.md', 'review.md', 'models.json']
+const cachedOutputs = ['reviewer1.md', 'reviewer2.md', 'synthesis.md', 'review.md', 'models.json']
 
 function prepareRunDir(reviewDir: string, force: boolean): void {
   mkdirSync(reviewDir, { recursive: true })

@@ -17,19 +17,13 @@ import {
 
 export type Slot = { harness: Harness; model?: string; provider?: ProviderKind; override?: Override; probe?: ProbeRequest }
 
-export type Reviewer = 'claude' | 'codex'
+export type Reviewer = 'reviewer1' | 'reviewer2'
 
 export type ReviewSlots = Record<Reviewer, Slot> & { synthesis?: Slot }
 
 type SlotName = keyof ReviewSlots
 
-type SlotSetting = 'reviewer1' | 'reviewer2' | 'synthesis'
-
-const slotSettings: [SlotName, SlotSetting][] = [
-  ['claude', 'reviewer1'],
-  ['codex', 'reviewer2'],
-  ['synthesis', 'synthesis'],
-]
+const slotNames: SlotName[] = ['reviewer1', 'reviewer2', 'synthesis']
 
 type SlotSpec = { harness?: Harness; model?: string; provider?: ProviderKind }
 
@@ -45,7 +39,7 @@ export function readProvider(settings: Settings, kind: ProviderKind): Provider |
   ].filter((error) => error !== null)
 }
 
-function readSpec(settings: Settings, slot: SlotSetting, errors: string[]): SlotSpec | undefined {
+function readSpec(settings: Settings, slot: SlotName, errors: string[]): SlotSpec | undefined {
   const keys = {
     harness: `review.${slot}.harness`,
     provider: `review.${slot}.provider`,
@@ -84,7 +78,7 @@ function toSlot({ harness: chosen, model, provider: kind }: SlotSpec, fallback: 
 export function resolveSlots(settings: Settings): ReviewSlots {
   const specs: Partial<Record<SlotName, SlotSpec>> = {}
   const errors: string[] = []
-  for (const [name, slot] of slotSettings) specs[name] = readSpec(settings, slot, errors)
+  for (const name of slotNames) specs[name] = readSpec(settings, name, errors)
   const providers: Providers = {}
   for (const kind of new Set(Object.values(specs).flatMap((spec) => (spec?.provider ? [spec.provider] : [])))) {
     const read = readProvider(settings, kind)
@@ -92,10 +86,10 @@ export function resolveSlots(settings: Settings): ReviewSlots {
     else providers[kind] = read
   }
   if (errors.length) throw new ReviewError(['Review settings are incomplete:', ...errors.map((error) => `- ${error}`)].join('\n'))
-  const claude = toSlot(specs.claude ?? {}, 'claude', providers)
+  const reviewer1 = toSlot(specs.reviewer1 ?? {}, 'claude', providers)
   return {
-    claude,
-    codex: toSlot(specs.codex ?? {}, 'codex', providers),
-    synthesis: specs.synthesis && toSlot(specs.synthesis, claude.harness, providers),
+    reviewer1,
+    reviewer2: toSlot(specs.reviewer2 ?? {}, 'codex', providers),
+    synthesis: specs.synthesis && toSlot(specs.synthesis, reviewer1.harness, providers),
   }
 }

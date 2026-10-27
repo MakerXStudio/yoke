@@ -78,9 +78,9 @@ async function slotProblem(use: SlotUse, check: Checks): Promise<string | undefi
 
 function slotsToRun(slots: ReviewSlots): SlotUse[] {
   const uses: [SlotPrefix, Slot][] = [
-    ['review.reviewer1', slots.claude],
-    ['review.reviewer2', slots.codex],
-    ['review.synthesis', slots.synthesis ?? { harness: slots.claude.harness }],
+    ['review.reviewer1', slots.reviewer1],
+    ['review.reviewer2', slots.reviewer2],
+    ['review.synthesis', slots.synthesis ?? { harness: slots.reviewer1.harness }],
   ]
   const distinct = new Map<string, SlotUse>()
   for (const [key, slot] of uses) {

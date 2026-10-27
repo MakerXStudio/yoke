@@ -12,14 +12,14 @@ Mostly sound; one crash on empty input.
 
 ### Finding: Style nit
 - Severity: nit
-- Source: codex-only
+- Source: reviewer2-only
 - Location: n/a
 - Impact: Harder to read.
 - Recommendation: Rename it.
 
 ### Finding: Crash on empty list
 - Severity: Major
-- Source: claude-only
+- Source: reviewer1-only
 - Location: \`src/a.ts:12\`
 - Impact: Throws when the list is empty.
 - Recommendation: Return early.
@@ -41,7 +41,7 @@ describe('parseSynthesis', () => {
     expect(parseSynthesis(synthesis).findings).toContainEqual({
       title: 'Crash on empty list',
       severity: 'major',
-      source: 'claude-only',
+      source: 'reviewer1-only',
       file: 'src/a.ts',
       line: 12,
       impact: 'Throws when the list is empty.',

@@ -23,13 +23,15 @@ One bug.
 
 ### Finding: Crash
 - Severity: major
-- Source: claude-only
+- Source: reviewer1-only
 - Location: \`src/a.ts:3\`
 - Impact: Throws.
 - Recommendation: Guard it.
 `
 
-const ownAuth: ReviewSlots = { claude: { harness: 'claude' }, codex: { harness: 'codex' } }
+const ownAuth: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
+
+const reviewersLine = 'Reviewers: reviewer1 (claude: default model), reviewer2 (codex: default model)'
 
 type Fake = { reviews?: Partial<Record<Harness, string | Error>>; synthesis?: string | Error }
 
@@ -69,10 +71,11 @@ describe('runReview', () => {
   it('runs both reviewers before synthesis and prints the ranked findings', async () => {
     const { report: output, synthesis: parsed } = await runReview('request', context())
     expect(runs.map((r) => [r.harness, r.outputPath.split('/').at(-1)])).toEqual([
-      ['claude', 'claude.md'],
-      ['codex', 'codex.md'],
+      ['claude', 'reviewer1.md'],
+      ['codex', 'reviewer2.md'],
       ['claude', 'synthesis.md'],
     ])
+    expect(output.startsWith(`${reviewersLine}\n\n`)).toBe(true)
     expect(output).toContain('[major] src/a.ts:3 — Crash')
     expect(parsed?.findings.map((f) => f.title)).toEqual(['Crash'])
   })
@@ -99,35 +102,39 @@ describe('runReview', () => {
 
   it('names a failed reviewer and synthesises the other on its own harness', async () => {
     const { report: output } = await runReview('request', context({ reviews: { claude: new Error('claude CLI not found on PATH') } }))
-    expect(logs).toContainEqual(expect.stringMatching(/^claude reviewer failed after \d+s: claude CLI not found on PATH$/))
+    expect(logs).toContainEqual(
+      expect.stringMatching(/^reviewer1 \(claude: default model\) failed after \d+s: claude CLI not found on PATH$/),
+    )
     const synthesisRun = runs.at(-1)
     expect(synthesisRun?.harness).toBe('codex')
-    expect(synthesisRun?.prompt).toContain('- claude review: missing')
-    expect(synthesisRun?.prompt).toContain(`- codex review: ${join(reviewDir, 'codex.md')}`)
+    expect(synthesisRun?.prompt).toContain('- reviewer1 (claude: default model) review: missing')
+    expect(synthesisRun?.prompt).toContain(`- reviewer2 (codex: default model) review: ${join(reviewDir, 'reviewer2.md')}`)
     expect(output).toContain('Crash')
   })
 
-  it('runs each slot on its own harness and override, naming the model', async () => {
+  it('runs each slot on its own harness and override, naming the harness and model', async () => {
     const override = { args: ['-m', 'gpt-5-codex'], env: { KEY: 'k' } }
     const slots: ReviewSlots = {
-      claude: { harness: 'codex', model: 'gpt-5-codex', override },
-      codex: { harness: 'codex' },
+      reviewer1: { harness: 'codex', model: 'gpt-5-codex', provider: 'litellm', override },
+      reviewer2: { harness: 'codex' },
       synthesis: { harness: 'claude', model: 'sonnet', override: { args: ['--model', 'sonnet'], env: {} } },
     }
-    await runReview('request', context({}, slots))
+    const { report } = await runReview('request', context({}, slots))
     expect(runs.map((r) => [r.harness, r.outputPath.split('/').at(-1), r.override?.args])).toEqual([
-      ['codex', 'claude.md', ['-m', 'gpt-5-codex']],
-      ['codex', 'codex.md', undefined],
+      ['codex', 'reviewer1.md', ['-m', 'gpt-5-codex']],
+      ['codex', 'reviewer2.md', undefined],
       ['claude', 'synthesis.md', ['--model', 'sonnet']],
     ])
-    expect(logs).toContain('claude reviewer (codex:gpt-5-codex)…')
-    expect(logs).toContain('synthesis (claude:sonnet)…')
+    expect(logs).toContain('reviewer1 (codex: litellm/gpt-5-codex)…')
+    expect(logs).toContain('synthesis (claude: sonnet)…')
+    expect(runs.at(-1)?.prompt).toContain('- reviewer1 (codex: litellm/gpt-5-codex) review:')
+    expect(report).toContain('Reviewers: reviewer1 (codex: litellm/gpt-5-codex), reviewer2 (codex: default model)')
   })
 
   it('runs an unset synthesis slot on the first successful reviewer harness without its override', async () => {
     const slots: ReviewSlots = {
-      claude: { harness: 'claude' },
-      codex: { harness: 'codex', model: 'm', override: { args: ['-m', 'm'], env: {} } },
+      reviewer1: { harness: 'claude' },
+      reviewer2: { harness: 'codex', model: 'm', override: { args: ['-m', 'm'], env: {} } },
     }
     await runReview('request', context({ reviews: { claude: new Error('down') } }, slots))
     expect(runs.at(-1)).toMatchObject({ harness: 'codex', override: undefined })
@@ -144,34 +151,34 @@ describe('runReview', () => {
       'request',
       context({ reviews: { codex: new Error('down') }, synthesis: new Error('boom') }),
     )
-    expect(output).toBe('# claude review\n\nclaude says hi')
+    expect(output).toBe(`${reviewersLine}\n\n# reviewer1 (claude: default model) review\n\nclaude says hi`)
     expect(parsed).toBeNull()
   })
 
   it('shows synthesis output that is not in the findings format as is', async () => {
     expect(await runReview('request', context({ synthesis: 'Free-form review.\n' }))).toEqual({
-      report: 'Free-form review.',
+      report: `${reviewersLine}\n\nFree-form review.`,
       synthesis: null,
       markdown: null,
     })
   })
 
   it('reuses a cached review and reruns synthesis when a reviewer had to run', async () => {
-    writeFileSync(join(reviewDir, 'claude.md'), 'cached claude review')
+    writeFileSync(join(reviewDir, 'reviewer1.md'), 'cached claude review')
     writeFileSync(join(reviewDir, 'synthesis.md'), 'stale synthesis')
     const { report } = await runReview('request', context())
-    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['codex.md', 'synthesis.md'])
-    expect(logs).toContain('claude reviewer: cached')
+    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer2.md', 'synthesis.md'])
+    expect(logs).toContain('reviewer1 (claude: default model): cached')
     expect(report).toContain('Crash')
   })
 
   it('reuses the cached synthesis when every reviewer was cached', async () => {
-    writeFileSync(join(reviewDir, 'claude.md'), 'claude')
-    writeFileSync(join(reviewDir, 'codex.md'), 'codex')
+    writeFileSync(join(reviewDir, 'reviewer1.md'), 'claude')
+    writeFileSync(join(reviewDir, 'reviewer2.md'), 'codex')
     writeFileSync(join(reviewDir, 'synthesis.md'), synthesis)
     await runReview('request', context())
     expect(runs).toEqual([])
-    expect(logs).toContain('synthesis (claude): cached')
+    expect(logs).toContain('synthesis (claude: default model): cached')
   })
 
   it('does not cache the output of a failed reviewer', async () => {
@@ -184,7 +191,7 @@ describe('runReview', () => {
         return { ok: false, error: 'down' }
       },
     })
-    expect(existsSync(join(reviewDir, 'codex.md'))).toBe(false)
+    expect(existsSync(join(reviewDir, 'reviewer2.md'))).toBe(false)
   })
 })
 

@@ -1,5 +1,5 @@
 const severities = ['blocker', 'major', 'minor', 'nit'] as const
-const sources = ['confirmed', 'disputed', 'claude-only', 'codex-only', 'already-raised'] as const
+const sources = ['confirmed', 'disputed', 'reviewer1-only', 'reviewer2-only', 'already-raised'] as const
 
 type Severity = (typeof severities)[number]
 type Source = (typeof sources)[number]

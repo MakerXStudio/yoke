@@ -24,7 +24,7 @@ function finding(overrides: Partial<Finding>): Finding {
   return {
     title: 'Bug',
     severity: 'major',
-    source: 'claude-only',
+    source: 'reviewer1-only',
     file: 'src/a.ts',
     line: 11,
     impact: 'Breaks.',

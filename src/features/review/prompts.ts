@@ -98,7 +98,7 @@ For each finding, emit one block in this exact format:
 
 ### Finding: <short title>
 - Severity: blocker | major | minor | nit
-- Source: confirmed | disputed | claude-only | codex-only | already-raised
+- Source: confirmed | disputed | reviewer1-only | reviewer2-only | already-raised
 - Location: \`path/to/file.ext:LINE\` or \`n/a\` when not tied to a specific line
 - Impact: one sentence on what could go wrong
 - Recommendation: one or two sentences with a concrete change
@@ -116,7 +116,7 @@ Omit entirely any finding whose recommendation is to add a code comment, and any
 Rules:
 - \`confirmed\` = both reviewers raised it.
 - \`disputed\` = the reviewers disagreed on the diagnosis or fix.
-- \`claude-only\` / \`codex-only\` = only one reviewer raised it.
+- \`reviewer1-only\` / \`reviewer2-only\` = only that reviewer raised it.
 - \`already-raised\` = a comment under "Prior review comments" in the request substantively covers this finding — same file, same defect or recommendation — even when that thread is resolved or outdated. Cosmetic overlap is not enough. Prefer \`already-raised\` over the other source values when it applies.
 - Order findings by severity (blocker, major, minor, nit), then by source (confirmed first).
 - If a finding has no specific file:line, set Location to \`n/a\` exactly.

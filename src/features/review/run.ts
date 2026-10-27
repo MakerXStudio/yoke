@@ -15,14 +15,14 @@ export type ReviewResult = { report: string; synthesis: Synthesis | null; markdo
 
 type Step = Pick<HarnessRun, 'prompt' | 'outputPath'> & { name: StepName; label: string; slot: Slot }
 
-const reviewers: Reviewer[] = ['claude', 'codex']
+const reviewers: Reviewer[] = ['reviewer1', 'reviewer2']
 
 function seconds(since: number): string {
   return `${Math.round((Date.now() - since) / 1000)}s`
 }
 
 function describeSlot({ harness, model, provider }: Slot): string {
-  return model ? `${harness}:${provider ? `${provider}/` : ''}${model}` : harness
+  return `${harness}: ${provider ? `${provider}/` : ''}${model ?? 'default model'}`
 }
 
 async function runStep({ name, label, slot, ...step }: Step, context: ReviewContext): Promise<boolean> {
@@ -62,8 +62,13 @@ function reviewPath(context: ReviewContext, reviewer: Reviewer): string {
   return join(context.reviewDir, `${reviewer}.md`)
 }
 
-function reviewerLabel(reviewer: Reviewer, slot: Slot): string {
-  return slot.model ? `${reviewer} reviewer (${describeSlot(slot)})` : `${reviewer} reviewer`
+function reviewerLabel(reviewer: Reviewer, context: ReviewContext): string {
+  return `${reviewer} (${describeSlot(context.slots[reviewer])})`
+}
+
+function withReviewers(result: ReviewResult, context: ReviewContext): ReviewResult {
+  const line = reviewers.map((reviewer) => reviewerLabel(reviewer, context)).join(', ')
+  return { ...result, report: `Reviewers: ${line}\n\n${result.report}` }
 }
 
 function synthesisResult(markdown: string): ReviewResult {
@@ -74,13 +79,13 @@ function synthesisResult(markdown: string): ReviewResult {
 
 function rawReviews(succeeded: Reviewer[], context: ReviewContext): ReviewResult {
   const report = succeeded
-    .map((reviewer) => `# ${reviewer} review\n\n${readFileSync(reviewPath(context, reviewer), 'utf8').trim()}`)
+    .map((reviewer) => `# ${reviewerLabel(reviewer, context)} review\n\n${readFileSync(reviewPath(context, reviewer), 'utf8').trim()}`)
     .join('\n\n')
   return { report, synthesis: null, markdown: null }
 }
 
 function synthesisSlot(succeeded: Reviewer[], context: ReviewContext): Slot {
-  const [first = 'claude'] = succeeded
+  const [first = 'reviewer1'] = succeeded
   return context.slots.synthesis ?? { harness: context.slots[first].harness }
 }
 
@@ -93,7 +98,10 @@ async function synthesise(
   const slot = synthesisSlot(succeeded, context)
   const outputPath = join(context.reviewDir, 'synthesis.md')
   if (reviewersRan) rmSync(outputPath, { force: true })
-  const files = reviewers.map((reviewer) => ({ reviewer, path: succeeded.includes(reviewer) ? reviewPath(context, reviewer) : null }))
+  const files = reviewers.map((reviewer) => ({
+    reviewer: reviewerLabel(reviewer, context),
+    path: succeeded.includes(reviewer) ? reviewPath(context, reviewer) : null,
+  }))
   const prompt = buildSynthesisPrompt(requestPath, files)
   if ((await runOrReuse({ name: 'synthesis', label: `synthesis (${describeSlot(slot)})`, slot, prompt, outputPath }, context)).ok)
     return synthesisResult(readFileSync(outputPath, 'utf8'))
@@ -109,15 +117,16 @@ export async function runReview(request: string, context: ReviewContext): Promis
     reviewers.map((reviewer) => {
       const slot = context.slots[reviewer]
       const outputPath = reviewPath(context, reviewer)
-      return runOrReuse({ name: reviewer, label: reviewerLabel(reviewer, slot), slot, prompt, outputPath }, context)
+      return runOrReuse({ name: reviewer, label: reviewerLabel(reviewer, context), slot, prompt, outputPath }, context)
     }),
   )
   const succeeded = reviewers.filter((_, i) => results[i]?.ok)
   if (!succeeded.length) throw new ReviewError('Every reviewer failed; nothing to report.')
-  return synthesise(
+  const synthesised = await synthesise(
     requestPath,
     succeeded,
     results.some((result) => result.ran),
     context,
   )
+  return withReviewers(synthesised, context)
 }
