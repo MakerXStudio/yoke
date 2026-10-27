@@ -1,0 +1,117 @@
+import { describe, expect, it } from 'vitest'
+
+import { findingMarker, type PriorComment } from './comments'
+import type { Finding } from './findings'
+import { planPost, reviewBody } from './post'
+
+const diff = [
+  'diff --git a/src/a.ts b/src/a.ts',
+  '--- a/src/a.ts',
+  '+++ b/src/a.ts',
+  '@@ -10,3 +10,3 @@',
+  ' keep',
+  '-gone',
+  '+added',
+  ' tail',
+  'diff --git a/old.ts b/old.ts',
+  '--- a/old.ts',
+  '+++ /dev/null',
+  '@@ -1 +0,0 @@',
+  '-removed',
+].join('\n')
+
+function finding(overrides: Partial<Finding>): Finding {
+  return {
+    title: 'Bug',
+    severity: 'major',
+    source: 'claude-only',
+    file: 'src/a.ts',
+    line: 11,
+    impact: 'Breaks.',
+    recommendation: 'Fix.',
+    ...overrides,
+  }
+}
+
+function plan(findings: Finding[], prior: PriorComment[] = []) {
+  return planPost({ summary: 's', findings }, diff, prior)
+}
+
+describe('planPost', () => {
+  it('anchors a finding on an added line to that line', () => {
+    expect(plan([finding({})]).comments).toEqual([
+      {
+        path: 'src/a.ts',
+        line: 11,
+        body: `**major: Bug**\n\nImpact: Breaks.\n\nRecommendation: Fix.\n\n<!-- yoke-review: src/a.ts#bug -->`,
+      },
+    ])
+  })
+
+  it('anchors a finding on a context line', () => {
+    expect(plan([finding({ line: 12 })]).comments.map((c) => c.line)).toEqual([12])
+  })
+
+  it('puts findings outside the diff, in files not in it, or without a location in the body', () => {
+    const outside = [
+      finding({ line: 13 }),
+      finding({ file: 'src/other.ts' }),
+      finding({ file: 'old.ts', line: 1 }),
+      finding({ file: null, line: null }),
+    ]
+    expect(plan(outside)).toMatchObject({ comments: [], outside, skipped: [] })
+  })
+
+  it('skips findings the synthesis marked already raised', () => {
+    const raised = finding({ source: 'already-raised' })
+    expect(plan([raised])).toMatchObject({ comments: [], outside: [], skipped: [raised] })
+  })
+
+  it('skips findings yoke already posted, by file and title, even after the line moved', () => {
+    const prior: PriorComment[] = [
+      { path: 'src/a.ts', line: 30, author: 'me', body: `**major: Bug**\n\n${findingMarker({ file: 'src/a.ts', title: 'Bug' })}` },
+    ]
+    expect(plan([finding({})], prior).skipped).toHaveLength(1)
+  })
+
+  it('skips an out-of-diff finding yoke already put in a review body', () => {
+    const outside = finding({ file: null, line: null, title: 'Docs drift' })
+    const prior: PriorComment[] = [
+      { path: null, line: null, author: 'me', body: `- **major** no location — Docs drift\n  <!-- yoke-review: n/a#docs-drift -->` },
+    ]
+    expect(plan([outside], prior).skipped).toEqual([outside])
+  })
+
+  it('posts a finding whose title differs from the one already posted on that file', () => {
+    const prior: PriorComment[] = [{ path: 'src/a.ts', line: 11, author: 'me', body: findingMarker({ file: 'src/a.ts', title: 'Other' }) }]
+    expect(plan([finding({})], prior).comments).toHaveLength(1)
+  })
+})
+
+describe('reviewBody', () => {
+  it('lists findings outside the diff under the summary, each with its marker', () => {
+    expect(
+      reviewBody('Summary.', [
+        finding({ line: 40 }),
+        finding({ file: null, line: null, title: 'Loose', severity: null, impact: '', recommendation: '' }),
+      ]),
+    ).toBe(
+      [
+        'Summary.',
+        '',
+        '### Findings outside the diff',
+        '',
+        '- **major** `src/a.ts:40` — Bug',
+        '  Impact: Breaks.',
+        '  Recommendation: Fix.',
+        '  <!-- yoke-review: src/a.ts#bug -->',
+        '- **finding** no location — Loose',
+        '  <!-- yoke-review: n/a#loose -->',
+      ].join('\n'),
+    )
+  })
+
+  it('is just the summary when every finding is inline', () => {
+    expect(reviewBody('Summary.', [])).toBe('Summary.')
+  })
+})

@@ -1,7 +1,19 @@
 export const ownerMarker = 'owner: "@makerx/yoke"'
 
-export type Skill = { name: string; description: string; body: string }
+export type Skill = { name: string; description: string; body: string; disableModelInvocation?: boolean }
 
-export function renderSkill({ name, description, body }: Skill): string {
-  return ['---', `name: ${name}`, `description: ${description}`, 'metadata:', `  ${ownerMarker}`, '---', '', body.trim(), ''].join('\n')
+export function renderSkill({ name, description, body, disableModelInvocation }: Skill): string {
+  const invocation = disableModelInvocation ? ['disable-model-invocation: true'] : []
+  return [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    ...invocation,
+    'metadata:',
+    `  ${ownerMarker}`,
+    '---',
+    '',
+    body.trim(),
+    '',
+  ].join('\n')
 }
