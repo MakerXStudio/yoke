@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { findingMarker, type PriorComment } from './comments'
 import type { Finding } from './findings'
-import { planPost, reviewBody, withoutReviewerNames } from './post'
+import { planPost, reviewBody } from './post'
 
 const diff = [
   'diff --git a/src/a.ts b/src/a.ts',
@@ -118,38 +118,26 @@ describe('reviewBody', () => {
     expect(reviewBody('Summary.', [])).toBe('## Adversarial review\n\nSummary.')
   })
 
-  it('ends with the footer, which keeps its model names', () => {
-    expect(reviewBody('Claude found one bug.', [], '---\n_by yoke with claude-opus-4-1._')).toBe(
-      '## Adversarial review\n\nthe reviewer found one bug.\n\n---\n_by yoke with claude-opus-4-1._',
+  it('ends with the footer', () => {
+    expect(reviewBody('One bug.', [], '---\n_by yoke with claude-opus-4-1._')).toBe(
+      '## Adversarial review\n\nOne bug.\n\n---\n_by yoke with claude-opus-4-1._',
     )
   })
 
-  it('names no reviewer, even with no summary', () => {
+  it('is just the heading with no summary', () => {
     expect(reviewBody('', [])).toBe('## Adversarial review')
-    expect(reviewBody('The codex review is missing, so this rests on Claude alone.', [])).toBe(
-      '## Adversarial review\n\nthe reviewer review is missing, so this rests on the reviewer alone.',
-    )
   })
 })
 
-describe('withoutReviewerNames', () => {
-  it.each([
-    ['Claude flagged it', 'the reviewer flagged it'],
-    ['both opus and gpt-5.1-codex agree', 'both the reviewer and the reviewer agree'],
-    ['a Codex run', 'the reviewer run'],
-    ['claudette and codexes stay', 'claudette and codexes stay'],
-  ])('rewrites %s', (input, expected) => {
-    expect(withoutReviewerNames(input)).toBe(expected)
-  })
-
-  it('keeps reviewer names out of inline comments but keeps the marker stable', () => {
-    const { comments } = plan([finding({ title: 'Claude found a bug', impact: 'Codex agrees.' })])
+describe('comment text', () => {
+  it('posts tool names verbatim', () => {
+    const { comments } = plan([finding({ title: '`codex exec` hangs', impact: 'Run codex login first.' })])
     expect(comments[0]?.body).toBe(
       [
-        '**major: the reviewer found a bug**',
-        'Impact: the reviewer agrees.',
+        '**major: `codex exec` hangs**',
+        'Impact: Run codex login first.',
         'Recommendation: Fix.',
-        '<!-- yoke-review: src/a.ts#claude-found-a-bug -->',
+        '<!-- yoke-review: src/a.ts#codex-exec-hangs -->',
       ].join('\n\n'),
     )
   })

@@ -80,7 +80,9 @@ Output only the review Markdown. Do not include any preamble or commentary about
 
 const synthesisPrompt = `You are consolidating independent code reviews of the same change. The original review request and the reviews are in the files listed below.
 
-If a review is listed as missing, that reviewer failed. Work from the reviews you have; treat every finding as coming only from the reviewer that succeeded, do not mark anything \`confirmed\` or \`disputed\`, and say in the Summary which reviewer is missing.
+If a review is listed as missing, that reviewer failed. Work from the reviews you have; treat every finding as coming only from the reviewer that succeeded, do not mark anything \`confirmed\` or \`disputed\`, and say in the Summary that one review is missing.
+
+Never name a reviewer by its model or tool in a title, Summary, Impact or Recommendation; write "one reviewer" or "both reviewers". Tool and command names that are part of the code under review are fine.
 
 Read the request and the available reviews, deduplicate findings, and produce a single consolidated review in Markdown with this exact structure:
 
