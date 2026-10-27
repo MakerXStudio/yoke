@@ -72,15 +72,71 @@ export function fetchPriorComments(pr: PullRequest, exec: Run = run): PriorComme
 
 export type ReviewComment = { path: string; line: number; body: string }
 
-export function submitReview(pr: PullRequest, body: string, comments: ReviewComment[], exec: Run = run): string {
-  const review = {
-    commit_id: pr.headRefOid,
-    event: 'COMMENT',
-    body,
-    comments: comments.map((comment) => ({ ...comment, side: 'RIGHT' })),
-  }
-  const args = ['api', '--method', 'POST', `repos/{owner}/{repo}/pulls/${pr.number}/reviews`, '--input', '-', '--jq', '.html_url']
-  return exec('gh', args, undefined, JSON.stringify(review)).trim()
+export type PendingReview = { id: number; nodeId: string }
+
+function reviewsPath(pr: PullRequest): string {
+  return `repos/{owner}/{repo}/pulls/${pr.number}/reviews`
+}
+
+function isPendingReview(value: unknown): value is { id: number; node_id: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    typeof value.id === 'number' &&
+    'node_id' in value &&
+    typeof value.node_id === 'string'
+  )
+}
+
+export function openPendingReview(pr: PullRequest, exec: Run = run): PendingReview {
+  const args = ['api', '--method', 'POST', reviewsPath(pr), '--input', '-', '--jq', '{id, node_id}']
+  const review: unknown = JSON.parse(exec('gh', args, undefined, JSON.stringify({ commit_id: pr.headRefOid })))
+  if (!isPendingReview(review)) throw new ReviewError('Opening a pending review returned an unexpected response')
+  return { id: review.id, nodeId: review.node_id }
+}
+
+const addThread = `mutation($review: ID!, $path: String!, $line: Int!, $body: String!) {
+  addPullRequestReviewThread(input: {pullRequestReviewId: $review, path: $path, line: $line, side: RIGHT, body: $body}) { thread { id } }
+}`
+
+export function addReviewComment(review: PendingReview, { path, line, body }: ReviewComment, exec: Run = run): void {
+  const variables = [
+    '-f',
+    `query=${addThread}`,
+    '-f',
+    `review=${review.nodeId}`,
+    '-f',
+    `path=${path}`,
+    '-F',
+    `line=${line}`,
+    '-f',
+    `body=${body}`,
+  ]
+  exec('gh', ['api', 'graphql', ...variables])
+}
+
+export function submitPendingReview(pr: PullRequest, review: PendingReview, body: string, exec: Run = run): string {
+  const args = ['api', '--method', 'POST', `${reviewsPath(pr)}/${review.id}/events`, '--input', '-', '--jq', '.html_url']
+  return exec('gh', args, undefined, JSON.stringify({ event: 'COMMENT', body })).trim()
+}
+
+export function discardPendingReview(pr: PullRequest, review: PendingReview, exec: Run = run): void {
+  exec('gh', ['api', '--method', 'DELETE', `${reviewsPath(pr)}/${review.id}`])
+}
+
+export type ReviewApi = {
+  open: (pr: PullRequest) => PendingReview
+  add: (review: PendingReview, comment: ReviewComment) => void
+  submit: (pr: PullRequest, review: PendingReview, body: string) => string
+  discard: (pr: PullRequest, review: PendingReview) => void
+}
+
+export const github: ReviewApi = {
+  open: (pr) => openPendingReview(pr),
+  add: (review, comment) => addReviewComment(review, comment),
+  submit: (pr, review, body) => submitPendingReview(pr, review, body),
+  discard: (pr, review) => discardPendingReview(pr, review),
 }
 
 export type Checkout = { cwd: string; remove: () => void }

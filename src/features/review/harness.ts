@@ -1,11 +1,20 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
+import { parseHarnessEvent } from './progress'
 import type { Override } from './provider'
 
 export type Harness = 'claude' | 'codex'
 
-export type HarnessRun = { harness: Harness; prompt: string; cwd: string; reviewDir: string; outputPath: string; override?: Override }
+export type HarnessRun = {
+  harness: Harness
+  prompt: string
+  cwd: string
+  reviewDir: string
+  outputPath: string
+  override?: Override
+  onProgress?: (activity: string) => void
+}
 
 export type HarnessResult = { ok: true } | { ok: false; error: string }
 
@@ -15,8 +24,18 @@ const tailLines = 20
 
 export function harnessArgs({ harness, reviewDir, outputPath, override }: HarnessRun): string[] {
   const extra = override?.args ?? []
-  if (harness === 'codex') return ['exec', '--sandbox', 'read-only', '--output-last-message', outputPath, ...extra, '-']
-  return ['-p', '--add-dir', reviewDir, '--disallowedTools', 'Edit,Write,NotebookEdit', ...extra]
+  if (harness === 'codex') return ['exec', '--sandbox', 'read-only', '--json', '--output-last-message', outputPath, ...extra, '-']
+  return [
+    '-p',
+    '--add-dir',
+    reviewDir,
+    '--disallowedTools',
+    'Edit,Write,NotebookEdit',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    ...extra,
+  ]
 }
 
 function tail(text: string): string {
@@ -45,16 +64,27 @@ export const runHarness: RunHarness = (run) =>
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: process.platform === 'win32',
     })
-    let stdout = ''
+    let pending = ''
+    let finalText = ''
     let stderr = ''
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
+    const onLine = (line: string) => {
+      const event = parseHarnessEvent(run.harness, line)
+      if (event.kind === 'activity') run.onProgress?.(event.text)
+      if (event.kind === 'final') finalText = event.text
+    }
+    child.stdout.on('data', (chunk: Buffer) => {
+      const lines = (pending + chunk.toString()).split('\n')
+      pending = lines.pop() ?? ''
+      lines.forEach(onLine)
+    })
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
     child.stdin.on('error', () => {})
     child.stdin.end(run.prompt)
     child.on('error', (error) => resolve({ ok: false, error: spawnError(run.harness, error) }))
     child.on('close', (code) => {
-      if (code !== 0) return resolve({ ok: false, error: exitError(run.harness, code, stderr || stdout) })
-      if (run.harness === 'claude') writeFileSync(run.outputPath, stdout)
+      onLine(pending)
+      if (code !== 0) return resolve({ ok: false, error: exitError(run.harness, code, stderr || finalText) })
+      if (run.harness === 'claude') writeFileSync(run.outputPath, finalText)
       if (!hasReview(run.outputPath)) return resolve({ ok: false, error: `${run.harness} returned an empty review` })
       resolve({ ok: true })
     })

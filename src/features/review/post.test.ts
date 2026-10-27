@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { findingMarker, type PriorComment } from './comments'
 import type { Finding } from './findings'
-import { planPost, reviewBody } from './post'
+import { planPost, reviewBody, withoutReviewerNames } from './post'
 
 const diff = [
   'diff --git a/src/a.ts b/src/a.ts',
@@ -44,6 +44,7 @@ describe('planPost', () => {
         path: 'src/a.ts',
         line: 11,
         body: `**major: Bug**\n\nImpact: Breaks.\n\nRecommendation: Fix.\n\n<!-- yoke-review: src/a.ts#bug -->`,
+        finding: finding({}),
       },
     ])
   })
@@ -113,5 +114,35 @@ describe('reviewBody', () => {
 
   it('is just the summary when every finding is inline', () => {
     expect(reviewBody('Summary.', [])).toBe('Summary.')
+  })
+
+  it('names no reviewer, even with no summary', () => {
+    expect(reviewBody('', [])).toBe('Adversarial review.')
+    expect(reviewBody('The codex review is missing, so this rests on Claude alone.', [])).toBe(
+      'the reviewer review is missing, so this rests on the reviewer alone.',
+    )
+  })
+})
+
+describe('withoutReviewerNames', () => {
+  it.each([
+    ['Claude flagged it', 'the reviewer flagged it'],
+    ['both opus and gpt-5.1-codex agree', 'both the reviewer and the reviewer agree'],
+    ['a Codex run', 'the reviewer run'],
+    ['claudette and codexes stay', 'claudette and codexes stay'],
+  ])('rewrites %s', (input, expected) => {
+    expect(withoutReviewerNames(input)).toBe(expected)
+  })
+
+  it('keeps reviewer names out of inline comments but keeps the marker stable', () => {
+    const { comments } = plan([finding({ title: 'Claude found a bug', impact: 'Codex agrees.' })])
+    expect(comments[0]?.body).toBe(
+      [
+        '**major: the reviewer found a bug**',
+        'Impact: the reviewer agrees.',
+        'Recommendation: Fix.',
+        '<!-- yoke-review: src/a.ts#claude-found-a-bug -->',
+      ].join('\n\n'),
+    )
   })
 })

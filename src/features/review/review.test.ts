@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,10 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { findingMarker, type PriorComment } from './comments'
 import { parseSynthesis } from './findings'
 import type { Harness, HarnessResult, HarnessRun } from './harness'
+import { type PostDeps, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { type PostDeps, postFindings, type ReviewContext, runReview, savedReviewPath } from './review'
+import { type ReviewContext, reviewRunDir, runReview } from './review'
 import type { ReviewSlots } from './slots'
+import { lineUi } from './status'
 
 const synthesis = `## Summary
 
@@ -45,11 +47,13 @@ afterEach(() => {
 })
 
 function context({ reviews = {}, synthesis: synthesised = synthesis }: Fake = {}, slots = ownAuth): ReviewContext {
+  const { log, track } = lineUi((line) => logs.push(line))
   return {
     cwd: '/repo',
     reviewDir,
     slots,
-    log: (line) => logs.push(line),
+    log,
+    track,
     runHarness: async (run): Promise<HarnessResult> => {
       runs.push(run)
       const output = run.outputPath.endsWith('synthesis.md') ? synthesised : (reviews[run.harness] ?? `${run.harness} says hi`)
@@ -115,8 +119,8 @@ describe('runReview', () => {
       ['codex', 'codex.md', undefined],
       ['claude', 'synthesis.md', ['--model', 'sonnet']],
     ])
-    expect(logs).toContain('claude reviewer (codex:gpt-5-codex) running…')
-    expect(logs).toContain('synthesis (claude:sonnet) running…')
+    expect(logs).toContain('claude reviewer (codex:gpt-5-codex)…')
+    expect(logs).toContain('synthesis (claude:sonnet)…')
   })
 
   it('runs an unset synthesis slot on the first successful reviewer harness without its override', async () => {
@@ -150,6 +154,37 @@ describe('runReview', () => {
       markdown: null,
     })
   })
+
+  it('reuses a cached review and reruns synthesis when a reviewer had to run', async () => {
+    writeFileSync(join(reviewDir, 'claude.md'), 'cached claude review')
+    writeFileSync(join(reviewDir, 'synthesis.md'), 'stale synthesis')
+    const { report } = await runReview('request', context())
+    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['codex.md', 'synthesis.md'])
+    expect(logs).toContain('claude reviewer: cached')
+    expect(report).toContain('Crash')
+  })
+
+  it('reuses the cached synthesis when every reviewer was cached', async () => {
+    writeFileSync(join(reviewDir, 'claude.md'), 'claude')
+    writeFileSync(join(reviewDir, 'codex.md'), 'codex')
+    writeFileSync(join(reviewDir, 'synthesis.md'), synthesis)
+    await runReview('request', context())
+    expect(runs).toEqual([])
+    expect(logs).toContain('synthesis (claude): cached')
+  })
+
+  it('does not cache the output of a failed reviewer', async () => {
+    const failing = context()
+    await runReview('request', {
+      ...failing,
+      runHarness: async (run) => {
+        if (run.harness !== 'codex' || run.outputPath.endsWith('synthesis.md')) return failing.runHarness(run)
+        writeFileSync(run.outputPath, 'partial')
+        return { ok: false, error: 'down' }
+      },
+    })
+    expect(existsSync(join(reviewDir, 'codex.md'))).toBe(false)
+  })
 })
 
 describe('postFindings', () => {
@@ -164,38 +199,73 @@ describe('postFindings', () => {
   }
   const diff = ['+++ b/src/a.ts', '@@ -1,2 +1,3 @@', ' one', '+two', ' three'].join('\n')
 
-  function post(markdown: string, prior: PriorComment[] = []) {
-    const submit = vi.fn<PostDeps['submit']>(() => 'https://github.com/o/r/pull/4#pullrequestreview-1')
-    postFindings(pr, parseSynthesis(markdown), diff, prior, { submit, log: (line) => logs.push(line) })
-    return submit
+  const review = { id: 7, nodeId: 'PRR_7' }
+
+  function fakeApi(overrides: Partial<PostDeps['api']> = {}) {
+    return {
+      open: vi.fn<PostDeps['api']['open']>(() => review),
+      add: vi.fn<PostDeps['api']['add']>(),
+      submit: vi.fn<PostDeps['api']['submit']>(() => 'https://github.com/o/r/pull/4#pullrequestreview-7'),
+      discard: vi.fn<PostDeps['api']['discard']>(),
+      ...overrides,
+    }
   }
 
-  it('submits one review with the inline comments and the body', () => {
-    const submit = post(synthesis)
-    expect(submit).toHaveBeenCalledTimes(1)
-    const [, body, comments] = submit.mock.calls[0] ?? []
-    expect(body).toBe('One bug.')
-    expect(comments).toEqual([{ path: 'src/a.ts', line: 3, body: expect.stringContaining('**major: Crash**') }])
-    expect(logs).toContain('posted 1 inline comment(s) and 0 in the review body: https://github.com/o/r/pull/4#pullrequestreview-1')
+  function post(markdown: string, api = fakeApi(), prior: PriorComment[] = []) {
+    postFindings(pr, parseSynthesis(markdown), diff, prior, { api, log: (line) => logs.push(line) })
+    return api
+  }
+
+  it('adds each inline comment to one pending review, then submits it with the body', () => {
+    const api = post(synthesis)
+    expect(api.open).toHaveBeenCalledTimes(1)
+    expect(api.add).toHaveBeenCalledWith(review, { path: 'src/a.ts', line: 3, body: expect.stringContaining('**major: Crash**') })
+    expect(api.submit).toHaveBeenCalledWith(pr, review, 'One bug.')
+    expect(logs).toContain('posted 1 inline comment(s) and 0 in the review body: https://github.com/o/r/pull/4#pullrequestreview-7')
   })
 
-  it('does not submit when every finding was already raised', () => {
-    const submit = post(synthesis, [
+  it('moves a comment GitHub rejects into the review body', () => {
+    const api = post(
+      synthesis,
+      fakeApi({
+        add: vi.fn(() => {
+          throw new ReviewError('line must be part of the diff')
+        }),
+      }),
+    )
+    expect(api.submit).toHaveBeenCalledWith(pr, review, expect.stringContaining('### Findings outside the diff'))
+    expect(api.submit).toHaveBeenCalledWith(pr, review, expect.stringContaining('`src/a.ts:3` — Crash'))
+    expect(logs).toContain('GitHub rejected the comment on src/a.ts:3, so it goes in the review body: line must be part of the diff')
+    expect(logs).toContain('posted 0 inline comment(s) and 1 in the review body: https://github.com/o/r/pull/4#pullrequestreview-7')
+  })
+
+  it('discards the pending review when submitting fails', () => {
+    const api = fakeApi({
+      submit: vi.fn(() => {
+        throw new ReviewError('boom')
+      }),
+    })
+    expect(() => post(synthesis, api)).toThrow('boom')
+    expect(api.discard).toHaveBeenCalledWith(pr, review)
+  })
+
+  it('does not open a review when every finding was already raised', () => {
+    const api = post(synthesis, fakeApi(), [
       { path: 'src/a.ts', line: 3, author: 'me', body: `old\n\n${findingMarker({ file: 'src/a.ts', title: 'Crash' })}` },
     ])
-    expect(submit).not.toHaveBeenCalled()
+    expect(api.open).not.toHaveBeenCalled()
     expect(logs).toEqual(['skipped 1 finding(s) already raised on the PR', 'nothing new to post'])
   })
 })
 
-describe('savedReviewPath', () => {
+describe('reviewRunDir', () => {
   const pr: PullRequest = { number: 4, title: 't', baseRefName: 'main', baseRefOid: 'b', headRefName: 'f', headRefOid: 'abc', files: [] }
 
-  it('keys the saved review by PR number and head commit under the XDG cache', () => {
-    expect(savedReviewPath(pr, { XDG_CACHE_HOME: '/cache' }, '/home/me')).toBe(join('/cache', 'yoke', 'reviews', '4-abc.md'))
+  it('keys the run by PR number and head commit under the XDG cache', () => {
+    expect(reviewRunDir(pr, { XDG_CACHE_HOME: '/cache' }, '/home/me')).toBe(join('/cache', 'yoke', 'reviews', '4-abc'))
   })
 
   it('defaults to ~/.cache', () => {
-    expect(savedReviewPath(pr, {}, '/home/me')).toBe(join('/home/me', '.cache', 'yoke', 'reviews', '4-abc.md'))
+    expect(reviewRunDir(pr, {}, '/home/me')).toBe(join('/home/me', '.cache', 'yoke', 'reviews', '4-abc'))
   })
 })

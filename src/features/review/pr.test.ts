@@ -2,7 +2,17 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { checkoutHead, fetchPr, fetchPriorComments, ReviewError, type Run, submitReview } from './pr'
+import {
+  addReviewComment,
+  checkoutHead,
+  discardPendingReview,
+  fetchPr,
+  fetchPriorComments,
+  openPendingReview,
+  ReviewError,
+  type Run,
+  submitPendingReview,
+} from './pr'
 import type { PullRequest } from './request'
 
 const pr: PullRequest = {
@@ -77,17 +87,38 @@ describe('fetchPriorComments', () => {
   })
 })
 
-describe('submitReview', () => {
-  it('posts one COMMENT review at the PR head with right-side line comments', () => {
-    const exec = vi.fn<Run>(() => 'https://github.com/o/r/pull/9#pullrequestreview-1\n')
-    expect(submitReview(pr, 'body', [{ path: 'a.ts', line: 3, body: 'c' }], exec)).toBe('https://github.com/o/r/pull/9#pullrequestreview-1')
+describe('pending review', () => {
+  const review = { id: 5, nodeId: 'PRR_5' }
+
+  it('opens a pending review at the PR head', () => {
+    const exec = vi.fn<Run>(() => '{"id":5,"node_id":"PRR_5"}')
+    expect(openPendingReview(pr, exec)).toEqual(review)
     const [command, args, , input] = exec.mock.calls[0] ?? []
     expect([command, ...(args ?? []).slice(0, 4)]).toEqual(['gh', 'api', '--method', 'POST', 'repos/{owner}/{repo}/pulls/9/reviews'])
-    expect(JSON.parse(input ?? '')).toEqual({
-      commit_id: 'head',
-      event: 'COMMENT',
-      body: 'body',
-      comments: [{ path: 'a.ts', line: 3, body: 'c', side: 'RIGHT' }],
-    })
+    expect(JSON.parse(input ?? '')).toEqual({ commit_id: 'head' })
+  })
+
+  it('adds a right-side comment to it by node id', () => {
+    const exec = vi.fn<Run>(() => '')
+    addReviewComment(review, { path: 'a.ts', line: 3, body: '@not-a-file' }, exec)
+    const args = exec.mock.calls[0]?.[1] ?? []
+    expect(args.slice(0, 2)).toEqual(['api', 'graphql'])
+    expect(args).toEqual(expect.arrayContaining(['review=PRR_5', 'path=a.ts', 'line=3', 'body=@not-a-file']))
+    expect(args[args.indexOf('body=@not-a-file') - 1]).toBe('-f')
+    expect(args.find((arg) => arg.startsWith('query='))).toContain('side: RIGHT')
+  })
+
+  it('submits it as a COMMENT with the body', () => {
+    const exec = vi.fn<Run>(() => 'https://github.com/o/r/pull/9#pullrequestreview-5\n')
+    expect(submitPendingReview(pr, review, 'body', exec)).toBe('https://github.com/o/r/pull/9#pullrequestreview-5')
+    const [, args, , input] = exec.mock.calls[0] ?? []
+    expect(args).toContain('repos/{owner}/{repo}/pulls/9/reviews/5/events')
+    expect(JSON.parse(input ?? '')).toEqual({ event: 'COMMENT', body: 'body' })
+  })
+
+  it('deletes it', () => {
+    const exec = vi.fn<Run>(() => '')
+    discardPendingReview(pr, review, exec)
+    expect(exec).toHaveBeenCalledWith('gh', ['api', '--method', 'DELETE', 'repos/{owner}/{repo}/pulls/9/reviews/5'])
   })
 })

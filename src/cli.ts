@@ -18,6 +18,7 @@ import { PrValidationError, raisePr } from './features/pr/raise'
 import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
+import { lineUi, spinnerUi } from './features/review/status'
 import { skillsRoot, syncSkills } from './features/sync/sync'
 
 const { version } = packageJson
@@ -87,18 +88,24 @@ addSettingOptions(
     .command('review')
     .description("Review the current branch's PR, or PR <number>, with Claude and Codex in parallel, then combine their findings")
     .argument('[number]', 'PR number; reviewed without checking it out')
-    .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one'),
+    .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one')
+    .option('--force', "discard this PR head's cached reviews and run every pass again")
+    .option('--verbose', 'print every step as a log line instead of live spinners'),
   settingKeys,
 )
   .addHelpText('after', settingsHelp)
-  .action(async (number: string | undefined, options: { post?: boolean } & Record<string, unknown>) => {
+  .action(async (number: string | undefined, options: { post?: boolean; force?: boolean; verbose?: boolean } & Record<string, unknown>) => {
+    const ui = process.stderr.isTTY && !options.verbose ? spinnerUi(process.stderr) : lineUi(console.error)
     try {
       const settings = resolveSettings(flagSettings(options, settingKeys), process.env, readUserConfig(userConfigPath()))
-      await reviewPr(number, settings, { post: options.post ?? false }, { out: console.log, log: console.error })
+      const run = { post: options.post ?? false, force: options.force ?? false }
+      await reviewPr(number, settings, run, { out: console.log, ui })
     } catch (error) {
       if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
       console.error(error.message)
       process.exitCode = 1
+    } finally {
+      ui.stop()
     }
   })
 
