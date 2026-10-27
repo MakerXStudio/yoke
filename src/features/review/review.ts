@@ -8,6 +8,7 @@ import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { type HarnessRun, type RunHarness, runHarness } from './harness'
 import { planPost, reviewBody } from './post'
 import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, ReviewError, submitReview } from './pr'
+import { assertViable } from './preflight'
 import { buildReviewerPrompt, buildSynthesisPrompt } from './prompts'
 import { buildRequest, type PullRequest } from './request'
 import { type Reviewer, type ReviewSlots, resolveSlots, type Slot } from './slots'
@@ -26,8 +27,8 @@ function seconds(since: number): string {
   return `${Math.round((Date.now() - since) / 1000)}s`
 }
 
-function describeSlot({ harness, model }: Slot): string {
-  return model ? `${harness}:${model}` : harness
+function describeSlot({ harness, model, probe }: Slot): string {
+  return `${harness}${model ? `:${model}` : ''}${probe ? '@provider' : ''}`
 }
 
 async function runStep({ label, slot, ...step }: Step, { log, ...context }: ReviewContext): Promise<boolean> {
@@ -150,6 +151,7 @@ export async function reviewPr(
     log(`posting the saved review of #${pr.number} at ${pr.headRefOid.slice(0, 7)}`)
     out(formatSynthesis(synthesis))
   } else {
+    await assertViable(slots)
     log(`reviewing #${pr.number} ${pr.title}`)
     const result = await reviewAtHead(pr, buildRequest(pr, diff, prior), slots, log)
     out(result.report)

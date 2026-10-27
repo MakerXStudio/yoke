@@ -3,16 +3,20 @@ import type { Harness } from './harness'
 import { ReviewError } from './pr'
 import {
   buildOverride,
+  buildProbe,
   isProviderKind,
   type Override,
+  ownAuthOverride,
+  type ParsedSlot,
   parseSlot,
+  type ProbeRequest,
   type Provider,
   providerKinds,
   type SlotModel,
   slotFormat,
 } from './provider'
 
-export type Slot = { harness: Harness; model?: string; override?: Override }
+export type Slot = { harness: Harness; model?: string; override?: Override; probe?: ProbeRequest }
 
 export type Reviewer = 'claude' | 'codex'
 
@@ -35,7 +39,7 @@ function kindError(kind: string | undefined): string | null {
   return null
 }
 
-function readProvider(settings: Settings): Provider | string[] {
+export function readProvider(settings: Settings): Provider | string[] {
   const kind = settings['modelProvider.kind']
   const baseUrl = settings['modelProvider.baseUrl']
   const apiKey = settings['modelProvider.apiKey']
@@ -47,28 +51,33 @@ function readProvider(settings: Settings): Provider | string[] {
   ].filter((error) => error !== null)
 }
 
-function toSlot(model: SlotModel | undefined, provider: Provider): Slot | undefined {
-  return model && { ...model, override: buildOverride(model, provider) }
+function toSlot({ harness, model, viaProvider }: ParsedSlot, provider: Provider | null): Slot {
+  if (!model) return { harness }
+  const slot: SlotModel = { harness, model }
+  if (viaProvider && provider) return { ...slot, override: buildOverride(slot, provider), probe: buildProbe(slot, provider) }
+  return { ...slot, override: ownAuthOverride(slot) }
 }
 
 export function resolveSlots(settings: Settings): ReviewSlots {
-  const models: Partial<Record<SlotName, SlotModel>> = {}
+  const parsed: Partial<Record<SlotName, ParsedSlot>> = {}
   const errors: string[] = []
   for (const [name, key] of slotKeys) {
     const value = settings[key]
     if (!value) continue
-    const model = parseSlot(value)
-    if (model) models[name] = model
-    else errors.push(`${key} "${value}" must be ${slotFormat}; ${howToSet(key, '<harness:model>')}`)
+    const slot = parseSlot(value)
+    if (slot) parsed[name] = slot
+    else errors.push(`${key} "${value}" must be ${slotFormat}; ${howToSet(key, '<harness[:model][@provider]>')}`)
   }
-  if (!Object.keys(models).length && !errors.length) return { claude: { harness: 'claude' }, codex: { harness: 'codex' } }
-  const provider = readProvider(settings)
-  if (Array.isArray(provider)) errors.push(...provider)
-  if (errors.length || Array.isArray(provider))
-    throw new ReviewError(['Review settings are incomplete:', ...errors.map((error) => `- ${error}`)].join('\n'))
+  let provider: Provider | null = null
+  if (Object.values(parsed).some((slot) => slot.viaProvider)) {
+    const read = readProvider(settings)
+    if (Array.isArray(read)) errors.push(...read)
+    else provider = read
+  }
+  if (errors.length) throw new ReviewError(['Review settings are incomplete:', ...errors.map((error) => `- ${error}`)].join('\n'))
   return {
-    claude: toSlot(models.claude, provider) ?? { harness: 'claude' },
-    codex: toSlot(models.codex, provider) ?? { harness: 'codex' },
-    synthesis: toSlot(models.synthesis, provider),
+    claude: parsed.claude ? toSlot(parsed.claude, provider) : { harness: 'claude' },
+    codex: parsed.codex ? toSlot(parsed.codex, provider) : { harness: 'codex' },
+    synthesis: parsed.synthesis && toSlot(parsed.synthesis, provider),
   }
 }

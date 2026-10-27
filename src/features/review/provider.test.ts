@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildOverride, deriveEndpoints, parseSlot } from './provider'
+import { buildOverride, buildProbe, deriveEndpoints, parseSlot } from './provider'
+
+describe('buildProbe', () => {
+  it('pings the Codex responses endpoint with a bearer key', () => {
+    expect(buildProbe({ harness: 'codex', model: 'gpt-5' }, { kind: 'litellm', baseUrl: 'https://llm', apiKey: 'k' })).toEqual({
+      url: 'https://llm/v1/responses',
+      headers: { Authorization: 'Bearer k' },
+      body: { model: 'gpt-5', input: 'ping', max_output_tokens: 16 },
+    })
+  })
+
+  it('pings the Foundry messages endpoint with x-api-key', () => {
+    const probe = buildProbe({ harness: 'claude', model: 'sonnet' }, { kind: 'foundry', baseUrl: 'https://res', apiKey: 'k' })
+    expect(probe.url).toBe('https://res/anthropic/v1/messages')
+    expect(probe.headers).toEqual({ 'x-api-key': 'k', 'anthropic-version': '2023-06-01' })
+  })
+})
 
 describe('deriveEndpoints', () => {
   it('uses the LiteLLM root for Claude and /v1 for Codex', () => {
@@ -19,12 +35,20 @@ describe('deriveEndpoints', () => {
 })
 
 describe('parseSlot', () => {
-  it('splits harness and model at the first colon', () => {
-    expect(parseSlot('codex:gpt-5-codex')).toEqual({ harness: 'codex', model: 'gpt-5-codex' })
-    expect(parseSlot(' claude : bedrock:claude ')).toEqual({ harness: 'claude', model: 'bedrock:claude' })
+  it('accepts a bare harness', () => {
+    expect(parseSlot('claude')).toEqual({ harness: 'claude', viaProvider: false })
   })
 
-  it.each(['gpt-5', 'gemini:pro', 'claude:', ':opus'])('rejects %s', (value) => {
+  it('splits harness and model at the first colon', () => {
+    expect(parseSlot('codex:gpt-5-codex')).toEqual({ harness: 'codex', model: 'gpt-5-codex', viaProvider: false })
+    expect(parseSlot(' claude : bedrock:claude ')).toEqual({ harness: 'claude', model: 'bedrock:claude', viaProvider: false })
+  })
+
+  it('routes through the provider with a trailing @provider', () => {
+    expect(parseSlot('codex:gpt-5@provider')).toEqual({ harness: 'codex', model: 'gpt-5', viaProvider: true })
+  })
+
+  it.each(['gpt-5', 'gemini:pro', 'claude:', ':opus', 'codex@provider'])('rejects %s', (value) => {
     expect(parseSlot(value)).toBeNull()
   })
 })

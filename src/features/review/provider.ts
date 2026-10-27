@@ -30,15 +30,26 @@ function isHarness(value: string): value is Harness {
   return (harnesses as string[]).includes(value)
 }
 
-export function parseSlot(value: string): SlotModel | null {
-  const separator = value.indexOf(':')
-  const harness = value.slice(0, separator).trim()
-  const model = value.slice(separator + 1).trim()
-  if (separator === -1 || !isHarness(harness) || !model) return null
-  return { harness, model }
+export type ParsedSlot = { harness: Harness; model?: string; viaProvider: boolean }
+
+const providerSuffix = '@provider'
+
+export function parseSlot(value: string): ParsedSlot | null {
+  const trimmed = value.trim()
+  const viaProvider = trimmed.endsWith(providerSuffix)
+  const spec = viaProvider ? trimmed.slice(0, -providerSuffix.length) : trimmed
+  const separator = spec.indexOf(':')
+  const harness = (separator === -1 ? spec : spec.slice(0, separator)).trim()
+  const model = separator === -1 ? undefined : spec.slice(separator + 1).trim()
+  if (!isHarness(harness) || model === '' || (viaProvider && !model)) return null
+  return model ? { harness, model, viaProvider } : { harness, viaProvider }
 }
 
-export const slotFormat = harnesses.map((harness) => `${harness}:<model>`).join(' or ')
+export const slotFormat = `<claude|codex>[:<model>][${providerSuffix}], with a model when using ${providerSuffix}`
+
+export function ownAuthOverride({ harness, model }: SlotModel): Override {
+  return { args: harness === 'codex' ? ['-m', model] : ['--model', model], env: {} }
+}
 
 function buildCodexOverride(endpoints: Endpoints, apiKey: string, model: string): Override {
   return {
@@ -77,6 +88,28 @@ function buildClaudeOverride(provider: Provider, endpoints: Endpoints, model: st
       ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
       CLAUDE_CODE_SUBAGENT_MODEL: model,
     },
+  }
+}
+
+export type ProbeRequest = { url: string; headers: Record<string, string>; body: unknown }
+
+function claudeAuthHeaders({ kind, apiKey }: Provider): Record<string, string> {
+  if (kind === 'foundry') return { 'x-api-key': apiKey }
+  return { Authorization: `Bearer ${apiKey}`, 'x-api-key': apiKey }
+}
+
+export function buildProbe({ harness, model }: SlotModel, provider: Provider): ProbeRequest {
+  const endpoints = deriveEndpoints(provider.kind, provider.baseUrl)
+  if (harness === 'codex')
+    return {
+      url: `${endpoints.responses}/responses`,
+      headers: { Authorization: `Bearer ${provider.apiKey}` },
+      body: { model, input: 'ping', max_output_tokens: 16 },
+    }
+  return {
+    url: `${endpoints.anthropic}/v1/messages`,
+    headers: { ...claudeAuthHeaders(provider), 'anthropic-version': '2023-06-01' },
+    body: { model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] },
   }
 }
 

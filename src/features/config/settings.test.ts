@@ -1,6 +1,42 @@
 import { describe, expect, it } from 'vitest'
 
-import { howToSet, resolveSettings } from './settings'
+import { howToSet, listSettings, resolveSettings } from './settings'
+
+describe('listSettings', () => {
+  it('lists every key with its value, masking secrets and marking unset keys', () => {
+    const lines = listSettings({ 'modelProvider.kind': 'litellm', 'modelProvider.apiKey': 'sk-123', 'review.reviewer2': 'codex:gpt-5' })
+      .split('\n')
+      .filter((line) => /^\S/.test(line))
+      .slice(0, 6)
+    expect(lines).toEqual([
+      'modelProvider.kind     litellm',
+      'modelProvider.baseUrl  <not set>',
+      'modelProvider.apiKey   ****',
+      'review.reviewer1       <not set>',
+      'review.reviewer2       codex:gpt-5',
+      'review.synthesis       <not set>',
+    ])
+  })
+
+  it('puts each description under its value and ends with example slot values', () => {
+    const output = listSettings({})
+    expect(output).toContain('review.reviewer1       <not set>\n                       First reviewer. Default: claude on your own login')
+    expect(output).toContain('  codex:gpt-5@provider    codex through the model provider, using gpt-5')
+  })
+
+  it('wraps a description within the terminal, aligned under the value whatever the value length', () => {
+    const lines = listSettings({ 'modelProvider.baseUrl': 'https://a-very-long-resource-name.services.ai.azure.com' }, 70).split('\n')
+    const baseUrl = lines.findIndex((line) => line.startsWith('modelProvider.baseUrl'))
+    const end = lines.indexOf('', baseUrl)
+    const description = lines.slice(baseUrl + 1, end)
+    expect(description.length).toBeGreaterThan(1)
+    expect(description.every((line) => /^ {23}\S/.test(line) && line.length <= 70)).toBe(true)
+  })
+
+  it('marks an unset secret as not set', () => {
+    expect(listSettings({})).toContain('modelProvider.apiKey   <not set>')
+  })
+})
 
 describe('resolveSettings', () => {
   it('prefers the flag, then the env var, then the user config', () => {

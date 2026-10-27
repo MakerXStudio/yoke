@@ -3,10 +3,11 @@ import { relative } from 'node:path'
 import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
-import { resolveSettings, settingKeys } from './features/config/settings'
+import { listSettings, resolveSettings, settingKeys } from './features/config/settings'
 import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
+import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
 import { skillsRoot, syncSkills } from './features/sync/sync'
@@ -53,11 +54,11 @@ program
   .description("Review the current branch's PR, or PR <number>, with Claude and Codex in parallel, then combine their findings")
   .argument('[number]', 'PR number; reviewed without checking it out')
   .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one')
-  .option('--provider <kind>', 'model provider for slots that name a model: litellm or foundry')
+  .option('--provider <kind>', 'model provider for @provider slots: litellm or foundry')
   .option('--base-url <url>', 'LiteLLM proxy root, or https://<resource>.services.ai.azure.com for Foundry')
-  .option('--reviewer-1 <harness:model>', 'run the first reviewer through the provider, e.g. claude:claude-sonnet-4-5')
-  .option('--reviewer-2 <harness:model>', 'run the second reviewer through the provider, e.g. codex:gpt-5-codex')
-  .option('--synthesis <harness:model>', 'run the synthesis pass through the provider')
+  .option('--reviewer-1 <harness[:model][@provider]>', 'first reviewer, e.g. claude:opus, or codex:gpt-5@provider (default claude)')
+  .option('--reviewer-2 <harness[:model][@provider]>', 'second reviewer (default codex)')
+  .option('--synthesis <harness[:model][@provider]>', "pass that combines the reviews (default the first reviewer's CLI)")
   .addHelpText(
     'after',
     '\nEach setting falls back to its YOKE_* env var, then `yoke config set --user`. The API key comes from YOKE_MODEL_PROVIDER_API_KEY or modelProvider.apiKey only.',
@@ -80,7 +81,37 @@ program
     }
   })
 
+program
+  .command('models')
+  .description('List the models the model provider serves, for use in @provider slots')
+  .option('--provider <kind>', 'model provider: litellm or foundry')
+  .option('--base-url <url>', 'LiteLLM proxy root, or https://<resource>.services.ai.azure.com for Foundry')
+  .action(async (options: { provider?: string; baseUrl?: string }) => {
+    try {
+      const flags = { 'modelProvider.kind': options.provider, 'modelProvider.baseUrl': options.baseUrl }
+      const models = await listModels(resolveSettings(flags, process.env, readUserConfig(userConfigPath())))
+      console.log(models.join('\n'))
+    } catch (error) {
+      if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
+
 const config = program.command('config').description('yoke settings')
+
+config
+  .command('list', { isDefault: true })
+  .description('List every setting and its value from YOKE_* env vars, then the user-level yoke config; secrets are masked')
+  .action(() => {
+    try {
+      console.log(listSettings(resolveSettings({}, process.env, readUserConfig(userConfigPath())), process.stdout.columns))
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
 
 config
   .command('set')

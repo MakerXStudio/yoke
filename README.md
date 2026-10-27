@@ -26,13 +26,13 @@ yoke sync --user   # ~/.claude/skills
 
 ### Running review slots through a model provider
 
-Any of the reviewer and synthesis slots can run through a LiteLLM proxy or Azure AI Foundry instead of your own auth. Set the provider and name a `harness:model` for each slot you want routed through it; unset slots stay on your own `claude`/`codex` login.
+Each of `review.reviewer1`, `review.reviewer2` and `review.synthesis` is `<claude|codex>[:<model>][@provider]`: the CLI to run, an optional model, and `@provider` to run it through a LiteLLM proxy or Azure AI Foundry instead of your own login. `@provider` needs a model. Unset, the reviewers run `claude` and `codex` on your own login. Run `yoke config` to see every setting, its value and what it does.
 
 ```sh
 yoke config set --user modelProvider.kind litellm            # or foundry
 yoke config set --user modelProvider.baseUrl https://llm.example.com
 yoke config set --user modelProvider.apiKey <key>
-yoke config set --user review.reviewer2 codex:gpt-5-codex
+yoke config set --user review.reviewer2 codex:gpt-5-codex@provider
 ```
 
 Settings live in `~/.config/yoke/config.json` (or `$XDG_CONFIG_HOME/yoke/config.json`); repo-level config is not supported. Each one can be overridden per run with a flag (`--provider`, `--base-url`, `--reviewer-1`, `--reviewer-2`, `--synthesis`) or an env var (`YOKE_MODEL_PROVIDER_KIND`, `YOKE_MODEL_PROVIDER_BASE_URL`, `YOKE_MODEL_PROVIDER_API_KEY`, `YOKE_REVIEW_REVIEWER_1`, `YOKE_REVIEW_REVIEWER_2`, `YOKE_REVIEW_SYNTHESIS`). The API key has no flag.

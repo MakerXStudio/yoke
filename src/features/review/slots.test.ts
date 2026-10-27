@@ -20,8 +20,22 @@ describe('resolveSlots', () => {
     expect(resolveSlots({ 'modelProvider.kind': 'bogus' })).toEqual({ claude: { harness: 'claude' }, codex: { harness: 'codex' } })
   })
 
-  it('routes a named slot through the provider and leaves the rest on own auth', () => {
-    const slots = resolveSlots({ ...provider, 'review.reviewer2': 'codex:gpt-5-codex', 'review.synthesis': 'claude:sonnet' })
+  it('passes a model to a harness on own auth without needing the provider', () => {
+    const slots = resolveSlots({ 'review.reviewer1': 'claude:opus', 'review.reviewer2': 'codex:gpt-5' })
+    expect(slots.claude).toEqual({ harness: 'claude', model: 'opus', override: { args: ['--model', 'opus'], env: {} } })
+    expect(slots.codex).toEqual({ harness: 'codex', model: 'gpt-5', override: { args: ['-m', 'gpt-5'], env: {} } })
+  })
+
+  it('lets a slot swap its harness', () => {
+    expect(resolveSlots({ 'review.reviewer1': 'codex' }).claude).toEqual({ harness: 'codex' })
+  })
+
+  it('routes an @provider slot through the provider and leaves the rest on own auth', () => {
+    const slots = resolveSlots({
+      ...provider,
+      'review.reviewer2': 'codex:gpt-5-codex@provider',
+      'review.synthesis': 'claude:sonnet@provider',
+    })
     expect(slots.claude).toEqual({ harness: 'claude' })
     expect(slots.codex).toMatchObject({ harness: 'codex', model: 'gpt-5-codex' })
     expect(slots.codex.override?.args).toContain('model_providers.yoke.base_url=https://res/openai/v1')
@@ -30,7 +44,7 @@ describe('resolveSlots', () => {
   })
 
   it('names every missing provider setting and how to set it', () => {
-    const message = errorOf(() => resolveSlots({ 'review.reviewer1': 'claude:sonnet' }))
+    const message = errorOf(() => resolveSlots({ 'review.reviewer1': 'claude:sonnet@provider' }))
     expect(message.split('\n')).toEqual([
       'Review settings are incomplete:',
       '- modelProvider.kind is not set; pass --provider, set YOKE_MODEL_PROVIDER_KIND or run `yoke config set --user modelProvider.kind <litellm|foundry>`',
@@ -40,7 +54,9 @@ describe('resolveSlots', () => {
   })
 
   it('names an unknown provider kind', () => {
-    const message = errorOf(() => resolveSlots({ ...provider, 'modelProvider.kind': 'openrouter', 'review.reviewer1': 'claude:sonnet' }))
+    const message = errorOf(() =>
+      resolveSlots({ ...provider, 'modelProvider.kind': 'openrouter', 'review.reviewer1': 'claude:sonnet@provider' }),
+    )
     expect(message).toContain('- modelProvider.kind "openrouter" must be litellm or foundry; pass --provider')
     expect(message.split('\n')).toHaveLength(2)
   })
@@ -48,7 +64,7 @@ describe('resolveSlots', () => {
   it('names a malformed slot', () => {
     const message = errorOf(() => resolveSlots({ ...provider, 'review.synthesis': 'gpt-5' }))
     expect(message).toContain(
-      '- review.synthesis "gpt-5" must be claude:<model> or codex:<model>; pass --synthesis, set YOKE_REVIEW_SYNTHESIS or run `yoke config set --user review.synthesis <harness:model>`',
+      '- review.synthesis "gpt-5" must be <claude|codex>[:<model>][@provider], with a model when using @provider; pass --synthesis, set YOKE_REVIEW_SYNTHESIS or run `yoke config set --user review.synthesis <harness[:model][@provider]>`',
     )
   })
 })
