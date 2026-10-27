@@ -22,12 +22,13 @@ export async function timed<T>(ui: StatusUi, label: string, work: () => T | Prom
   }
 }
 
-export function lineUi(log: Log): StatusUi {
+export function lineUi(log: Log, { activity }: { activity: boolean }): StatusUi {
   return {
     log,
     track: (label) => {
       log(`${label}…`)
-      return { update: (activity) => log(`${label}: ${activity}`), succeed: log, fail: log }
+      const update = (text: string) => (activity ? log(`${label}: ${text}`) : undefined)
+      return { update, succeed: log, fail: log }
     },
     stop: () => {},
   }

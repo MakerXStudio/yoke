@@ -90,12 +90,13 @@ addSettingOptions(
     .argument('[number]', 'PR number; reviewed without checking it out')
     .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one')
     .option('--force', "discard this PR head's cached reviews and run every pass again")
-    .option('--verbose', 'print every step as a log line instead of live spinners'),
+    .option('--verbose', "print every step and each reviewer's tool calls as log lines instead of live spinners"),
   settingKeys,
 )
   .addHelpText('after', settingsHelp)
   .action(async (number: string | undefined, options: { post?: boolean; force?: boolean; verbose?: boolean } & Record<string, unknown>) => {
-    const ui = process.stderr.isTTY && !options.verbose ? spinnerUi(process.stderr) : lineUi(console.error)
+    const verbose = options.verbose ?? false
+    const ui = process.stderr.isTTY && !verbose ? spinnerUi(process.stderr) : lineUi(console.error, { activity: verbose })
     try {
       const settings = resolveSettings(flagSettings(options, settingKeys), process.env, readUserConfig(userConfigPath()))
       const run = { post: options.post ?? false, force: options.force ?? false }

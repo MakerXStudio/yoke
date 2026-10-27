@@ -15,14 +15,21 @@ function fakeTerminal(): { terminal: Writable; output: () => string } {
   return { terminal, output: () => chunks.join('') }
 }
 
+function run(activity: boolean): string[] {
+  const logs: string[] = []
+  const status = lineUi((line) => logs.push(line), { activity }).track('claude reviewer')
+  status.update('Read src/a.ts')
+  status.succeed('claude reviewer done in 3s')
+  return logs
+}
+
 describe('lineUi', () => {
   it('logs each step as it starts, works and finishes', () => {
-    const logs: string[] = []
-    const { track } = lineUi((line) => logs.push(line))
-    const status = track('claude reviewer')
-    status.update('Read src/a.ts')
-    status.succeed('claude reviewer done in 3s')
-    expect(logs).toEqual(['claude reviewer…', 'claude reviewer: Read src/a.ts', 'claude reviewer done in 3s'])
+    expect(run(true)).toEqual(['claude reviewer…', 'claude reviewer: Read src/a.ts', 'claude reviewer done in 3s'])
+  })
+
+  it('leaves out tool activity when asked to', () => {
+    expect(run(false)).toEqual(['claude reviewer…', 'claude reviewer done in 3s'])
   })
 })
 

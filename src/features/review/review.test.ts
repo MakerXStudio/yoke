@@ -10,7 +10,8 @@ import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { type ReviewContext, reviewRunDir, runReview } from './review'
+import { reviewRunDir } from './review'
+import { type ReviewContext, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
 
@@ -47,7 +48,7 @@ afterEach(() => {
 })
 
 function context({ reviews = {}, synthesis: synthesised = synthesis }: Fake = {}, slots = ownAuth): ReviewContext {
-  const { log, track } = lineUi((line) => logs.push(line))
+  const { log, track } = lineUi((line) => logs.push(line), { activity: true })
   return {
     cwd: '/repo',
     reviewDir,
