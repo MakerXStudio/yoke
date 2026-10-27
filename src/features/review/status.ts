@@ -1,3 +1,5 @@
+import { styleText } from 'node:util'
+
 import { createLogUpdate } from 'log-update'
 
 type Log = (line: string) => void
@@ -42,7 +44,8 @@ export function spinnerUi(stream: NodeJS.WritableStream): StatusUi {
   let frame = 0
   let timer: ReturnType<typeof setInterval> | undefined
 
-  const render = () => update(running.map((entry) => `${frames[frame]} ${entry.text}`).join('\n'))
+  const paint = (colour: 'cyan' | 'green' | 'red', text: string) => styleText(colour, text, { stream })
+  const render = () => update(running.map((entry) => `${paint('cyan', frames[frame] ?? '')} ${entry.text}`).join('\n'))
   const persist = (line: string) => {
     update.clear()
     update.persist(line)
@@ -68,8 +71,8 @@ export function spinnerUi(stream: NodeJS.WritableStream): StatusUi {
       render()
       return {
         update: (activity) => (entry.text = `${label} — ${activity}`),
-        succeed: (text) => settle(entry, `✔ ${text}`),
-        fail: (text) => settle(entry, `✖ ${text}`),
+        succeed: (text) => settle(entry, `${paint('green', '✓')} ${text}`),
+        fail: (text) => settle(entry, `${paint('red', '✗')} ${text}`),
       }
     },
     stop: () => {

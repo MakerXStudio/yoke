@@ -36,7 +36,7 @@ describe('spinnerUi', () => {
     ui.log('showing the raw reviews instead')
     ui.stop()
     expect(output()).toContain('⠋ codex reviewer')
-    expect(output()).toContain('✖ codex reviewer failed after 2s: down')
+    expect(output()).toContain('✗ codex reviewer failed after 2s: down')
     expect(output()).toContain('showing the raw reviews instead')
   })
 })
