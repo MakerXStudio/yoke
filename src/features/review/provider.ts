@@ -12,7 +12,9 @@ export type Override = { args: string[]; env: Record<string, string> }
 
 const harnesses: Harness[] = ['claude', 'codex']
 
-const codexKeyEnv = 'YOKE_MODEL_PROVIDER_API_KEY'
+function codexKeyEnv(kind: ProviderKind): string {
+  return `YOKE_${kind.toUpperCase()}_API_KEY`
+}
 
 export function isProviderKind(value: string): value is ProviderKind {
   return (providerKinds as readonly string[]).includes(value)
@@ -26,32 +28,16 @@ export function deriveEndpoints(kind: ProviderKind, baseUrl: string): Endpoints 
 
 export type SlotModel = { harness: Harness; model: string }
 
-function isHarness(value: string): value is Harness {
+export function isHarness(value: string): value is Harness {
   return (harnesses as string[]).includes(value)
 }
-
-export type ParsedSlot = { harness: Harness; model?: string; viaProvider: boolean }
-
-const providerSuffix = '@provider'
-
-export function parseSlot(value: string): ParsedSlot | null {
-  const trimmed = value.trim()
-  const viaProvider = trimmed.endsWith(providerSuffix)
-  const spec = viaProvider ? trimmed.slice(0, -providerSuffix.length) : trimmed
-  const separator = spec.indexOf(':')
-  const harness = (separator === -1 ? spec : spec.slice(0, separator)).trim()
-  const model = separator === -1 ? undefined : spec.slice(separator + 1).trim()
-  if (!isHarness(harness) || model === '' || (viaProvider && !model)) return null
-  return model ? { harness, model, viaProvider } : { harness, viaProvider }
-}
-
-export const slotFormat = `<claude|codex>[:<model>][${providerSuffix}], with a model when using ${providerSuffix}`
 
 export function ownAuthOverride({ harness, model }: SlotModel): Override {
   return { args: harness === 'codex' ? ['-m', model] : ['--model', model], env: {} }
 }
 
-function buildCodexOverride(endpoints: Endpoints, apiKey: string, model: string): Override {
+function buildCodexOverride({ kind, apiKey }: Provider, endpoints: Endpoints, model: string): Override {
+  const keyEnv = codexKeyEnv(kind)
   return {
     args: [
       '-c',
@@ -59,7 +45,7 @@ function buildCodexOverride(endpoints: Endpoints, apiKey: string, model: string)
       '-c',
       `model_providers.yoke.base_url=${endpoints.responses}`,
       '-c',
-      `model_providers.yoke.env_key=${codexKeyEnv}`,
+      `model_providers.yoke.env_key=${keyEnv}`,
       '-c',
       'model_providers.yoke.wire_api=responses',
       '-c',
@@ -67,7 +53,7 @@ function buildCodexOverride(endpoints: Endpoints, apiKey: string, model: string)
       '-m',
       model,
     ],
-    env: { [codexKeyEnv]: apiKey },
+    env: { [keyEnv]: apiKey },
   }
 }
 
@@ -115,6 +101,6 @@ export function buildProbe({ harness, model }: SlotModel, provider: Provider): P
 
 export function buildOverride({ harness, model }: SlotModel, provider: Provider): Override {
   const endpoints = deriveEndpoints(provider.kind, provider.baseUrl)
-  if (harness === 'codex') return buildCodexOverride(endpoints, provider.apiKey, model)
+  if (harness === 'codex') return buildCodexOverride(provider, endpoints, model)
   return buildClaudeOverride(provider, endpoints, model)
 }

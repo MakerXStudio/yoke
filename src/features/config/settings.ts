@@ -1,28 +1,30 @@
 import { z } from 'zod'
 
-const slotExamples = [
-  'review.* values, for example:',
-  '  claude                  claude on your own login',
-  '  claude:opus             claude on your own login, using opus',
-  '  codex:gpt-5@provider    codex through the model provider, using gpt-5',
-]
+function setting(description: string) {
+  return z.string().optional().meta({ description })
+}
+
+function secret(description: string) {
+  return z.string().optional().meta({ description, secret: true })
+}
+
+const providerHelp = 'litellm or foundry. Unset: your own login'
+const modelHelp = 'See `yoke models`. Required with a provider'
 
 const settingsSchema = z.object({
-  'modelProvider.kind': z.string().optional().meta({ description: 'Model provider that @provider slots run through: litellm or foundry' }),
-  'modelProvider.baseUrl': z
-    .string()
-    .optional()
-    .meta({ description: 'Model provider URL: the LiteLLM proxy root, or https://<resource>.services.ai.azure.com for Foundry' }),
-  'modelProvider.apiKey': z
-    .string()
-    .optional()
-    .meta({ description: 'Model provider API key; set YOKE_MODEL_PROVIDER_API_KEY or run `yoke config set --user`', secret: true }),
-  'review.reviewer1': z.string().optional().meta({ description: 'First reviewer. Default: claude on your own login' }),
-  'review.reviewer2': z.string().optional().meta({ description: 'Second reviewer. Default: codex on your own login' }),
-  'review.synthesis': z
-    .string()
-    .optional()
-    .meta({ description: "Combines and ranks both reviews. Default: the first reviewer's CLI on your own login" }),
+  'litellm.baseUrl': setting('LiteLLM proxy URL'),
+  'litellm.apiKey': secret('LiteLLM API key. Env or --user config only'),
+  'foundry.baseUrl': setting('https://<resource>.services.ai.azure.com'),
+  'foundry.apiKey': secret('Foundry API key. Env or --user config only'),
+  'review.reviewer1.harness': setting('claude or codex. Default: claude'),
+  'review.reviewer1.provider': setting(providerHelp),
+  'review.reviewer1.model': setting(modelHelp),
+  'review.reviewer2.harness': setting('claude or codex. Default: codex'),
+  'review.reviewer2.provider': setting(providerHelp),
+  'review.reviewer2.model': setting(modelHelp),
+  'review.synthesis.harness': setting('claude or codex. Default: reviewer1 harness'),
+  'review.synthesis.provider': setting(providerHelp),
+  'review.synthesis.model': setting(modelHelp),
 })
 
 export const settingKeys = settingsSchema.keyof().options
@@ -31,26 +33,40 @@ export type SettingKey = (typeof settingKeys)[number]
 
 export type Settings = z.infer<typeof settingsSchema>
 
-export type FlagSettings = Partial<Record<Exclude<SettingKey, 'modelProvider.apiKey'>, string>>
-
-const sources: Record<SettingKey, { env: string; flag?: string }> = {
-  'modelProvider.kind': { env: 'YOKE_MODEL_PROVIDER_KIND', flag: '--provider' },
-  'modelProvider.baseUrl': { env: 'YOKE_MODEL_PROVIDER_BASE_URL', flag: '--base-url' },
-  'modelProvider.apiKey': { env: 'YOKE_MODEL_PROVIDER_API_KEY' },
-  'review.reviewer1': { env: 'YOKE_REVIEW_REVIEWER_1', flag: '--reviewer-1' },
-  'review.reviewer2': { env: 'YOKE_REVIEW_REVIEWER_2', flag: '--reviewer-2' },
-  'review.synthesis': { env: 'YOKE_REVIEW_SYNTHESIS', flag: '--synthesis' },
-}
+export type FlagSettings = Partial<Settings>
 
 export function isSettingKey(key: string): key is SettingKey {
   return (settingKeys as readonly string[]).includes(key)
 }
 
+function isSecret(key: SettingKey): boolean {
+  return settingsSchema.shape[key].meta()?.secret === true
+}
+
+export function settingDescription(key: SettingKey): string {
+  return settingsSchema.shape[key].meta()?.description ?? ''
+}
+
+function snake(key: string): string {
+  return key.replace(/([a-z])([A-Z0-9])/g, '$1_$2').replaceAll('.', '_')
+}
+
+export function settingEnv(key: SettingKey): string {
+  return `YOKE_${snake(key).toUpperCase()}`
+}
+
+export function settingFlag(key: SettingKey): string | undefined {
+  if (isSecret(key)) return undefined
+  return `--${snake(key.replace(/^review\./, ''))
+    .toLowerCase()
+    .replaceAll('_', '-')}`
+}
+
 export function resolveSettings(flags: FlagSettings, env: NodeJS.ProcessEnv, config: Settings): Settings {
   const resolved: Settings = {}
   for (const key of settingKeys) {
-    const flag = key === 'modelProvider.apiKey' ? undefined : flags[key]
-    const value = [flag, env[sources[key].env], config[key]].map((candidate) => candidate?.trim()).find(Boolean)
+    const flag = isSecret(key) ? undefined : flags[key]
+    const value = [flag, env[settingEnv(key)], config[key]].map((candidate) => candidate?.trim()).find(Boolean)
     if (value) resolved[key] = value
   }
   return resolved
@@ -58,7 +74,7 @@ export function resolveSettings(flags: FlagSettings, env: NodeJS.ProcessEnv, con
 
 function displayValue(key: SettingKey, value: string | undefined): string {
   if (!value) return '<not set>'
-  return settingsSchema.shape[key].meta()?.secret === true ? '****' : value
+  return isSecret(key) ? '****' : value
 }
 
 const gap = '  '
@@ -79,18 +95,18 @@ export function listSettings(settings: Settings, columns = Infinity): string {
   const rows = settingKeys.map((key) => ({
     key,
     value: displayValue(key, settings[key]),
-    description: settingsSchema.shape[key].meta()?.description ?? '',
+    description: settingDescription(key),
   }))
   const keyWidth = Math.max(...rows.map(({ key }) => key.length))
   const indent = ' '.repeat(keyWidth + gap.length)
   const blocks = rows.map(({ key, value, description }) =>
     [`${key.padEnd(keyWidth)}${gap}${value}`, ...wrap(description, columns - indent.length).map((line) => indent + line)].join('\n'),
   )
-  return [...blocks, slotExamples.join('\n')].join('\n\n')
+  return blocks.join('\n\n')
 }
 
 export function howToSet(key: SettingKey, placeholder = '<value>'): string {
-  const { env, flag } = sources[key]
-  const ways = [...(flag ? [`pass ${flag}`] : []), `set ${env}`, `run \`yoke config set --user ${key} ${placeholder}\``]
+  const flag = settingFlag(key)
+  const ways = [...(flag ? [`pass ${flag}`] : []), `set ${settingEnv(key)}`, `run \`yoke config set --user ${key} ${placeholder}\``]
   return `${ways.slice(0, -1).join(', ')} or ${ways.at(-1)}`
 }

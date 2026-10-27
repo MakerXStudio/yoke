@@ -27,32 +27,34 @@ describe('userConfigPath', () => {
 
 describe('setSetting', () => {
   it('rejects a call without --user and writes nothing', () => {
-    expect(() => setSetting('modelProvider.apiKey', 'secret', false, path)).toThrow(/Repo-level config is not supported/)
+    expect(() => setSetting('litellm.apiKey', 'secret', false, path)).toThrow(/Repo-level config is not supported/)
     expect(existsSync(path)).toBe(false)
   })
 
   it('rejects an unknown key', () => {
-    expect(() => setSetting('modelProvider.model', 'x', true, path)).toThrow(ConfigError)
+    expect(() => setSetting('modelProvider.kind', 'x', true, path)).toThrow(ConfigError)
     expect(existsSync(path)).toBe(false)
   })
 
   it('writes settings that readUserConfig reads back, keeping earlier ones', () => {
-    setSetting('modelProvider.kind', 'litellm', true, path)
-    setSetting('modelProvider.apiKey', 'secret', true, path)
-    setSetting('review.reviewer2', 'codex:gpt-5-codex', true, path)
+    setSetting('litellm.baseUrl', 'https://llm', true, path)
+    setSetting('litellm.apiKey', 'secret', true, path)
+    setSetting('review.reviewer2.provider', 'litellm', true, path)
+    setSetting('review.reviewer2.model', 'gpt-5-codex', true, path)
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
-      modelProvider: { kind: 'litellm', apiKey: 'secret' },
-      review: { reviewer2: 'codex:gpt-5-codex' },
+      litellm: { baseUrl: 'https://llm', apiKey: 'secret' },
+      review: { reviewer2: { provider: 'litellm', model: 'gpt-5-codex' } },
     })
     expect(readUserConfig(path)).toEqual({
-      'modelProvider.kind': 'litellm',
-      'modelProvider.apiKey': 'secret',
-      'review.reviewer2': 'codex:gpt-5-codex',
+      'litellm.baseUrl': 'https://llm',
+      'litellm.apiKey': 'secret',
+      'review.reviewer2.provider': 'litellm',
+      'review.reviewer2.model': 'gpt-5-codex',
     })
   })
 
   it.skipIf(process.platform === 'win32')('keeps the file private to the user', () => {
-    setSetting('modelProvider.apiKey', 'secret', true, path)
+    setSetting('litellm.apiKey', 'secret', true, path)
     expect(statSync(path).mode & 0o777).toBe(0o600)
   })
 })

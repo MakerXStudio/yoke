@@ -44,14 +44,14 @@ describe('assertViable', () => {
     const message = await errorOf(() => assertViable(ownAuth, fake({ signedOut: ['codex'] })))
     expect(message.split('\n')).toEqual([
       'Cannot review:',
-      '- codex is not signed in (review.reviewer2); run `codex login`, or run it through the model provider: `yoke config set --user review.reviewer2 codex:<model>@provider`',
+      '- codex is not signed in (review.reviewer2); run `codex login`, or run it through LiteLLM or Foundry by setting review.reviewer2.provider and review.reviewer2.model (see `yoke models`)',
     ])
   })
 
   it('names every slot that shares a signed-out harness', async () => {
     const message = await errorOf(() => assertViable(ownAuth, fake({ signedOut: ['claude'] })))
     expect(message).toContain(
-      '- claude is not signed in (review.reviewer1, review.synthesis); run `claude auth login`, or run it through the model provider: `yoke config set --user review.reviewer1 claude:<model>@provider` and `yoke config set --user review.synthesis claude:<model>@provider`',
+      '- claude is not signed in (review.reviewer1, review.synthesis); run `claude auth login`, or run it through LiteLLM or Foundry by setting review.reviewer1.provider and review.reviewer1.model, and review.synthesis.provider and review.synthesis.model (see `yoke models`)',
     )
   })
 

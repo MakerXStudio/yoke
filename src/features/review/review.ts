@@ -27,8 +27,8 @@ function seconds(since: number): string {
   return `${Math.round((Date.now() - since) / 1000)}s`
 }
 
-function describeSlot({ harness, model, probe }: Slot): string {
-  return `${harness}${model ? `:${model}` : ''}${probe ? '@provider' : ''}`
+function describeSlot({ harness, model, provider }: Slot): string {
+  return model ? `${harness}:${provider ? `${provider}/` : ''}${model}` : harness
 }
 
 async function runStep({ label, slot, ...step }: Step, { log, ...context }: ReviewContext): Promise<boolean> {

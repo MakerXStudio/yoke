@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process'
 
-import type { SettingKey } from '../config/settings'
 import type { Harness } from './harness'
 import { ReviewError } from './pr'
 import type { ProbeRequest } from './provider'
@@ -63,11 +62,13 @@ const checks: Checks = {
 
 const loginCommand: Record<Harness, string> = { claude: 'claude auth login', codex: 'codex login' }
 
-type SlotUse = { slot: Slot; keys: SettingKey[] }
+type SlotPrefix = 'review.reviewer1' | 'review.reviewer2' | 'review.synthesis'
+
+type SlotUse = { slot: Slot; keys: SlotPrefix[] }
 
 function signedOut({ slot: { harness }, keys }: SlotUse): string {
-  const viaProvider = keys.map((key) => `\`yoke config set --user ${key} ${harness}:<model>@provider\``).join(' and ')
-  return `${harness} is not signed in (${keys.join(', ')}); run \`${loginCommand[harness]}\`, or run it through the model provider: ${viaProvider}`
+  const settings = keys.map((key) => `${key}.provider and ${key}.model`).join(', and ')
+  return `${harness} is not signed in (${keys.join(', ')}); run \`${loginCommand[harness]}\`, or run it through LiteLLM or Foundry by setting ${settings} (see \`yoke models\`)`
 }
 
 async function slotProblem(use: SlotUse, check: Checks): Promise<string | undefined> {
@@ -79,14 +80,14 @@ async function slotProblem(use: SlotUse, check: Checks): Promise<string | undefi
 }
 
 function slotsToRun(slots: ReviewSlots): SlotUse[] {
-  const uses: [SettingKey, Slot][] = [
+  const uses: [SlotPrefix, Slot][] = [
     ['review.reviewer1', slots.claude],
     ['review.reviewer2', slots.codex],
     ['review.synthesis', slots.synthesis ?? { harness: slots.claude.harness }],
   ]
   const distinct = new Map<string, SlotUse>()
   for (const [key, slot] of uses) {
-    const id = `${slot.harness}:${slot.model ?? ''}:${slot.probe ? 'provider' : 'own'}`
+    const id = `${slot.harness}:${slot.provider ?? 'own'}:${slot.model ?? ''}`
     const use = distinct.get(id)
     if (use) use.keys.push(key)
     else distinct.set(id, { slot, keys: [key] })

@@ -4,19 +4,18 @@ import { ReviewError } from './pr'
 import {
   buildOverride,
   buildProbe,
+  isHarness,
   isProviderKind,
   type Override,
   ownAuthOverride,
-  type ParsedSlot,
-  parseSlot,
   type ProbeRequest,
   type Provider,
+  type ProviderKind,
   providerKinds,
   type SlotModel,
-  slotFormat,
 } from './provider'
 
-export type Slot = { harness: Harness; model?: string; override?: Override; probe?: ProbeRequest }
+export type Slot = { harness: Harness; model?: string; provider?: ProviderKind; override?: Override; probe?: ProbeRequest }
 
 export type Reviewer = 'claude' | 'codex'
 
@@ -24,60 +23,79 @@ export type ReviewSlots = Record<Reviewer, Slot> & { synthesis?: Slot }
 
 type SlotName = keyof ReviewSlots
 
-const slotKeys: [SlotName, SettingKey][] = [
-  ['claude', 'review.reviewer1'],
-  ['codex', 'review.reviewer2'],
-  ['synthesis', 'review.synthesis'],
+type SlotSetting = 'reviewer1' | 'reviewer2' | 'synthesis'
+
+const slotSettings: [SlotName, SlotSetting][] = [
+  ['claude', 'reviewer1'],
+  ['codex', 'reviewer2'],
+  ['synthesis', 'synthesis'],
 ]
 
-const kindPlaceholder = `<${providerKinds.join('|')}>`
+type SlotSpec = { harness?: Harness; model?: string; provider?: ProviderKind }
 
-function kindError(kind: string | undefined): string | null {
-  if (!kind) return `modelProvider.kind is not set; ${howToSet('modelProvider.kind', kindPlaceholder)}`
-  if (!isProviderKind(kind))
-    return `modelProvider.kind "${kind}" must be ${providerKinds.join(' or ')}; ${howToSet('modelProvider.kind', kindPlaceholder)}`
-  return null
-}
-
-export function readProvider(settings: Settings): Provider | string[] {
-  const kind = settings['modelProvider.kind']
-  const baseUrl = settings['modelProvider.baseUrl']
-  const apiKey = settings['modelProvider.apiKey']
-  if (kind && isProviderKind(kind) && baseUrl && apiKey) return { kind, baseUrl, apiKey }
+export function readProvider(settings: Settings, kind: ProviderKind): Provider | string[] {
+  const baseUrlKey = `${kind}.baseUrl` as const
+  const apiKeyKey = `${kind}.apiKey` as const
+  const baseUrl = settings[baseUrlKey]
+  const apiKey = settings[apiKeyKey]
+  if (baseUrl && apiKey) return { kind, baseUrl, apiKey }
   return [
-    kindError(kind),
-    baseUrl ? null : `modelProvider.baseUrl is not set; ${howToSet('modelProvider.baseUrl', '<url>')}`,
-    apiKey ? null : `modelProvider.apiKey is not set; ${howToSet('modelProvider.apiKey', '<key>')}`,
+    baseUrl ? null : `${baseUrlKey} is not set; ${howToSet(baseUrlKey, '<url>')}`,
+    apiKey ? null : `${apiKeyKey} is not set; ${howToSet(apiKeyKey, '<key>')}`,
   ].filter((error) => error !== null)
 }
 
-function toSlot({ harness, model, viaProvider }: ParsedSlot, provider: Provider | null): Slot {
+function readSpec(settings: Settings, slot: SlotSetting, errors: string[]): SlotSpec | undefined {
+  const keys = {
+    harness: `review.${slot}.harness`,
+    provider: `review.${slot}.provider`,
+    model: `review.${slot}.model`,
+  } as const satisfies Record<string, SettingKey>
+  const harness = settings[keys.harness]
+  const provider = settings[keys.provider]
+  const model = settings[keys.model]
+  if (!harness && !provider && !model) return undefined
+  if (harness && !isHarness(harness))
+    errors.push(`${keys.harness} "${harness}" must be claude or codex; ${howToSet(keys.harness, '<claude|codex>')}`)
+  if (provider && !isProviderKind(provider))
+    errors.push(
+      `${keys.provider} "${provider}" must be ${providerKinds.join(' or ')}; ${howToSet(keys.provider, `<${providerKinds.join('|')}>`)}`,
+    )
+  if (provider && !model)
+    errors.push(`${keys.model} is required when ${keys.provider} is set; ${howToSet(keys.model, '<model>')} (see \`yoke models\`)`)
+  return {
+    ...(harness && isHarness(harness) ? { harness } : {}),
+    ...(provider && isProviderKind(provider) ? { provider } : {}),
+    ...(model ? { model } : {}),
+  }
+}
+
+type Providers = Partial<Record<ProviderKind, Provider>>
+
+function toSlot({ harness: chosen, model, provider: kind }: SlotSpec, fallback: Harness, providers: Providers): Slot {
+  const harness = chosen ?? fallback
   if (!model) return { harness }
   const slot: SlotModel = { harness, model }
-  if (viaProvider && provider) return { ...slot, override: buildOverride(slot, provider), probe: buildProbe(slot, provider) }
+  const provider = kind && providers[kind]
+  if (provider) return { ...slot, provider: kind, override: buildOverride(slot, provider), probe: buildProbe(slot, provider) }
   return { ...slot, override: ownAuthOverride(slot) }
 }
 
 export function resolveSlots(settings: Settings): ReviewSlots {
-  const parsed: Partial<Record<SlotName, ParsedSlot>> = {}
+  const specs: Partial<Record<SlotName, SlotSpec>> = {}
   const errors: string[] = []
-  for (const [name, key] of slotKeys) {
-    const value = settings[key]
-    if (!value) continue
-    const slot = parseSlot(value)
-    if (slot) parsed[name] = slot
-    else errors.push(`${key} "${value}" must be ${slotFormat}; ${howToSet(key, '<harness[:model][@provider]>')}`)
-  }
-  let provider: Provider | null = null
-  if (Object.values(parsed).some((slot) => slot.viaProvider)) {
-    const read = readProvider(settings)
+  for (const [name, slot] of slotSettings) specs[name] = readSpec(settings, slot, errors)
+  const providers: Providers = {}
+  for (const kind of new Set(Object.values(specs).flatMap((spec) => (spec?.provider ? [spec.provider] : [])))) {
+    const read = readProvider(settings, kind)
     if (Array.isArray(read)) errors.push(...read)
-    else provider = read
+    else providers[kind] = read
   }
   if (errors.length) throw new ReviewError(['Review settings are incomplete:', ...errors.map((error) => `- ${error}`)].join('\n'))
+  const claude = toSlot(specs.claude ?? {}, 'claude', providers)
   return {
-    claude: parsed.claude ? toSlot(parsed.claude, provider) : { harness: 'claude' },
-    codex: parsed.codex ? toSlot(parsed.codex, provider) : { harness: 'codex' },
-    synthesis: parsed.synthesis && toSlot(parsed.synthesis, provider),
+    claude,
+    codex: toSlot(specs.codex ?? {}, 'codex', providers),
+    synthesis: specs.synthesis && toSlot(specs.synthesis, claude.harness, providers),
   }
 }

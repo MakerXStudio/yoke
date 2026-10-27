@@ -1,90 +1,104 @@
 import { describe, expect, it } from 'vitest'
 
-import { howToSet, listSettings, resolveSettings } from './settings'
+import { howToSet, listSettings, resolveSettings, settingEnv, settingFlag } from './settings'
+
+function row(output: string, key: string): string | undefined {
+  return output.split('\n').find((line) => line.startsWith(`${key} `))
+}
 
 describe('listSettings', () => {
-  it('lists every key with its value, masking secrets and marking unset keys', () => {
-    const lines = listSettings({ 'modelProvider.kind': 'litellm', 'modelProvider.apiKey': 'sk-123', 'review.reviewer2': 'codex:gpt-5' })
-      .split('\n')
-      .filter((line) => /^\S/.test(line))
-      .slice(0, 6)
-    expect(lines).toEqual([
-      'modelProvider.kind     litellm',
-      'modelProvider.baseUrl  <not set>',
-      'modelProvider.apiKey   ****',
-      'review.reviewer1       <not set>',
-      'review.reviewer2       codex:gpt-5',
-      'review.synthesis       <not set>',
-    ])
+  const output = listSettings({
+    'litellm.baseUrl': 'https://llm',
+    'litellm.apiKey': 'sk-123',
+    'review.reviewer2.provider': 'litellm',
   })
 
-  it('puts each description under its value and ends with example slot values', () => {
-    const output = listSettings({})
-    expect(output).toContain('review.reviewer1       <not set>\n                       First reviewer. Default: claude on your own login')
-    expect(output).toContain('  codex:gpt-5@provider    codex through the model provider, using gpt-5')
+  it('shows each value, masks secrets and marks unset settings', () => {
+    expect(row(output, 'litellm.baseUrl')).toMatch(/^litellm\.baseUrl +https:\/\/llm$/)
+    expect(row(output, 'litellm.apiKey')).toMatch(/^litellm\.apiKey +\*\*\*\*$/)
+    expect(row(output, 'review.reviewer2.provider')).toMatch(/^review\.reviewer2\.provider +litellm$/)
+    expect(row(output, 'review.reviewer1.harness')).toMatch(/^review\.reviewer1\.harness +<not set>$/)
+    expect(output).not.toContain('sk-123')
+  })
+
+  it('lists every setting with its description under the value', () => {
+    const lines = listSettings({}).split('\n')
+    const harness = lines.findIndex((line) => line.startsWith('review.reviewer1.harness'))
+    expect(lines[harness + 1]).toBe(`${' '.repeat(27)}claude or codex. Default: claude`)
   })
 
   it('wraps a description within the terminal, aligned under the value whatever the value length', () => {
-    const lines = listSettings({ 'modelProvider.baseUrl': 'https://a-very-long-resource-name.services.ai.azure.com' }, 70).split('\n')
-    const baseUrl = lines.findIndex((line) => line.startsWith('modelProvider.baseUrl'))
-    const end = lines.indexOf('', baseUrl)
-    const description = lines.slice(baseUrl + 1, end)
+    const lines = listSettings({ 'foundry.baseUrl': 'https://a-very-long-resource-name.services.ai.azure.com' }, 50).split('\n')
+    const start = lines.findIndex((line) => line.startsWith('review.reviewer1.model'))
+    const description = lines.slice(start + 1, lines.indexOf('', start))
     expect(description.length).toBeGreaterThan(1)
-    expect(description.every((line) => /^ {23}\S/.test(line) && line.length <= 70)).toBe(true)
+    expect(description.every((line) => /^ {27}\S/.test(line) && line.length <= 50)).toBe(true)
+  })
+})
+
+describe('settingEnv and settingFlag', () => {
+  it('derive the env var and flag from the key', () => {
+    expect(settingEnv('review.reviewer1.harness')).toBe('YOKE_REVIEW_REVIEWER_1_HARNESS')
+    expect(settingFlag('review.reviewer1.harness')).toBe('--reviewer-1-harness')
+    expect(settingEnv('litellm.baseUrl')).toBe('YOKE_LITELLM_BASE_URL')
+    expect(settingFlag('litellm.baseUrl')).toBe('--litellm-base-url')
   })
 
-  it('marks an unset secret as not set', () => {
-    expect(listSettings({})).toContain('modelProvider.apiKey   <not set>')
+  it('gives a secret an env var but no flag', () => {
+    expect(settingEnv('foundry.apiKey')).toBe('YOKE_FOUNDRY_API_KEY')
+    expect(settingFlag('foundry.apiKey')).toBeUndefined()
   })
 })
 
 describe('resolveSettings', () => {
   it('prefers the flag, then the env var, then the user config', () => {
     const settings = resolveSettings(
-      { 'modelProvider.kind': 'foundry' },
-      { YOKE_MODEL_PROVIDER_KIND: 'litellm', YOKE_MODEL_PROVIDER_BASE_URL: 'https://env' },
-      { 'modelProvider.kind': 'config', 'modelProvider.baseUrl': 'https://config', 'review.synthesis': 'claude:opus' },
+      { 'litellm.baseUrl': 'https://flag' },
+      { YOKE_LITELLM_BASE_URL: 'https://env', YOKE_FOUNDRY_BASE_URL: 'https://foundry-env' },
+      { 'litellm.baseUrl': 'https://config', 'foundry.baseUrl': 'https://foundry-config', 'review.synthesis.model': 'opus' },
     )
     expect(settings).toEqual({
-      'modelProvider.kind': 'foundry',
-      'modelProvider.baseUrl': 'https://env',
-      'review.synthesis': 'claude:opus',
+      'litellm.baseUrl': 'https://flag',
+      'foundry.baseUrl': 'https://foundry-env',
+      'review.synthesis.model': 'opus',
     })
   })
 
-  it('reads every reviewer slot from its env var', () => {
+  it('reads slot settings from their env vars', () => {
     const settings = resolveSettings(
       {},
-      { YOKE_REVIEW_REVIEWER_1: 'claude:a', YOKE_REVIEW_REVIEWER_2: 'codex:b', YOKE_REVIEW_SYNTHESIS: 'claude:c' },
+      { YOKE_REVIEW_REVIEWER_2_HARNESS: 'claude', YOKE_REVIEW_REVIEWER_2_PROVIDER: 'litellm', YOKE_REVIEW_REVIEWER_2_MODEL: 'gpt-5' },
       {},
     )
-    expect(settings).toEqual({ 'review.reviewer1': 'claude:a', 'review.reviewer2': 'codex:b', 'review.synthesis': 'claude:c' })
+    expect(settings).toEqual({
+      'review.reviewer2.harness': 'claude',
+      'review.reviewer2.provider': 'litellm',
+      'review.reviewer2.model': 'gpt-5',
+    })
   })
 
-  it('takes the API key from env, then config', () => {
-    expect(resolveSettings({}, { YOKE_MODEL_PROVIDER_API_KEY: 'env-key' }, { 'modelProvider.apiKey': 'config-key' })).toEqual({
-      'modelProvider.apiKey': 'env-key',
-    })
-    expect(resolveSettings({}, {}, { 'modelProvider.apiKey': 'config-key' })).toEqual({ 'modelProvider.apiKey': 'config-key' })
+  it('takes a secret from env, then config, never a flag', () => {
+    expect(
+      resolveSettings({ 'litellm.apiKey': 'flag-key' }, { YOKE_LITELLM_API_KEY: 'env-key' }, { 'litellm.apiKey': 'config-key' }),
+    ).toEqual({ 'litellm.apiKey': 'env-key' })
+    expect(resolveSettings({ 'foundry.apiKey': 'flag-key' }, {}, {})).toEqual({})
   })
 
   it('skips blank values', () => {
-    expect(resolveSettings({ 'review.reviewer1': ' ' }, { YOKE_REVIEW_REVIEWER_1: '' }, { 'review.reviewer1': 'codex:m' })).toEqual({
-      'review.reviewer1': 'codex:m',
-    })
+    expect(
+      resolveSettings({ 'review.reviewer1.model': ' ' }, { YOKE_REVIEW_REVIEWER_1_MODEL: '' }, { 'review.reviewer1.model': 'm' }),
+    ).toEqual({ 'review.reviewer1.model': 'm' })
   })
 })
 
 describe('howToSet', () => {
   it('names the flag, env var and config command', () => {
-    expect(howToSet('modelProvider.baseUrl', '<url>')).toBe(
-      'pass --base-url, set YOKE_MODEL_PROVIDER_BASE_URL or run `yoke config set --user modelProvider.baseUrl <url>`',
+    expect(howToSet('review.reviewer2.model', '<model>')).toBe(
+      'pass --reviewer-2-model, set YOKE_REVIEW_REVIEWER_2_MODEL or run `yoke config set --user review.reviewer2.model <model>`',
     )
   })
 
-  it('offers no flag for the API key', () => {
-    expect(howToSet('modelProvider.apiKey', '<key>')).toBe(
-      'set YOKE_MODEL_PROVIDER_API_KEY or run `yoke config set --user modelProvider.apiKey <key>`',
-    )
+  it('offers no flag for an API key', () => {
+    expect(howToSet('foundry.apiKey', '<key>')).toBe('set YOKE_FOUNDRY_API_KEY or run `yoke config set --user foundry.apiKey <key>`')
   })
 })

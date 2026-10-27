@@ -26,16 +26,17 @@ yoke sync --user   # ~/.claude/skills
 
 ### Running review slots through a model provider
 
-Each of `review.reviewer1`, `review.reviewer2` and `review.synthesis` is `<claude|codex>[:<model>][@provider]`: the CLI to run, an optional model, and `@provider` to run it through a LiteLLM proxy or Azure AI Foundry instead of your own login. `@provider` needs a model. Unset, the reviewers run `claude` and `codex` on your own login. Run `yoke config` to see every setting, its value and what it does.
+`review.reviewer1`, `review.reviewer2` and `review.synthesis` each have a `harness` (`claude` or `codex`), a `provider` (`litellm` or `foundry`) and a `model`. Unset, the reviewers run `claude` and `codex` on your own login. Setting a provider runs that slot through it, and needs a model; `yoke models` lists each configured provider's models. Run `yoke config` to see every setting and its value.
 
 ```sh
-yoke config set --user modelProvider.kind litellm            # or foundry
-yoke config set --user modelProvider.baseUrl https://llm.example.com
-yoke config set --user modelProvider.apiKey <key>
-yoke config set --user review.reviewer2 codex:gpt-5-codex@provider
+yoke config set --user litellm.baseUrl https://llm.example.com   # or foundry.baseUrl https://<resource>.services.ai.azure.com
+yoke config set --user litellm.apiKey <key>
+yoke models
+yoke config set --user review.reviewer2.provider litellm
+yoke config set --user review.reviewer2.model azure-us/gpt-5.1-codex
 ```
 
-Settings live in `~/.config/yoke/config.json` (or `$XDG_CONFIG_HOME/yoke/config.json`); repo-level config is not supported. Each one can be overridden per run with a flag (`--provider`, `--base-url`, `--reviewer-1`, `--reviewer-2`, `--synthesis`) or an env var (`YOKE_MODEL_PROVIDER_KIND`, `YOKE_MODEL_PROVIDER_BASE_URL`, `YOKE_MODEL_PROVIDER_API_KEY`, `YOKE_REVIEW_REVIEWER_1`, `YOKE_REVIEW_REVIEWER_2`, `YOKE_REVIEW_SYNTHESIS`). The API key has no flag.
+Settings live in `~/.config/yoke/config.json` (or `$XDG_CONFIG_HOME/yoke/config.json`); repo-level config is not supported. Each one can be overridden per run with a flag named after it (`review.reviewer2.model` is `--reviewer-2-model`, `litellm.baseUrl` is `--litellm-base-url`) or an env var (`YOKE_REVIEW_REVIEWER_2_MODEL`, `YOKE_LITELLM_BASE_URL`). API keys have no flag.
 
 ## License
 

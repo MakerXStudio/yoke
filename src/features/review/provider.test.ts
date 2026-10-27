@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildOverride, buildProbe, deriveEndpoints, parseSlot } from './provider'
+import { buildOverride, buildProbe, deriveEndpoints } from './provider'
 
 describe('buildProbe', () => {
   it('pings the Codex responses endpoint with a bearer key', () => {
@@ -34,25 +34,6 @@ describe('deriveEndpoints', () => {
   })
 })
 
-describe('parseSlot', () => {
-  it('accepts a bare harness', () => {
-    expect(parseSlot('claude')).toEqual({ harness: 'claude', viaProvider: false })
-  })
-
-  it('splits harness and model at the first colon', () => {
-    expect(parseSlot('codex:gpt-5-codex')).toEqual({ harness: 'codex', model: 'gpt-5-codex', viaProvider: false })
-    expect(parseSlot(' claude : bedrock:claude ')).toEqual({ harness: 'claude', model: 'bedrock:claude', viaProvider: false })
-  })
-
-  it('routes through the provider with a trailing @provider', () => {
-    expect(parseSlot('codex:gpt-5@provider')).toEqual({ harness: 'codex', model: 'gpt-5', viaProvider: true })
-  })
-
-  it.each(['gpt-5', 'gemini:pro', 'claude:', ':opus', 'codex@provider'])('rejects %s', (value) => {
-    expect(parseSlot(value)).toBeNull()
-  })
-})
-
 describe('buildOverride', () => {
   it('points codex exec at the provider responses endpoint with the key in an env var', () => {
     expect(buildOverride({ harness: 'codex', model: 'gpt-5-codex' }, { kind: 'litellm', baseUrl: 'https://llm', apiKey: 'k' })).toEqual({
@@ -62,7 +43,7 @@ describe('buildOverride', () => {
         '-c',
         'model_providers.yoke.base_url=https://llm/v1',
         '-c',
-        'model_providers.yoke.env_key=YOKE_MODEL_PROVIDER_API_KEY',
+        'model_providers.yoke.env_key=YOKE_LITELLM_API_KEY',
         '-c',
         'model_providers.yoke.wire_api=responses',
         '-c',
@@ -70,7 +51,7 @@ describe('buildOverride', () => {
         '-m',
         'gpt-5-codex',
       ],
-      env: { YOKE_MODEL_PROVIDER_API_KEY: 'k' },
+      env: { YOKE_LITELLM_API_KEY: 'k' },
     })
   })
 

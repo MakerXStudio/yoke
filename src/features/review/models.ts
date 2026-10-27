@@ -1,12 +1,13 @@
 import type { Settings } from '../config/settings'
 import { ReviewError } from './pr'
-import { deriveEndpoints, type Provider } from './provider'
+import { deriveEndpoints, type Provider, type ProviderKind, providerKinds } from './provider'
 import { readProvider } from './slots'
 
 type Fetch = typeof fetch
 
 const timeout = 60_000
 const maxBodyChars = 300
+const providerWidth = Math.max(...providerKinds.map((kind) => kind.length))
 
 export function modelsRequest({ kind, baseUrl, apiKey }: Provider): { url: string; headers: Record<string, string> } {
   const url = `${deriveEndpoints(kind, baseUrl).responses}/models`
@@ -31,15 +32,30 @@ async function get(url: string, headers: Record<string, string>, fetchModels: Fe
   }
 }
 
-export async function listModels(settings: Settings, fetchModels: Fetch = fetch): Promise<string[]> {
-  const provider = readProvider(settings)
-  if (Array.isArray(provider))
-    throw new ReviewError(['Model provider settings are incomplete:', ...provider.map((error) => `- ${error}`)].join('\n'))
+async function providerModels(provider: Provider, fetchModels: Fetch): Promise<string[]> {
   const { url, headers } = modelsRequest(provider)
   const response = await get(url, headers, fetchModels)
   if (!response.ok)
     throw new ReviewError(`${url} returned HTTP ${response.status}: ${(await response.text()).trim().slice(0, maxBodyChars)}`)
   const body: unknown = await response.json()
   if (!isModelList(body)) throw new ReviewError(`${url} returned an unexpected model list`)
-  return body.data.map(({ id }) => id).toSorted()
+  return body.data.map(({ id }) => `${provider.kind.padEnd(providerWidth)}  ${id}`)
+}
+
+function isConfigured(settings: Settings, kind: ProviderKind): boolean {
+  return Boolean(settings[`${kind}.baseUrl`] || settings[`${kind}.apiKey`])
+}
+
+export async function listModels(settings: Settings, fetchModels: Fetch = fetch): Promise<string[]> {
+  const kinds = providerKinds.filter((kind) => isConfigured(settings, kind))
+  if (!kinds.length)
+    throw new ReviewError(
+      `No model provider is configured; set ${providerKinds.map((kind) => `${kind}.baseUrl and ${kind}.apiKey`).join(', or ')} (see \`yoke config\`)`,
+    )
+  const providers = kinds.map((kind) => readProvider(settings, kind))
+  const errors = providers.flatMap((provider) => (Array.isArray(provider) ? provider : []))
+  if (errors.length) throw new ReviewError(['Model provider settings are incomplete:', ...errors.map((error) => `- ${error}`)].join('\n'))
+  const ready = providers.filter((provider): provider is Provider => !Array.isArray(provider))
+  const lists = await Promise.all(ready.map((provider) => providerModels(provider, fetchModels)))
+  return lists.flat().toSorted()
 }

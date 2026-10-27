@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { listModels, modelsRequest } from './models'
 import { ReviewError } from './pr'
 
-const litellm = { 'modelProvider.kind': 'litellm', 'modelProvider.baseUrl': 'https://llm/', 'modelProvider.apiKey': 'k' }
+const litellm = { 'litellm.baseUrl': 'https://llm/', 'litellm.apiKey': 'k' }
 
 function respond(status: number, body: unknown): typeof fetch {
   return async () => new Response(JSON.stringify(body), { status })
@@ -36,15 +36,29 @@ describe('modelsRequest', () => {
 })
 
 describe('listModels', () => {
-  it('returns the model ids sorted', async () => {
+  it('returns each provider and model id, sorted', async () => {
     const models = await listModels(litellm, respond(200, { data: [{ id: 'bedrock/opus' }, { id: 'azure/gpt-5' }] }))
-    expect(models).toEqual(['azure/gpt-5', 'bedrock/opus'])
+    expect(models).toEqual(['litellm  azure/gpt-5', 'litellm  bedrock/opus'])
   })
 
-  it('names every missing provider setting', async () => {
-    const message = await errorOf(() => listModels({}, respond(200, { data: [] })))
-    expect(message.split('\n')).toHaveLength(4)
-    expect(message).toContain('- modelProvider.apiKey is not set')
+  it('lists every configured provider', async () => {
+    const both = { ...litellm, 'foundry.baseUrl': 'https://res', 'foundry.apiKey': 'k' }
+    const models = await listModels(both, respond(200, { data: [{ id: 'gpt-5' }] }))
+    expect(models).toEqual(['foundry  gpt-5', 'litellm  gpt-5'])
+  })
+
+  it('says how to configure a provider when none is', async () => {
+    expect(await errorOf(() => listModels({}, respond(200, { data: [] })))).toBe(
+      'No model provider is configured; set litellm.baseUrl and litellm.apiKey, or foundry.baseUrl and foundry.apiKey (see `yoke config`)',
+    )
+  })
+
+  it('names the missing setting of a half-configured provider', async () => {
+    const message = await errorOf(() => listModels({ 'foundry.baseUrl': 'https://res' }, respond(200, { data: [] })))
+    expect(message.split('\n')).toEqual([
+      'Model provider settings are incomplete:',
+      '- foundry.apiKey is not set; set YOKE_FOUNDRY_API_KEY or run `yoke config set --user foundry.apiKey <key>`',
+    ])
   })
 
   it('reports the status and body of a failed request', async () => {
