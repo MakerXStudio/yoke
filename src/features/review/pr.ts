@@ -141,7 +141,8 @@ export type Checkout = { cwd: string; remove: () => Promise<void> }
 
 export async function checkoutHead(pr: PullRequest, reviewDir: string, exec: Run = run): Promise<Checkout> {
   const root = (await exec('git', ['rev-parse', '--show-toplevel'])).trim()
-  if ((await exec('git', ['rev-parse', 'HEAD'], root)).trim() === pr.headRefOid) return { cwd: root, remove: async () => {} }
+  const atHead = (await exec('git', ['rev-parse', 'HEAD'], root)).trim() === pr.headRefOid
+  if (atHead && !(await exec('git', ['status', '--porcelain'], root)).trim()) return { cwd: root, remove: async () => {} }
   const tree = join(reviewDir, 'head')
   await exec('git', ['fetch', '--quiet', 'origin', `pull/${pr.number}/head`], root)
   await exec('git', ['worktree', 'add', '--quiet', '--detach', tree, pr.headRefOid], root)

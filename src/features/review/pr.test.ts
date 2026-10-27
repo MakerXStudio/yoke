@@ -29,10 +29,11 @@ function returning(output: string) {
   return vi.fn<Run>(async () => output)
 }
 
-function fakeGit(head: string) {
+function fakeGit(head: string, status = '') {
   return vi.fn<Run>(async (_, args) => {
     if (args.includes('--show-toplevel')) return '/repo\n'
     if (args[0] === 'rev-parse') return `${head}\n`
+    if (args[0] === 'status') return status
     return ''
   })
 }
@@ -61,7 +62,12 @@ describe('checkoutHead', () => {
   it('reviews in the repo when it is already at the PR head', async () => {
     const exec = fakeGit('head')
     expect((await checkoutHead(pr, '/tmp/r', exec)).cwd).toBe('/repo')
-    expect(exec.mock.calls.map((c) => c[1][0])).toEqual(['rev-parse', 'rev-parse'])
+    expect(exec.mock.calls.map((c) => c[1][0])).toEqual(['rev-parse', 'rev-parse', 'status'])
+  })
+
+  it('uses a worktree when the repo is at the PR head but has local edits', async () => {
+    const exec = fakeGit('head', ' M src/a.ts\n')
+    expect((await checkoutHead(pr, '/tmp/r', exec)).cwd).toBe(join('/tmp/r', 'head'))
   })
 
   it('checks the PR head out into a detached worktree otherwise, and removes it after', async () => {
