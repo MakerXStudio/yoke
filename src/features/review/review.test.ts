@@ -250,6 +250,19 @@ describe('postFindings', () => {
     expect(api.discard).toHaveBeenCalledWith(pr, review)
   })
 
+  it('keeps the submit error when discarding also fails', async () => {
+    const api = fakeApi({
+      submit: vi.fn(async () => {
+        throw new ReviewError('boom')
+      }),
+      discard: vi.fn(async () => {
+        throw new ReviewError('gone')
+      }),
+    })
+    await expect(post(synthesis, api)).rejects.toThrow('boom')
+    expect(logs).toContain('could not discard the pending review: gone')
+  })
+
   it('does not open a review when every finding was already raised', async () => {
     const api = await post(synthesis, fakeApi(), [
       { path: 'src/a.ts', line: 3, author: 'me', body: `old\n\n${findingMarker({ file: 'src/a.ts', title: 'Crash' })}` },

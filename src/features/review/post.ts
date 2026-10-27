@@ -79,7 +79,11 @@ export async function postFindings(
     const url = await api.submit(pr, review, reviewBody(synthesis.summary, [...outside, ...rejected], deps.footer))
     log(`posted ${comments.length - rejected.length} inline comment(s) and ${outside.length + rejected.length} in the review body: ${url}`)
   } catch (error) {
-    await api.discard(pr, review)
+    try {
+      await api.discard(pr, review)
+    } catch (discardError) {
+      log(`could not discard the pending review: ${discardError instanceof Error ? discardError.message : String(discardError)}`)
+    }
     throw error
   }
 }
