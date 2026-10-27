@@ -16,7 +16,7 @@ export type HarnessRun = {
   onProgress?: (activity: string) => void
 }
 
-export type HarnessResult = { ok: true } | { ok: false; error: string }
+export type HarnessResult = { ok: true; model?: string } | { ok: false; error: string }
 
 export type RunHarness = (run: HarnessRun) => Promise<HarnessResult>
 
@@ -66,11 +66,13 @@ export const runHarness: RunHarness = (run) =>
     })
     let pending = ''
     let finalText = ''
+    let model: string | undefined
     let stderr = ''
     const onLine = (line: string) => {
       const event = parseHarnessEvent(run.harness, line)
       if (event.kind === 'activity') run.onProgress?.(event.text)
       if (event.kind === 'final') finalText = event.text
+      if (event.kind === 'model') model = event.model
     }
     child.stdout.on('data', (chunk: Buffer) => {
       const lines = (pending + chunk.toString()).split('\n')
@@ -86,6 +88,6 @@ export const runHarness: RunHarness = (run) =>
       if (code !== 0) return resolve({ ok: false, error: exitError(run.harness, code, stderr || finalText) })
       if (run.harness === 'claude') writeFileSync(run.outputPath, finalText)
       if (!hasReview(run.outputPath)) return resolve({ ok: false, error: `${run.harness} returned an empty review` })
-      resolve({ ok: true })
+      resolve(model ? { ok: true, model } : { ok: true })
     })
   })

@@ -7,12 +7,13 @@ import { ReviewError } from './pr'
 import { buildReviewerPrompt, buildSynthesisPrompt } from './prompts'
 import type { Reviewer, ReviewSlots, Slot } from './slots'
 import type { StatusUi } from './status'
+import { forgetUsedModel, recordUsedModel, type StepName } from './usedModels'
 
 export type ReviewContext = { cwd: string; reviewDir: string; slots: ReviewSlots; runHarness: RunHarness } & Pick<StatusUi, 'log' | 'track'>
 
 export type ReviewResult = { report: string; synthesis: Synthesis | null; markdown: string | null }
 
-type Step = Pick<HarnessRun, 'prompt' | 'outputPath'> & { label: string; slot: Slot }
+type Step = Pick<HarnessRun, 'prompt' | 'outputPath'> & { name: StepName; label: string; slot: Slot }
 
 const reviewers: Reviewer[] = ['claude', 'codex']
 
@@ -24,7 +25,7 @@ function describeSlot({ harness, model, provider }: Slot): string {
   return model ? `${harness}:${provider ? `${provider}/` : ''}${model}` : harness
 }
 
-async function runStep({ label, slot, ...step }: Step, context: ReviewContext): Promise<boolean> {
+async function runStep({ name, label, slot, ...step }: Step, context: ReviewContext): Promise<boolean> {
   const started = Date.now()
   const status = context.track(label)
   const { harness, override } = slot
@@ -36,10 +37,15 @@ async function runStep({ label, slot, ...step }: Step, context: ReviewContext): 
     reviewDir: context.reviewDir,
     onProgress: status.update,
   })
-  if (result.ok) status.succeed(`${label} done in ${seconds(started)}`)
-  else status.fail(`${label} failed after ${seconds(started)}: ${result.error}`)
-  if (!result.ok) rmSync(step.outputPath, { force: true })
-  return result.ok
+  if (result.ok) {
+    status.succeed(`${label} done in ${seconds(started)}`)
+    recordUsedModel(context.reviewDir, name, harness, slot.model ?? result.model)
+    return true
+  }
+  status.fail(`${label} failed after ${seconds(started)}: ${result.error}`)
+  rmSync(step.outputPath, { force: true })
+  forgetUsedModel(context.reviewDir, name)
+  return false
 }
 
 function hasOutput(path: string): boolean {
@@ -89,7 +95,7 @@ async function synthesise(
   if (reviewersRan) rmSync(outputPath, { force: true })
   const files = reviewers.map((reviewer) => ({ reviewer, path: succeeded.includes(reviewer) ? reviewPath(context, reviewer) : null }))
   const prompt = buildSynthesisPrompt(requestPath, files)
-  if ((await runOrReuse({ label: `synthesis (${describeSlot(slot)})`, slot, prompt, outputPath }, context)).ok)
+  if ((await runOrReuse({ name: 'synthesis', label: `synthesis (${describeSlot(slot)})`, slot, prompt, outputPath }, context)).ok)
     return synthesisResult(readFileSync(outputPath, 'utf8'))
   context.log('showing the raw reviews instead')
   return rawReviews(succeeded, context)
@@ -102,7 +108,8 @@ export async function runReview(request: string, context: ReviewContext): Promis
   const results = await Promise.all(
     reviewers.map((reviewer) => {
       const slot = context.slots[reviewer]
-      return runOrReuse({ label: reviewerLabel(reviewer, slot), slot, prompt, outputPath: reviewPath(context, reviewer) }, context)
+      const outputPath = reviewPath(context, reviewer)
+      return runOrReuse({ name: reviewer, label: reviewerLabel(reviewer, slot), slot, prompt, outputPath }, context)
     }),
   )
   const succeeded = reviewers.filter((_, i) => results[i]?.ok)

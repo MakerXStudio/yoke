@@ -16,8 +16,8 @@ function fake({ missing = [], signedOut = [], unreachable = {} }: Fake = {}): Ch
   const reached: string[] = []
   return {
     reached,
-    onPath: (harness) => !missing.includes(harness),
-    signedIn: (harness) => !signedOut.includes(harness),
+    onPath: async (harness) => !missing.includes(harness),
+    signedIn: async (harness) => !signedOut.includes(harness),
     reach: async ({ url }) => {
       reached.push(url)
       return unreachable[url]

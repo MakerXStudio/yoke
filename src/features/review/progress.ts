@@ -1,6 +1,10 @@
 import type { Harness } from './harness'
 
-export type HarnessEvent = { kind: 'activity'; text: string } | { kind: 'final'; text: string } | { kind: 'ignore' }
+export type HarnessEvent =
+  | { kind: 'activity'; text: string }
+  | { kind: 'final'; text: string }
+  | { kind: 'model'; model: string }
+  | { kind: 'ignore' }
 
 const maxSummary = 80
 
@@ -39,6 +43,7 @@ function describeTool(tool: string, summary: string): string {
 
 function claudeEvent(event: Json): HarnessEvent {
   if (event.type === 'result' && typeof event.result === 'string') return { kind: 'final', text: event.result }
+  if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') return { kind: 'model', model: event.model }
   const content = isJson(event.message) ? event.message.content : undefined
   if (event.type !== 'assistant' || !Array.isArray(content)) return { kind: 'ignore' }
   const uses = content.filter((block): block is Json => isJson(block) && block.type === 'tool_use')

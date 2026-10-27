@@ -1,10 +1,10 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 
 import type { PriorComment } from './comments'
 import type { PullRequest } from './request'
 
-export type Run = (command: string, args: string[], cwd?: string, input?: string) => string
+export type Run = (command: string, args: string[], cwd?: string, input?: string) => Promise<string>
 
 export class ReviewError extends Error {
   constructor(message: string) {
@@ -15,20 +15,16 @@ export class ReviewError extends Error {
 
 const maxBuffer = 256 * 1024 * 1024
 
-const run: Run = (command, args, cwd, input) => {
-  try {
-    return execFileSync(command, args, {
-      cwd,
-      input,
-      encoding: 'utf8',
-      maxBuffer,
-      stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+const run: Run = (command, args, cwd, input) =>
+  new Promise((resolve, reject) => {
+    const child = execFile(command, args, { cwd, encoding: 'utf8', maxBuffer }, (error, stdout, stderr) => {
+      if (!error) return resolve(stdout)
+      const detail = stderr.trim()
+      reject(new ReviewError(`\`${command} ${args.join(' ')}\` failed${detail ? `: ${detail}` : ''}`))
     })
-  } catch (error) {
-    const stderr = error instanceof Error && 'stderr' in error ? String(error.stderr).trim() : ''
-    throw new ReviewError(`\`${command} ${args.join(' ')}\` failed${stderr ? `: ${stderr}` : ''}`)
-  }
-}
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(input)
+  })
 
 const fields = 'number,title,baseRefName,baseRefOid,headRefName,headRefOid,files'
 
@@ -36,15 +32,15 @@ function isPullRequest(value: unknown): value is PullRequest {
   return typeof value === 'object' && value !== null && 'number' in value && 'headRefOid' in value && 'files' in value
 }
 
-export function fetchPr(number: string | undefined, exec: Run = run): PullRequest {
+export async function fetchPr(number: string | undefined, exec: Run = run): Promise<PullRequest> {
   if (number !== undefined && !/^\d+$/.test(number)) throw new ReviewError(`PR number must be a positive integer, got "${number}"`)
   const args = ['pr', 'view', ...(number ? [number] : []), '--json', fields]
-  const pr: unknown = JSON.parse(exec('gh', args))
+  const pr: unknown = JSON.parse(await exec('gh', args))
   if (!isPullRequest(pr)) throw new ReviewError('`gh pr view` returned an unexpected response')
   return pr
 }
 
-export function fetchDiff(pr: PullRequest, exec: Run = run): string {
+export function fetchDiff(pr: PullRequest, exec: Run = run): Promise<string> {
   return exec('gh', ['pr', 'diff', String(pr.number)])
 }
 
@@ -63,10 +59,12 @@ function jsonLines(output: string): PriorComment[] {
     .filter(isPriorComment)
 }
 
-export function fetchPriorComments(pr: PullRequest, exec: Run = run): PriorComment[] {
+export async function fetchPriorComments(pr: PullRequest, exec: Run = run): Promise<PriorComment[]> {
   const pulls = `repos/{owner}/{repo}/pulls/${pr.number}`
-  const comments = exec('gh', ['api', '--paginate', `${pulls}/comments`, '--jq', `.[] | ${commentFields}`])
-  const reviews = exec('gh', ['api', '--paginate', `${pulls}/reviews`, '--jq', `.[] | select(.body != "") | ${reviewFields}`])
+  const [comments, reviews] = await Promise.all([
+    exec('gh', ['api', '--paginate', `${pulls}/comments`, '--jq', `.[] | ${commentFields}`]),
+    exec('gh', ['api', '--paginate', `${pulls}/reviews`, '--jq', `.[] | select(.body != "") | ${reviewFields}`]),
+  ])
   return [...jsonLines(comments), ...jsonLines(reviews)]
 }
 
@@ -89,9 +87,9 @@ function isPendingReview(value: unknown): value is { id: number; node_id: string
   )
 }
 
-export function openPendingReview(pr: PullRequest, exec: Run = run): PendingReview {
+export async function openPendingReview(pr: PullRequest, exec: Run = run): Promise<PendingReview> {
   const args = ['api', '--method', 'POST', reviewsPath(pr), '--input', '-', '--jq', '{id, node_id}']
-  const review: unknown = JSON.parse(exec('gh', args, undefined, JSON.stringify({ commit_id: pr.headRefOid })))
+  const review: unknown = JSON.parse(await exec('gh', args, undefined, JSON.stringify({ commit_id: pr.headRefOid })))
   if (!isPendingReview(review)) throw new ReviewError('Opening a pending review returned an unexpected response')
   return { id: review.id, nodeId: review.node_id }
 }
@@ -100,7 +98,7 @@ const addThread = `mutation($review: ID!, $path: String!, $line: Int!, $body: St
   addPullRequestReviewThread(input: {pullRequestReviewId: $review, path: $path, line: $line, side: RIGHT, body: $body}) { thread { id } }
 }`
 
-export function addReviewComment(review: PendingReview, { path, line, body }: ReviewComment, exec: Run = run): void {
+export async function addReviewComment(review: PendingReview, { path, line, body }: ReviewComment, exec: Run = run): Promise<void> {
   const variables = [
     '-f',
     `query=${addThread}`,
@@ -113,23 +111,23 @@ export function addReviewComment(review: PendingReview, { path, line, body }: Re
     '-f',
     `body=${body}`,
   ]
-  exec('gh', ['api', 'graphql', ...variables])
+  await exec('gh', ['api', 'graphql', ...variables])
 }
 
-export function submitPendingReview(pr: PullRequest, review: PendingReview, body: string, exec: Run = run): string {
+export async function submitPendingReview(pr: PullRequest, review: PendingReview, body: string, exec: Run = run): Promise<string> {
   const args = ['api', '--method', 'POST', `${reviewsPath(pr)}/${review.id}/events`, '--input', '-', '--jq', '.html_url']
-  return exec('gh', args, undefined, JSON.stringify({ event: 'COMMENT', body })).trim()
+  return (await exec('gh', args, undefined, JSON.stringify({ event: 'COMMENT', body }))).trim()
 }
 
-export function discardPendingReview(pr: PullRequest, review: PendingReview, exec: Run = run): void {
-  exec('gh', ['api', '--method', 'DELETE', `${reviewsPath(pr)}/${review.id}`])
+export async function discardPendingReview(pr: PullRequest, review: PendingReview, exec: Run = run): Promise<void> {
+  await exec('gh', ['api', '--method', 'DELETE', `${reviewsPath(pr)}/${review.id}`])
 }
 
 export type ReviewApi = {
-  open: (pr: PullRequest) => PendingReview
-  add: (review: PendingReview, comment: ReviewComment) => void
-  submit: (pr: PullRequest, review: PendingReview, body: string) => string
-  discard: (pr: PullRequest, review: PendingReview) => void
+  open: (pr: PullRequest) => Promise<PendingReview>
+  add: (review: PendingReview, comment: ReviewComment) => Promise<void>
+  submit: (pr: PullRequest, review: PendingReview, body: string) => Promise<string>
+  discard: (pr: PullRequest, review: PendingReview) => Promise<void>
 }
 
 export const github: ReviewApi = {
@@ -139,13 +137,18 @@ export const github: ReviewApi = {
   discard: (pr, review) => discardPendingReview(pr, review),
 }
 
-export type Checkout = { cwd: string; remove: () => void }
+export type Checkout = { cwd: string; remove: () => Promise<void> }
 
-export function checkoutHead(pr: PullRequest, reviewDir: string, exec: Run = run): Checkout {
-  const root = exec('git', ['rev-parse', '--show-toplevel']).trim()
-  if (exec('git', ['rev-parse', 'HEAD'], root).trim() === pr.headRefOid) return { cwd: root, remove: () => {} }
+export async function checkoutHead(pr: PullRequest, reviewDir: string, exec: Run = run): Promise<Checkout> {
+  const root = (await exec('git', ['rev-parse', '--show-toplevel'])).trim()
+  if ((await exec('git', ['rev-parse', 'HEAD'], root)).trim() === pr.headRefOid) return { cwd: root, remove: async () => {} }
   const tree = join(reviewDir, 'head')
-  exec('git', ['fetch', '--quiet', 'origin', `pull/${pr.number}/head`], root)
-  exec('git', ['worktree', 'add', '--quiet', '--detach', tree, pr.headRefOid], root)
-  return { cwd: tree, remove: () => exec('git', ['worktree', 'remove', '--force', tree], root) }
+  await exec('git', ['fetch', '--quiet', 'origin', `pull/${pr.number}/head`], root)
+  await exec('git', ['worktree', 'add', '--quiet', '--detach', tree, pr.headRefOid], root)
+  return {
+    cwd: tree,
+    remove: async () => {
+      await exec('git', ['worktree', 'remove', '--force', tree], root)
+    },
+  }
 }

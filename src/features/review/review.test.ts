@@ -204,32 +204,32 @@ describe('postFindings', () => {
 
   function fakeApi(overrides: Partial<PostDeps['api']> = {}) {
     return {
-      open: vi.fn<PostDeps['api']['open']>(() => review),
-      add: vi.fn<PostDeps['api']['add']>(),
-      submit: vi.fn<PostDeps['api']['submit']>(() => 'https://github.com/o/r/pull/4#pullrequestreview-7'),
-      discard: vi.fn<PostDeps['api']['discard']>(),
+      open: vi.fn<PostDeps['api']['open']>(async () => review),
+      add: vi.fn<PostDeps['api']['add']>(async () => {}),
+      submit: vi.fn<PostDeps['api']['submit']>(async () => 'https://github.com/o/r/pull/4#pullrequestreview-7'),
+      discard: vi.fn<PostDeps['api']['discard']>(async () => {}),
       ...overrides,
     }
   }
 
-  function post(markdown: string, api = fakeApi(), prior: PriorComment[] = []) {
-    postFindings(pr, parseSynthesis(markdown), diff, prior, { api, log: (line) => logs.push(line) })
+  async function post(markdown: string, api = fakeApi(), prior: PriorComment[] = []) {
+    await postFindings(pr, parseSynthesis(markdown), diff, prior, { api, log: (line) => logs.push(line) })
     return api
   }
 
-  it('adds each inline comment to one pending review, then submits it with the body', () => {
-    const api = post(synthesis)
+  it('adds each inline comment to one pending review, then submits it with the body', async () => {
+    const api = await post(synthesis)
     expect(api.open).toHaveBeenCalledTimes(1)
     expect(api.add).toHaveBeenCalledWith(review, { path: 'src/a.ts', line: 3, body: expect.stringContaining('**major: Crash**') })
-    expect(api.submit).toHaveBeenCalledWith(pr, review, 'One bug.')
+    expect(api.submit).toHaveBeenCalledWith(pr, review, '## Adversarial review\n\nOne bug.')
     expect(logs).toContain('posted 1 inline comment(s) and 0 in the review body: https://github.com/o/r/pull/4#pullrequestreview-7')
   })
 
-  it('moves a comment GitHub rejects into the review body', () => {
-    const api = post(
+  it('moves a comment GitHub rejects into the review body', async () => {
+    const api = await post(
       synthesis,
       fakeApi({
-        add: vi.fn(() => {
+        add: vi.fn(async () => {
           throw new ReviewError('line must be part of the diff')
         }),
       }),
@@ -240,18 +240,18 @@ describe('postFindings', () => {
     expect(logs).toContain('posted 0 inline comment(s) and 1 in the review body: https://github.com/o/r/pull/4#pullrequestreview-7')
   })
 
-  it('discards the pending review when submitting fails', () => {
+  it('discards the pending review when submitting fails', async () => {
     const api = fakeApi({
-      submit: vi.fn(() => {
+      submit: vi.fn(async () => {
         throw new ReviewError('boom')
       }),
     })
-    expect(() => post(synthesis, api)).toThrow('boom')
+    await expect(post(synthesis, api)).rejects.toThrow('boom')
     expect(api.discard).toHaveBeenCalledWith(pr, review)
   })
 
-  it('does not open a review when every finding was already raised', () => {
-    const api = post(synthesis, fakeApi(), [
+  it('does not open a review when every finding was already raised', async () => {
+    const api = await post(synthesis, fakeApi(), [
       { path: 'src/a.ts', line: 3, author: 'me', body: `old\n\n${findingMarker({ file: 'src/a.ts', title: 'Crash' })}` },
     ])
     expect(api.open).not.toHaveBeenCalled()

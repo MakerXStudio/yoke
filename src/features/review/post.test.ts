@@ -98,6 +98,8 @@ describe('reviewBody', () => {
       ]),
     ).toBe(
       [
+        '## Adversarial review',
+        '',
         'Summary.',
         '',
         '### Findings outside the diff',
@@ -112,14 +114,20 @@ describe('reviewBody', () => {
     )
   })
 
-  it('is just the summary when every finding is inline', () => {
-    expect(reviewBody('Summary.', [])).toBe('Summary.')
+  it('is just the heading and summary when every finding is inline', () => {
+    expect(reviewBody('Summary.', [])).toBe('## Adversarial review\n\nSummary.')
+  })
+
+  it('ends with the footer, which keeps its model names', () => {
+    expect(reviewBody('Claude found one bug.', [], '---\n_by yoke with claude-opus-4-1._')).toBe(
+      '## Adversarial review\n\nthe reviewer found one bug.\n\n---\n_by yoke with claude-opus-4-1._',
+    )
   })
 
   it('names no reviewer, even with no summary', () => {
-    expect(reviewBody('', [])).toBe('Adversarial review.')
+    expect(reviewBody('', [])).toBe('## Adversarial review')
     expect(reviewBody('The codex review is missing, so this rests on Claude alone.', [])).toBe(
-      'the reviewer review is missing, so this rests on the reviewer alone.',
+      '## Adversarial review\n\nthe reviewer review is missing, so this rests on the reviewer alone.',
     )
   })
 })

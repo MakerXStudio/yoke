@@ -49,19 +49,20 @@ function outsideEntry(finding: Finding): string {
   return [...entry, `  ${findingMarker(finding)}`].join('\n')
 }
 
-export function reviewBody(summary: string, outside: Finding[]): string {
-  const sections = [withoutReviewerNames(summary) || 'Adversarial review.']
+export function reviewBody(summary: string, outside: Finding[], footer = ''): string {
+  const sections = ['## Adversarial review', ...(summary ? [withoutReviewerNames(summary)] : [])]
   if (outside.length) sections.push(`### Findings outside the diff\n\n${outside.map(outsideEntry).join('\n')}`)
+  if (footer) sections.push(footer)
   return sections.join('\n\n')
 }
 
-export type PostDeps = { api: ReviewApi; log: (line: string) => void }
+export type PostDeps = { api: ReviewApi; log: (line: string) => void; footer?: string }
 
-function addComments(review: PendingReview, comments: PostPlan['comments'], { api, log }: PostDeps): Finding[] {
+async function addComments(review: PendingReview, comments: PostPlan['comments'], { api, log }: PostDeps): Promise<Finding[]> {
   const rejected: Finding[] = []
   for (const { finding, ...comment } of comments) {
     try {
-      api.add(review, comment)
+      await api.add(review, comment)
     } catch (error) {
       if (!(error instanceof ReviewError)) throw error
       rejected.push(finding)
@@ -71,18 +72,24 @@ function addComments(review: PendingReview, comments: PostPlan['comments'], { ap
   return rejected
 }
 
-export function postFindings(pr: PullRequest, synthesis: Synthesis, diff: string, prior: PriorComment[], deps: PostDeps): void {
+export async function postFindings(
+  pr: PullRequest,
+  synthesis: Synthesis,
+  diff: string,
+  prior: PriorComment[],
+  deps: PostDeps,
+): Promise<void> {
   const { api, log } = deps
   const { comments, outside, skipped } = planPost(synthesis, diff, prior)
   if (skipped.length) log(`skipped ${skipped.length} finding(s) already raised on the PR`)
   if (!comments.length && !outside.length) return log('nothing new to post')
-  const review = api.open(pr)
+  const review = await api.open(pr)
   try {
-    const rejected = addComments(review, comments, deps)
-    const url = api.submit(pr, review, reviewBody(synthesis.summary, [...outside, ...rejected]))
+    const rejected = await addComments(review, comments, deps)
+    const url = await api.submit(pr, review, reviewBody(synthesis.summary, [...outside, ...rejected], deps.footer))
     log(`posted ${comments.length - rejected.length} inline comment(s) and ${outside.length + rejected.length} in the review body: ${url}`)
   } catch (error) {
-    api.discard(pr, review)
+    await api.discard(pr, review)
     throw error
   }
 }

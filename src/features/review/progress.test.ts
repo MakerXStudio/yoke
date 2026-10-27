@@ -19,6 +19,13 @@ describe('parseHarnessEvent', () => {
     expect(parseHarnessEvent('claude', line(event))).toEqual({ kind: 'activity', text: 'Read src/a.ts, Grep TODO in src' })
   })
 
+  it('reads the model claude runs from its init event', () => {
+    expect(parseHarnessEvent('claude', line({ type: 'system', subtype: 'init', model: 'claude-opus-4-1' }))).toEqual({
+      kind: 'model',
+      model: 'claude-opus-4-1',
+    })
+  })
+
   it("takes claude's final review from the result event", () => {
     expect(parseHarnessEvent('claude', line({ type: 'result', result: '## Findings' }))).toEqual({ kind: 'final', text: '## Findings' })
   })

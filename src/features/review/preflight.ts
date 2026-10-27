@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 
 import type { Harness } from './harness'
 import { ReviewError } from './pr'
@@ -6,8 +6,8 @@ import type { ProbeRequest } from './provider'
 import type { ReviewSlots, Slot } from './slots'
 
 export type Checks = {
-  onPath: (harness: Harness) => boolean
-  signedIn: (harness: Harness) => boolean
+  onPath: (harness: Harness) => Promise<boolean>
+  signedIn: (harness: Harness) => Promise<boolean>
   reach: (probe: ProbeRequest) => Promise<string | undefined>
 }
 
@@ -15,19 +15,16 @@ const commandTimeout = 30_000
 const probeTimeout = 60_000
 const maxBodyChars = 300
 
-function exec(harness: Harness, args: string[]): { status: number | null; stdout: string } {
-  const result = spawnSync(harness, args, {
-    encoding: 'utf8',
-    timeout: commandTimeout,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: process.platform === 'win32',
+function exec(harness: Harness, args: string[]): Promise<{ ok: boolean; stdout: string }> {
+  return new Promise((resolve) => {
+    const options = { encoding: 'utf8' as const, timeout: commandTimeout, shell: process.platform === 'win32' }
+    execFile(harness, args, options, (error, stdout) => resolve({ ok: !error, stdout }))
   })
-  return { status: result.status, stdout: result.stdout ?? '' }
 }
 
-function claudeSignedIn(): boolean {
-  const { status, stdout } = exec('claude', ['auth', 'status', '--json'])
-  if (status !== 0) return false
+async function claudeSignedIn(): Promise<boolean> {
+  const { ok, stdout } = await exec('claude', ['auth', 'status', '--json'])
+  if (!ok) return false
   try {
     const parsed: unknown = JSON.parse(stdout)
     return typeof parsed === 'object' && parsed !== null && 'loggedIn' in parsed && parsed.loggedIn === true
@@ -55,8 +52,8 @@ async function reach({ url, headers, body }: ProbeRequest): Promise<string | und
 }
 
 const checks: Checks = {
-  onPath: (harness) => exec(harness, ['--version']).status === 0,
-  signedIn: (harness) => (harness === 'claude' ? claudeSignedIn() : exec('codex', ['login', 'status']).status === 0),
+  onPath: async (harness) => (await exec(harness, ['--version'])).ok,
+  signedIn: async (harness) => (harness === 'claude' ? claudeSignedIn() : (await exec('codex', ['login', 'status'])).ok),
   reach,
 }
 
@@ -73,8 +70,8 @@ function signedOut({ slot: { harness }, keys }: SlotUse): string {
 
 async function slotProblem(use: SlotUse, check: Checks): Promise<string | undefined> {
   const { harness, model, probe } = use.slot
-  if (!check.onPath(harness)) return `${harness} CLI not found on PATH; install it`
-  if (!probe) return check.signedIn(harness) ? undefined : signedOut(use)
+  if (!(await check.onPath(harness))) return `${harness} CLI not found on PATH; install it`
+  if (!probe) return (await check.signedIn(harness)) ? undefined : signedOut(use)
   const error = await check.reach(probe)
   return error && `${harness} model "${model}" at ${probe.url}: ${error}`
 }

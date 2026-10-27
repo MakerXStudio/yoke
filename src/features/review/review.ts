@@ -13,6 +13,7 @@ import { logged, reviewLog } from './reviewLog'
 import { type ReviewResult, runReview } from './run'
 import { type ReviewSlots, resolveSlots } from './slots'
 import { type StatusUi, timed } from './status'
+import { modelsFooter, readUsedModels } from './usedModels'
 
 type Log = (line: string) => void
 
@@ -20,7 +21,7 @@ export function reviewRunDir(pr: PullRequest, env: NodeJS.ProcessEnv = process.e
   return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yoke', 'reviews', `${pr.number}-${pr.headRefOid}`)
 }
 
-const cachedOutputs = ['claude.md', 'codex.md', 'synthesis.md', 'review.md']
+const cachedOutputs = ['claude.md', 'codex.md', 'synthesis.md', 'review.md', 'models.json']
 
 function prepareRunDir(reviewDir: string, force: boolean): void {
   mkdirSync(reviewDir, { recursive: true })
@@ -34,7 +35,7 @@ async function reviewAtHead(pr: PullRequest, reviewDir: string, request: string,
     try {
       return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track })
     } finally {
-      checkout.remove()
+      await checkout.remove()
     }
   } finally {
     rmSync(checkoutDir, { recursive: true, force: true })
@@ -70,10 +71,9 @@ export async function reviewPr(
   const slots = resolveSlots(settings)
   const pr = await timed(ui, number ? `fetching PR #${number}` : "fetching this branch's PR", () => fetchPr(number))
   log(`#${pr.number} ${pr.title}`)
-  const { diff, prior } = await timed(ui, 'fetching the diff and earlier review comments', () => ({
-    diff: fetchDiff(pr),
-    prior: fetchPriorComments(pr),
-  }))
+  const [diff, prior] = await timed(ui, 'fetching the diff and earlier review comments', () =>
+    Promise.all([fetchDiff(pr), fetchPriorComments(pr)]),
+  )
   const reviewDir = reviewRunDir(pr)
   prepareRunDir(reviewDir, force)
   file.attach(reviewDir)
@@ -93,5 +93,6 @@ export async function reviewPr(
   if (!post) return
   if (!synthesis) throw new ReviewError('Not posting: the synthesis did not produce findings in the expected format.')
   const findings = synthesis
-  await timed(ui, `posting to #${pr.number}`, () => postFindings(pr, findings, diff, prior, { api: github, log }))
+  const footer = modelsFooter(readUsedModels(reviewDir))
+  await timed(ui, `posting to #${pr.number}`, () => postFindings(pr, findings, diff, prior, { api: github, log, footer }))
 }

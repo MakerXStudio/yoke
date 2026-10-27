@@ -25,8 +25,12 @@ const pr: PullRequest = {
   files: [],
 }
 
+function returning(output: string) {
+  return vi.fn<Run>(async () => output)
+}
+
 function fakeGit(head: string) {
-  return vi.fn<Run>((_, args) => {
+  return vi.fn<Run>(async (_, args) => {
     if (args.includes('--show-toplevel')) return '/repo\n'
     if (args[0] === 'rev-parse') return `${head}\n`
     return ''
@@ -34,52 +38,52 @@ function fakeGit(head: string) {
 }
 
 describe('fetchPr', () => {
-  it("views the current branch's PR when no number is given", () => {
-    const exec = vi.fn<Run>(() => JSON.stringify(pr))
-    expect(fetchPr(undefined, exec)).toEqual(pr)
+  it("views the current branch's PR when no number is given", async () => {
+    const exec = returning(JSON.stringify(pr))
+    expect(await fetchPr(undefined, exec)).toEqual(pr)
     expect(exec.mock.calls[0]?.[1].slice(0, 3)).toEqual(['pr', 'view', '--json'])
   })
 
-  it('views the given PR', () => {
-    const exec = vi.fn<Run>(() => JSON.stringify(pr))
-    fetchPr('9', exec)
+  it('views the given PR', async () => {
+    const exec = returning(JSON.stringify(pr))
+    await fetchPr('9', exec)
     expect(exec.mock.calls[0]?.[1].slice(0, 3)).toEqual(['pr', 'view', '9'])
   })
 
-  it('rejects a PR number that is not a positive integer', () => {
+  it('rejects a PR number that is not a positive integer', async () => {
     const exec = vi.fn<Run>()
-    expect(() => fetchPr('--web', exec)).toThrow(ReviewError)
+    await expect(fetchPr('--web', exec)).rejects.toThrow(ReviewError)
     expect(exec).not.toHaveBeenCalled()
   })
 })
 
 describe('checkoutHead', () => {
-  it('reviews in the repo when it is already at the PR head', () => {
+  it('reviews in the repo when it is already at the PR head', async () => {
     const exec = fakeGit('head')
-    expect(checkoutHead(pr, '/tmp/r', exec).cwd).toBe('/repo')
+    expect((await checkoutHead(pr, '/tmp/r', exec)).cwd).toBe('/repo')
     expect(exec.mock.calls.map((c) => c[1][0])).toEqual(['rev-parse', 'rev-parse'])
   })
 
-  it('checks the PR head out into a detached worktree otherwise, and removes it after', () => {
+  it('checks the PR head out into a detached worktree otherwise, and removes it after', async () => {
     const exec = fakeGit('other')
     const tree = join('/tmp/r', 'head')
-    const checkout = checkoutHead(pr, '/tmp/r', exec)
+    const checkout = await checkoutHead(pr, '/tmp/r', exec)
     expect(checkout.cwd).toBe(tree)
     expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'origin', 'pull/9/head'], '/repo')
     expect(exec).toHaveBeenCalledWith('git', ['worktree', 'add', '--quiet', '--detach', tree, 'head'], '/repo')
-    checkout.remove()
+    await checkout.remove()
     expect(exec).toHaveBeenLastCalledWith('git', ['worktree', 'remove', '--force', tree], '/repo')
   })
 })
 
 describe('fetchPriorComments', () => {
-  it('reads inline comments and non-empty review bodies from the GitHub API', () => {
-    const exec = vi.fn<Run>((_, args) =>
+  it('reads inline comments and non-empty review bodies from the GitHub API', async () => {
+    const exec = vi.fn<Run>(async (_, args) =>
       args[2]?.endsWith('/comments')
         ? '{"path":"a.ts","line":3,"author":"wade","body":"x"}\n'
         : '{"path":null,"line":null,"author":"rob","body":"y"}\n\n',
     )
-    expect(fetchPriorComments(pr, exec)).toEqual([
+    expect(await fetchPriorComments(pr, exec)).toEqual([
       { path: 'a.ts', line: 3, author: 'wade', body: 'x' },
       { path: null, line: null, author: 'rob', body: 'y' },
     ])
@@ -90,17 +94,17 @@ describe('fetchPriorComments', () => {
 describe('pending review', () => {
   const review = { id: 5, nodeId: 'PRR_5' }
 
-  it('opens a pending review at the PR head', () => {
-    const exec = vi.fn<Run>(() => '{"id":5,"node_id":"PRR_5"}')
-    expect(openPendingReview(pr, exec)).toEqual(review)
+  it('opens a pending review at the PR head', async () => {
+    const exec = returning('{"id":5,"node_id":"PRR_5"}')
+    expect(await openPendingReview(pr, exec)).toEqual(review)
     const [command, args, , input] = exec.mock.calls[0] ?? []
     expect([command, ...(args ?? []).slice(0, 4)]).toEqual(['gh', 'api', '--method', 'POST', 'repos/{owner}/{repo}/pulls/9/reviews'])
     expect(JSON.parse(input ?? '')).toEqual({ commit_id: 'head' })
   })
 
-  it('adds a right-side comment to it by node id', () => {
-    const exec = vi.fn<Run>(() => '')
-    addReviewComment(review, { path: 'a.ts', line: 3, body: '@not-a-file' }, exec)
+  it('adds a right-side comment to it by node id', async () => {
+    const exec = returning('')
+    await addReviewComment(review, { path: 'a.ts', line: 3, body: '@not-a-file' }, exec)
     const args = exec.mock.calls[0]?.[1] ?? []
     expect(args.slice(0, 2)).toEqual(['api', 'graphql'])
     expect(args).toEqual(expect.arrayContaining(['review=PRR_5', 'path=a.ts', 'line=3', 'body=@not-a-file']))
@@ -108,17 +112,17 @@ describe('pending review', () => {
     expect(args.find((arg) => arg.startsWith('query='))).toContain('side: RIGHT')
   })
 
-  it('submits it as a COMMENT with the body', () => {
-    const exec = vi.fn<Run>(() => 'https://github.com/o/r/pull/9#pullrequestreview-5\n')
-    expect(submitPendingReview(pr, review, 'body', exec)).toBe('https://github.com/o/r/pull/9#pullrequestreview-5')
+  it('submits it as a COMMENT with the body', async () => {
+    const exec = returning('https://github.com/o/r/pull/9#pullrequestreview-5\n')
+    expect(await submitPendingReview(pr, review, 'body', exec)).toBe('https://github.com/o/r/pull/9#pullrequestreview-5')
     const [, args, , input] = exec.mock.calls[0] ?? []
     expect(args).toContain('repos/{owner}/{repo}/pulls/9/reviews/5/events')
     expect(JSON.parse(input ?? '')).toEqual({ event: 'COMMENT', body: 'body' })
   })
 
-  it('deletes it', () => {
-    const exec = vi.fn<Run>(() => '')
-    discardPendingReview(pr, review, exec)
+  it('deletes it', async () => {
+    const exec = returning('')
+    await discardPendingReview(pr, review, exec)
     expect(exec).toHaveBeenCalledWith('gh', ['api', '--method', 'DELETE', 'repos/{owner}/{repo}/pulls/9/reviews/5'])
   })
 })
