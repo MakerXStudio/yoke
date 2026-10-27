@@ -17,6 +17,7 @@ import type { PullRequest } from './request'
 
 const pr: PullRequest = {
   number: 9,
+  url: 'https://github.com/o/r/pull/9',
   title: 't',
   baseRefName: 'main',
   baseRefOid: 'base',

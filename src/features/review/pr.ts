@@ -26,10 +26,10 @@ const run: Run = (command, args, cwd, input) =>
     child.stdin?.end(input)
   })
 
-const fields = 'number,title,baseRefName,baseRefOid,headRefName,headRefOid,files'
+const fields = 'number,url,title,baseRefName,baseRefOid,headRefName,headRefOid,files'
 
 function isPullRequest(value: unknown): value is PullRequest {
-  return typeof value === 'object' && value !== null && 'number' in value && 'headRefOid' in value && 'files' in value
+  return typeof value === 'object' && value !== null && 'number' in value && 'url' in value && 'headRefOid' in value && 'files' in value
 }
 
 export async function fetchPr(number: string | undefined, exec: Run = run): Promise<PullRequest> {

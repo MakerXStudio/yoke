@@ -22,6 +22,7 @@ describe('withNewFileLineNumbers', () => {
 describe('buildRequest', () => {
   const pr: PullRequest = {
     number: 7,
+    url: 'https://github.com/o/r/pull/7',
     title: 'feat: x',
     baseRefName: 'main',
     baseRefOid: 'aaa',

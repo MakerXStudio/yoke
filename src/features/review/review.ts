@@ -18,7 +18,9 @@ import { modelsFooter, readUsedModels } from './usedModels'
 type Log = (line: string) => void
 
 export function reviewRunDir(pr: PullRequest, env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
-  return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yoke', 'reviews', `${pr.number}-${pr.headRefOid}`)
+  const [, owner = '', repo = ''] = new URL(pr.url).pathname.split('/')
+  const run = `${pr.number}-${pr.baseRefOid}-${pr.headRefOid}`
+  return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yoke', 'reviews', owner, repo, run)
 }
 
 const cachedOutputs = ['reviewer1.md', 'reviewer2.md', 'synthesis.md', 'review.md', 'models.json']

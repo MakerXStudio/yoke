@@ -198,6 +198,7 @@ describe('runReview', () => {
 describe('postFindings', () => {
   const pr: PullRequest = {
     number: 4,
+    url: 'https://github.com/o/r/pull/4',
     title: 't',
     baseRefName: 'main',
     baseRefOid: 'base',
@@ -280,13 +281,22 @@ describe('postFindings', () => {
 })
 
 describe('reviewRunDir', () => {
-  const pr: PullRequest = { number: 4, title: 't', baseRefName: 'main', baseRefOid: 'b', headRefName: 'f', headRefOid: 'abc', files: [] }
+  const pr: PullRequest = {
+    number: 4,
+    url: 'https://github.com/o/r/pull/4',
+    title: 't',
+    baseRefName: 'main',
+    baseRefOid: 'b',
+    headRefName: 'f',
+    headRefOid: 'abc',
+    files: [],
+  }
 
-  it('keys the run by PR number and head commit under the XDG cache', () => {
-    expect(reviewRunDir(pr, { XDG_CACHE_HOME: '/cache' }, '/home/me')).toBe(join('/cache', 'yoke', 'reviews', '4-abc'))
+  it('keys the run by repo, PR number, base and head commit under the XDG cache', () => {
+    expect(reviewRunDir(pr, { XDG_CACHE_HOME: '/cache' }, '/home/me')).toBe(join('/cache', 'yoke', 'reviews', 'o', 'r', '4-b-abc'))
   })
 
   it('defaults to ~/.cache', () => {
-    expect(reviewRunDir(pr, {}, '/home/me')).toBe(join('/home/me', '.cache', 'yoke', 'reviews', '4-abc'))
+    expect(reviewRunDir(pr, {}, '/home/me')).toBe(join('/home/me', '.cache', 'yoke', 'reviews', 'o', 'r', '4-b-abc'))
   })
 })

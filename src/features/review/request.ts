@@ -2,6 +2,7 @@ import { formatPriorComments, type PriorComment } from './comments'
 
 export type PullRequest = {
   number: number
+  url: string
   title: string
   baseRefName: string
   baseRefOid: string
