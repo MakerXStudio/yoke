@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Raise a PR with a concise What/Why/(How) description. Use when asked to raise, open or create a pull request, or to rewrite a PR description.
+description: "[yoke] Raise or rewrite a PR with a concise What/Why/(How) description."
 metadata:
   owner: "@makerx/yoke"
 ---

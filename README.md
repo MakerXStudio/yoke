@@ -5,7 +5,7 @@ Claude Code skills for MakerX AI-assisted delivery, and the CLI they call.
 ## Principles
 
 - **Slash-invoked.** Skills may be called directly with slash commands.
-- **Overridable.** A skill of your own with the same name wins.
+- **Overridable.** A skill of your own with the same name wins. yoke's descriptions start with `[yoke]` so you can tell them apart.
 - **Lean.** Few skills, short prompts; the CLI enforces the rules.
 
 ## Usage
