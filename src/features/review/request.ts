@@ -12,40 +12,52 @@ export type PullRequest = {
 }
 
 const fileHeader = /^\+\+\+ (?:b\/)?(.+)$/
-const hunkHeader = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/
+const hunkHeader = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 const gutterWidth = 6
+
+type DiffLine = { text: string; file: string | null; line: number | null }
+
+type Hunk = { next: number; oldLeft: number; newLeft: number }
+
+function hunkLine(text: string, hunk: Hunk): number | null {
+  if (text.startsWith('-')) hunk.oldLeft--
+  else if (text.startsWith('+')) hunk.newLeft--
+  else if (text.startsWith(' ')) {
+    hunk.oldLeft--
+    hunk.newLeft--
+  } else return null
+  return text.startsWith('-') ? null : hunk.next++
+}
+
+function parseDiff(diff: string): DiffLine[] {
+  let file: string | null = null
+  const hunk: Hunk = { next: 0, oldLeft: 0, newLeft: 0 }
+  return diff.split('\n').map((text) => {
+    if (hunk.oldLeft > 0 || hunk.newLeft > 0) return { text, file, line: hunkLine(text, hunk) }
+    const header = text.match(fileHeader)?.[1]
+    if (header) file = header === '/dev/null' ? null : header
+    const range = text.match(hunkHeader)
+    if (range) Object.assign(hunk, { oldLeft: Number(range[1] ?? 1), next: Number(range[2]), newLeft: Number(range[3] ?? 1) })
+    return { text, file, line: null }
+  })
+}
 
 function gutter(line: number | null): string {
   return `${(line === null ? '' : String(line)).padStart(gutterWidth)}  `
 }
 
 export function withNewFileLineNumbers(diff: string): string {
-  let inFile = false
-  let next = 0
-  return diff
-    .split('\n')
-    .map((line) => {
-      const hunk = line.match(hunkHeader)
-      if (fileHeader.test(line)) inFile = true
-      else if (hunk) next = Number(hunk[1])
-      else if (inFile && (line.startsWith('+') || line.startsWith(' '))) return gutter(next++) + line
-      return gutter(null) + line
-    })
+  return parseDiff(diff)
+    .map(({ text, line }) => gutter(line) + text)
     .join('\n')
 }
 
 export function commentableLines(diff: string): Map<string, Set<number>> {
   const lines = new Map<string, Set<number>>()
-  let file: Set<number> | null = null
-  let next = 0
-  for (const line of diff.split('\n')) {
-    const header = line.match(fileHeader)
-    const hunk = line.match(hunkHeader)
-    if (header?.[1]) {
-      file = header[1] === '/dev/null' ? null : new Set()
-      if (file) lines.set(header[1], file)
-    } else if (hunk) next = Number(hunk[1])
-    else if (file && (line.startsWith('+') || line.startsWith(' '))) file.add(next++)
+  for (const { file, line } of parseDiff(diff)) {
+    if (file === null || line === null) continue
+    const numbers = lines.get(file) ?? new Set<number>()
+    lines.set(file, numbers.add(line))
   }
   return lines
 }
