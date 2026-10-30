@@ -3,4 +3,4 @@ dist
 coverage
 *.log
 test-results.xml
-*.bundled_*.mjs
+tsup.config.bundled_*

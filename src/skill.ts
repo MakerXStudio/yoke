@@ -7,7 +7,7 @@ export function renderSkill({ name, description, body, disableModelInvocation }:
   return [
     '---',
     `name: ${name}`,
-    `description: ${description}`,
+    `description: ${JSON.stringify(`[yoke] ${description}`)}`,
     ...invocation,
     'metadata:',
     `  ${ownerMarker}`,

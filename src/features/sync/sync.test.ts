@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 import { ownerMarker } from '../../skill'
 import { skillsRoot, syncSkills } from './sync'
@@ -45,6 +46,13 @@ describe('syncSkills', () => {
   it('writes skills that yoke owns', () => {
     for (const file of syncSkills(destination).written.filter((f) => f.endsWith('SKILL.md'))) {
       expect(readFileSync(file, 'utf8').split('---')[1]).toContain(ownerMarker)
+    }
+  })
+
+  it('marks every skill description as coming from yoke', () => {
+    for (const file of syncSkills(destination).written) {
+      const frontmatter = parse(readFileSync(file, 'utf8').split('---')[1] ?? '')
+      expect(frontmatter.description).toMatch(/^\[yoke\] \S/)
     }
   })
 

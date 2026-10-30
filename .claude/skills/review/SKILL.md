@@ -1,6 +1,6 @@
 ---
 name: review
-description: Adversarially review a PR with Claude and Codex, then combine their findings.
+description: "[yoke] Adversarially review a PR with Claude and Codex, then combine their findings."
 disable-model-invocation: true
 metadata:
   owner: "@makerx/yoke"
