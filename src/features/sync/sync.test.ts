@@ -61,6 +61,14 @@ describe('syncSkills', () => {
     expect(readFileSync(skillPath, 'utf8')).not.toContain('disable-model-invocation')
   })
 
+  it('writes a review skill only the user can invoke', () => {
+    syncSkills(destination)
+    const skill = readFileSync(join(destination, 'review', 'SKILL.md'), 'utf8')
+    expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
+    expect(skill).toContain('yoke review $ARGUMENTS')
+    expect(skill).toContain('yoke review $ARGUMENTS --post')
+  })
+
   it('overwrites a stale yoke-owned copy of the skill', () => {
     syncSkills(destination)
     writeFileSync(skillPath, `---\nmetadata:\n  ${ownerMarker}\n---\nstale`)

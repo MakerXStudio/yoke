@@ -22,7 +22,21 @@ yoke sync --user   # ~/.claude/skills
 ## Skills
 
 - `/pr` raises a PR with a short What/Why/(How) description.
+- `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them. [Configure](src/features/review/README.md#settings).
 
-## License
+## CLI
 
-[MIT](LICENSE)
+```bash
+yoke sync [--user]      # write yoke's skills
+yoke review [number]    # review a PR (used by /review)
+yoke models             # list each provider's models
+```
+
+## Configuration
+
+```bash
+yoke config                            # list settings and their values
+yoke config set --user <key> <value>   # save to ~/.config/yoke/config.json
+```
+
+A setting can also be passed per run as a flag or env var: `yoke review --reviewer-2-model gpt-5` or `YOKE_REVIEW_REVIEWER_2_MODEL=gpt-5`. API keys are env or config only.

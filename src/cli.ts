@@ -3,8 +3,22 @@ import { relative } from 'node:path'
 import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
+import {
+  type FlagSettings,
+  listSettings,
+  resolveSettings,
+  settingDescription,
+  settingFlag,
+  type SettingKey,
+  settingKeys,
+} from './features/config/settings'
+import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
+import { listModels } from './features/review/models'
+import { ReviewError } from './features/review/pr'
+import { reviewPr } from './features/review/review'
+import { lineUi, spinnerUi } from './features/review/status'
 import { skillsRoot, syncSkills } from './features/sync/sync'
 
 const { version } = packageJson
@@ -42,4 +56,105 @@ pr.command('raise')
     }
   })
 
-program.parse()
+const providerKeys = settingKeys.filter((key) => !key.startsWith('review.'))
+
+function addSettingOptions(command: Command, keys: readonly SettingKey[]): Command {
+  for (const key of keys) {
+    const flag = settingFlag(key)
+    if (flag) command.option(`${flag} <value>`, settingDescription(key))
+  }
+  return command
+}
+
+function optionName(flag: string): string {
+  return flag.slice(2).replace(/-(.)/g, (_, next: string) => next.toUpperCase())
+}
+
+function flagSettings(options: Record<string, unknown>, keys: readonly SettingKey[]): FlagSettings {
+  const flags: FlagSettings = {}
+  for (const key of keys) {
+    const flag = settingFlag(key)
+    const value = flag && options[optionName(flag)]
+    if (typeof value === 'string') flags[key] = value
+  }
+  return flags
+}
+
+const settingsHelp =
+  '\nEach setting falls back to its YOKE_* env var, then `yoke config set --user`; API keys come from env or config only. Run `yoke config` to see them all.'
+
+addSettingOptions(
+  program
+    .command('review')
+    .description("Review the current branch's PR, or PR <number>, with Claude and Codex in parallel, then combine their findings")
+    .argument('[number]', 'PR number; reviewed without checking it out')
+    .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one')
+    .option('--force', "discard this PR head's cached reviews and run every pass again")
+    .option('--verbose', "print every step and each reviewer's tool calls as log lines instead of live spinners"),
+  settingKeys,
+)
+  .addHelpText('after', settingsHelp)
+  .action(async (number: string | undefined, options: { post?: boolean; force?: boolean; verbose?: boolean } & Record<string, unknown>) => {
+    const verbose = options.verbose ?? false
+    const ui = process.stderr.isTTY && !verbose ? spinnerUi(process.stderr) : lineUi(console.error, { activity: verbose })
+    try {
+      const settings = resolveSettings(flagSettings(options, settingKeys), process.env, readUserConfig(userConfigPath()))
+      const run = { post: options.post ?? false, force: options.force ?? false }
+      await reviewPr(number, settings, run, { out: console.log, ui })
+    } catch (error) {
+      if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    } finally {
+      ui.stop()
+    }
+  })
+
+addSettingOptions(
+  program.command('models').description('List the models each configured provider serves, for review.*.provider and review.*.model'),
+  providerKeys,
+)
+  .addHelpText('after', settingsHelp)
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const models = await listModels(resolveSettings(flagSettings(options, providerKeys), process.env, readUserConfig(userConfigPath())))
+      console.log(models.join('\n'))
+    } catch (error) {
+      if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
+
+const config = program.command('config').description('yoke settings')
+
+config
+  .command('list', { isDefault: true })
+  .description('List every setting and its value from YOKE_* env vars, then the user-level yoke config; secrets are masked')
+  .action(() => {
+    try {
+      console.log(listSettings(resolveSettings({}, process.env, readUserConfig(userConfigPath())), process.stdout.columns))
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
+
+config
+  .command('set')
+  .description(`Write a setting to the user-level yoke config (${settingKeys.join(', ')})`)
+  .argument('<key>', 'setting key')
+  .argument('<value>', 'setting value')
+  .option('--user', 'write to the user-level config; required, since repo-level config is not supported')
+  .action((key: string, value: string, options: { user?: boolean }) => {
+    try {
+      console.log(setSetting(key, value, options.user ?? false, userConfigPath()))
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
+
+await program.parseAsync()

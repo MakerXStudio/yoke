@@ -4,8 +4,9 @@ import { join } from 'node:path'
 
 import { ownerMarker, renderSkill, type Skill } from '../../skill'
 import { prSkill } from '../pr/skill'
+import { reviewSkill } from '../review/skill'
 
-const bundledSkills: Skill[] = [prSkill]
+const bundledSkills: Skill[] = [prSkill, reviewSkill]
 
 export type SyncResult = { written: string[]; skipped: string[] }
 
