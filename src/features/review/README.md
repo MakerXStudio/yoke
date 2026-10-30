@@ -1,6 +1,6 @@
 # review
 
-`yoke review [number]` reviews the current branch's PR, or PR `<number>`, with two independent reviewers, then a synthesis pass combines, de-duplicates and ranks their findings. Reviewers run at the PR's head, in a temporary worktree unless your checkout is already there and clean. Each run is cached per PR base and head commit, so re-running reuses finished steps. With `--post`, findings go to the PR as one GitHub review: inline comments on diff lines, the rest in the review body, skipping findings already raised.
+Two reviewers review a PR independently, then a third pass combines and ranks their findings.
 
 ## Parameters
 
@@ -12,6 +12,21 @@
 | `--verbose` | Print each step and reviewer tool call as log lines instead of spinners. |
 
 ## Settings
+
+Unset, reviewers run `claude` and `codex` on your own logins. To pick models, or run a reviewer through LiteLLM:
+
+```bash
+# pick each reviewer's model on your own login
+yoke config set --user review.reviewer1.model opus
+yoke config set --user review.reviewer2.model gpt-5.1-codex
+
+# or run reviewer 2 through LiteLLM
+yoke config set --user litellm.baseUrl https://llm.example.com
+yoke config set --user litellm.apiKey <key>
+yoke models   # list the models LiteLLM serves
+yoke config set --user review.reviewer2.provider litellm
+yoke config set --user review.reviewer2.model azure-us/gpt-5.1-codex
+```
 
 Slots are `reviewer1`, `reviewer2` and `synthesis`.
 

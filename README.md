@@ -22,12 +22,22 @@ yoke sync --user   # ~/.claude/skills
 ## Skills
 
 - `/pr` raises a PR with a short What/Why/(How) description.
-- `/review [number]` [reviews](src/features/review/README.md) a PR with Claude and Codex, combines their findings and offers to post them.
+- `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them. [Configure](src/features/review/README.md#settings).
+
+## CLI
+
+```bash
+yoke sync [--user]      # write yoke's skills
+yoke review [number]    # review a PR (used by /review)
+yoke models             # list each provider's models
+yoke config             # list or set settings
+```
 
 ## Configuration
 
-Settings live in `~/.config/yoke/config.json`. `yoke config` lists them with their values, and `yoke config set --user <key> <value>` sets one. Each can be overridden per run by a flag (`review.reviewer2.model` is `--reviewer-2-model`) or env var (`YOKE_REVIEW_REVIEWER_2_MODEL`); API keys have no flag. Set `litellm.baseUrl`/`litellm.apiKey` or `foundry.baseUrl`/`foundry.apiKey` to use a model provider, and `yoke models` lists its models.
+```bash
+yoke config                            # list settings and their values
+yoke config set --user <key> <value>   # save to ~/.config/yoke/config.json
+```
 
-## License
-
-[MIT](LICENSE)
+A setting can also be passed per run as a flag or env var: `yoke review --reviewer-2-model gpt-5` or `YOKE_REVIEW_REVIEWER_2_MODEL=gpt-5`. API keys are env or config only.
