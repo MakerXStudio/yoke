@@ -6,6 +6,7 @@ import {
   addReviewComment,
   checkoutHead,
   discardPendingReview,
+  fetchDiff,
   fetchPr,
   fetchPriorComments,
   openPendingReview,
@@ -64,6 +65,24 @@ describe('fetchPr', () => {
     const exec = vi.fn<Run>()
     await expect(fetchPr('--web', exec)).rejects.toThrow(ReviewError)
     expect(exec).not.toHaveBeenCalled()
+  })
+})
+
+function fakeGh(current: PullRequest) {
+  return vi.fn<Run>(async (_, args) => (args[1] === 'diff' ? 'the diff' : JSON.stringify(current)))
+}
+
+describe('fetchDiff', () => {
+  it('returns the diff when the PR revisions are unchanged', async () => {
+    expect(await fetchDiff(pr, fakeGh(pr))).toBe('the diff')
+  })
+
+  it('rejects when the PR head moved while the diff was fetched', async () => {
+    await expect(fetchDiff(pr, fakeGh({ ...pr, headRefOid: 'newer' }))).rejects.toThrow(ReviewError)
+  })
+
+  it('rejects when the PR base moved while the diff was fetched', async () => {
+    await expect(fetchDiff(pr, fakeGh({ ...pr, baseRefOid: 'newer' }))).rejects.toThrow(ReviewError)
   })
 })
 

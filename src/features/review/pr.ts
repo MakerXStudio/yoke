@@ -40,8 +40,12 @@ export async function fetchPr(number: string | undefined, exec: Run = run): Prom
   return pr
 }
 
-export function fetchDiff(pr: PullRequest, exec: Run = run): Promise<string> {
-  return exec('gh', ['pr', 'diff', String(pr.number)])
+export async function fetchDiff(pr: PullRequest, exec: Run = run): Promise<string> {
+  const diff = await exec('gh', ['pr', 'diff', String(pr.number)])
+  const current = await fetchPr(String(pr.number), exec)
+  if (current.headRefOid !== pr.headRefOid || current.baseRefOid !== pr.baseRefOid)
+    throw new ReviewError(`#${pr.number} changed while its diff was being fetched; run the review again`)
+  return diff
 }
 
 const commentFields = '{path, line: (.line // .original_line), author: (.user.login // "ghost"), body}'
