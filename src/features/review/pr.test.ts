@@ -30,11 +30,19 @@ function returning(output: string) {
   return vi.fn<Run>(async () => output)
 }
 
-function fakeGit(head: string, status = '') {
+const forkRemotes = [
+  'origin\tgit@github.com:me/r.git (fetch)',
+  'origin\tgit@github.com:me/r.git (push)',
+  'upstream\thttps://github.com/O/R.git (fetch)',
+  'upstream\thttps://github.com/O/R.git (push)',
+].join('\n')
+
+function fakeGit(head: string, status = '', remotes = forkRemotes) {
   return vi.fn<Run>(async (_, args) => {
     if (args.includes('--show-toplevel')) return '/repo\n'
     if (args[0] === 'rev-parse') return `${head}\n`
     if (args[0] === 'status') return status
+    if (args[0] === 'remote') return remotes
     return ''
   })
 }
@@ -76,10 +84,21 @@ describe('checkoutHead', () => {
     const tree = join('/tmp/r', 'head')
     const checkout = await checkoutHead(pr, '/tmp/r', exec)
     expect(checkout.cwd).toBe(tree)
-    expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'origin', 'pull/9/head'], '/repo')
     expect(exec).toHaveBeenCalledWith('git', ['worktree', 'add', '--quiet', '--detach', tree, 'head'], '/repo')
     await checkout.remove()
     expect(exec).toHaveBeenLastCalledWith('git', ['worktree', 'remove', '--force', tree], '/repo')
+  })
+
+  it("fetches the PR head from the remote that serves the PR's repo", async () => {
+    const exec = fakeGit('other')
+    await checkoutHead(pr, '/tmp/r', exec)
+    expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'upstream', 'pull/9/head'], '/repo')
+  })
+
+  it("fetches from the PR's repo URL when no remote serves it", async () => {
+    const exec = fakeGit('other', '', 'origin\tgit@github.com:me/r.git (fetch)')
+    await checkoutHead(pr, '/tmp/r', exec)
+    expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'https://github.com/o/r.git', 'pull/9/head'], '/repo')
   })
 })
 

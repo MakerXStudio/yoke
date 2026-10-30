@@ -139,12 +139,29 @@ export const github: ReviewApi = {
 
 export type Checkout = { cwd: string; remove: () => Promise<void> }
 
+function repoSlug(remoteUrl: string): string {
+  return remoteUrl
+    .replace(/\.git$/, '')
+    .split(/[/:]/)
+    .slice(-2)
+    .join('/')
+    .toLowerCase()
+}
+
+async function prRemote(pr: PullRequest, root: string, exec: Run): Promise<string> {
+  const url = new URL(pr.url)
+  const [, owner = '', repo = ''] = url.pathname.split('/')
+  const slug = `${owner}/${repo}`.toLowerCase()
+  const remotes = (await exec('git', ['remote', '-v'], root)).split('\n').map((line) => line.split(/\s+/))
+  return remotes.find(([, remoteUrl]) => remoteUrl && repoSlug(remoteUrl) === slug)?.[0] ?? `${url.origin}/${owner}/${repo}.git`
+}
+
 export async function checkoutHead(pr: PullRequest, reviewDir: string, exec: Run = run): Promise<Checkout> {
   const root = (await exec('git', ['rev-parse', '--show-toplevel'])).trim()
   const atHead = (await exec('git', ['rev-parse', 'HEAD'], root)).trim() === pr.headRefOid
   if (atHead && !(await exec('git', ['status', '--porcelain'], root)).trim()) return { cwd: root, remove: async () => {} }
   const tree = join(reviewDir, 'head')
-  await exec('git', ['fetch', '--quiet', 'origin', `pull/${pr.number}/head`], root)
+  await exec('git', ['fetch', '--quiet', await prRemote(pr, root, exec), `pull/${pr.number}/head`], root)
   await exec('git', ['worktree', 'add', '--quiet', '--detach', tree, pr.headRefOid], root)
   return {
     cwd: tree,
