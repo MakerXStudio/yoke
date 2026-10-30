@@ -75,6 +75,11 @@ describe('commentableLines', () => {
     )
   })
 
+  it('decodes a path git quoted and strips its b/ prefix', () => {
+    const quoted = ['+++ "b/caf\\303\\251\\tmenu.md"', '@@ -0,0 +1 @@', '+hi'].join('\n')
+    expect(commentableLines(quoted)).toEqual(new Map([['café\tmenu.md', new Set([1])]]))
+  })
+
   it('leaves out deleted files', () => {
     expect(commentableLines(['+++ /dev/null', '@@ -1 +0,0 @@', '-gone'].join('\n'))).toEqual(new Map())
   })
