@@ -82,12 +82,14 @@ export const runHarness: RunHarness = (run) =>
       if (event.kind === 'model') model = event.model
       if (event.kind === 'error') lastError = event.message
     }
-    child.stdout.on('data', (chunk: Buffer) => {
-      const lines = (pending + chunk.toString()).split('\n')
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      const lines = (pending + chunk).split('\n')
       pending = lines.pop() ?? ''
       lines.forEach(onLine)
     })
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
+    child.stderr.on('data', (chunk: string) => (stderr += chunk))
     child.stdin.on('error', () => {})
     child.stdin.end(run.prompt)
     child.on('error', (error) => resolve({ ok: false, error: spawnError(run.harness, error) }))
