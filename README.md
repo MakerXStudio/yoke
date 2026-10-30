@@ -24,19 +24,9 @@ yoke sync --user   # ~/.claude/skills
 - `/pr` raises a PR with a short What/Why/(How) description.
 - `/review [number]` [reviews](src/features/review/README.md) a PR with Claude and Codex, combines their findings and offers to post them.
 
-### Running review slots through a model provider
+## Configuration
 
-`review.reviewer1`, `review.reviewer2` and `review.synthesis` each have a `harness` (`claude` or `codex`), a `provider` (`litellm` or `foundry`) and a `model`. Unset, the reviewers run `claude` and `codex` on your own login. Setting a provider runs that slot through it, and needs a model; `yoke models` lists each configured provider's models. Run `yoke config` to see every setting and its value.
-
-```sh
-yoke config set --user litellm.baseUrl https://llm.example.com   # or foundry.baseUrl https://<resource>.services.ai.azure.com
-yoke config set --user litellm.apiKey <key>
-yoke models
-yoke config set --user review.reviewer2.provider litellm
-yoke config set --user review.reviewer2.model azure-us/gpt-5.1-codex
-```
-
-Settings live in `~/.config/yoke/config.json` (or `$XDG_CONFIG_HOME/yoke/config.json`); repo-level config is not supported. Each one can be overridden per run with a flag named after it (`review.reviewer2.model` is `--reviewer-2-model`, `litellm.baseUrl` is `--litellm-base-url`) or an env var (`YOKE_REVIEW_REVIEWER_2_MODEL`, `YOKE_LITELLM_BASE_URL`). API keys have no flag.
+Settings live in `~/.config/yoke/config.json`. `yoke config` lists them with their values, and `yoke config set --user <key> <value>` sets one. Each can be overridden per run by a flag (`review.reviewer2.model` is `--reviewer-2-model`) or env var (`YOKE_REVIEW_REVIEWER_2_MODEL`); API keys have no flag. Set `litellm.baseUrl`/`litellm.apiKey` or `foundry.baseUrl`/`foundry.apiKey` to use a model provider, and `yoke models` lists its models.
 
 ## License
 

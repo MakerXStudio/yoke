@@ -13,12 +13,10 @@
 
 ## Settings
 
-Each slot (`reviewer1`, `reviewer2`, `synthesis`) takes a flag, a `YOKE_*` env var, or `yoke config set --user`.
+Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 | Setting | Description |
 |---|---|
 | `review.<slot>.harness` | `claude` or `codex`. Defaults: `claude`, `codex`, reviewer1's harness. |
 | `review.<slot>.provider` | `litellm` or `foundry`. Unset: your own CLI login. |
 | `review.<slot>.model` | Model to run; required with a provider. See `yoke models`. |
-| `litellm.baseUrl`, `foundry.baseUrl` | Provider endpoint. |
-| `litellm.apiKey`, `foundry.apiKey` | Provider key. Env or `--user` config only. |
