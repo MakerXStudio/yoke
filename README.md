@@ -22,7 +22,7 @@ yoke sync --user   # ~/.claude/skills
 ## Skills
 
 - `/pr` raises a PR with a short What/Why/(How) description.
-- `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them.
+- `/review [number]` [reviews](src/features/review/README.md) a PR with Claude and Codex, combines their findings and offers to post them.
 
 ### Running review slots through a model provider
 
