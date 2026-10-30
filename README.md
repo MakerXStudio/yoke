@@ -22,7 +22,7 @@ yoke sync --user   # ~/.claude/skills
 ## Skills
 
 - `/pr` raises a PR with a short What/Why/(How) description.
-- `/review [number]` reviews the current branch's PR, or PR `<number>`, with Claude and Codex in parallel through your own `claude` and `codex` CLIs, then combines, de-duplicates and ranks their findings. Only you can invoke it. It then offers to post them: `yoke review --post` submits one GitHub review with an inline comment per finding on a diff line and the rest in the review body, skipping findings already raised on the PR. Each run is kept per PR base and head commit under `~/.cache/yoke/reviews/<owner>/<repo>/<pr>-<base-sha>-<head-sha>/`: re-running reuses any reviewer or synthesis that already finished, `review.log` records every step and reviewer tool call, `--post` posts the saved review so what's posted is what you saw, and `--force` starts over.
+- `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them.
 
 ### Running review slots through a model provider
 
