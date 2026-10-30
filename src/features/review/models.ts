@@ -37,7 +37,7 @@ async function providerModels(provider: Provider, fetchModels: Fetch): Promise<s
   const response = await get(url, headers, fetchModels)
   if (!response.ok)
     throw new ReviewError(`${url} returned HTTP ${response.status}: ${(await response.text()).trim().slice(0, maxBodyChars)}`)
-  const body: unknown = await response.json()
+  const body: unknown = await response.json().catch(() => undefined)
   if (!isModelList(body)) throw new ReviewError(`${url} returned an unexpected model list`)
   return body.data.map(({ id }) => `${provider.kind.padEnd(providerWidth)}  ${id}`)
 }

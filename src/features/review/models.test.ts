@@ -9,6 +9,8 @@ function respond(status: number, body: unknown): typeof fetch {
   return async () => new Response(JSON.stringify(body), { status })
 }
 
+const respondHtml: typeof fetch = async () => new Response('<html>LiteLLM</html>', { status: 200 })
+
 async function errorOf(run: () => Promise<unknown>): Promise<string> {
   try {
     await run()
@@ -70,5 +72,9 @@ describe('listModels', () => {
     expect(await errorOf(() => listModels(litellm, respond(200, { models: [] })))).toBe(
       'https://llm/v1/models returned an unexpected model list',
     )
+  })
+
+  it('rejects a response that is not JSON', async () => {
+    expect(await errorOf(() => listModels(litellm, respondHtml))).toBe('https://llm/v1/models returned an unexpected model list')
   })
 })
