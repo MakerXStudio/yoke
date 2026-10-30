@@ -10,7 +10,7 @@ import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { reviewRunDir } from './review'
+import { reviewRunDir, saveReview } from './review'
 import { type ReviewContext, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
@@ -298,5 +298,20 @@ describe('reviewRunDir', () => {
 
   it('defaults to ~/.cache', () => {
     expect(reviewRunDir(pr, {}, '/home/me')).toBe(join('/home/me', '.cache', 'yoke', 'reviews', 'o', 'r', '4-b-abc'))
+  })
+})
+
+describe('saveReview', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'yoke-save-'))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('removes an older saved review when the new synthesis has no findings', () => {
+    const path = join(dir, 'review.md')
+    writeFileSync(path, synthesis)
+    saveReview(path, null)
+    expect(existsSync(path)).toBe(false)
   })
 })

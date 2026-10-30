@@ -53,8 +53,9 @@ function savedReview(path: string, post: boolean): Synthesis | null {
   return parseSynthesis(readFileSync(path, 'utf8'))
 }
 
-function saveReview(path: string, markdown: string | null): void {
+export function saveReview(path: string, markdown: string | null): void {
   if (markdown) writeFileSync(path, markdown)
+  else rmSync(path, { force: true })
 }
 
 export async function reviewPr(
