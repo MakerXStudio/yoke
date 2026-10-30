@@ -35,6 +35,13 @@ describe('parseHarnessEvent', () => {
     expect(parseHarnessEvent('codex', line(event))).toEqual({ kind: 'activity', text: 'shell rg -n foo src' })
   })
 
+  it.each([[{ type: 'error', message: 'unexpected status 401' }], [{ type: 'turn.failed', error: { message: 'unexpected status 401' } }]])(
+    'reports the message of a codex %o event',
+    (event) => {
+      expect(parseHarnessEvent('codex', line(event))).toEqual({ kind: 'error', message: 'unexpected status 401' })
+    },
+  )
+
   it('truncates long summaries', () => {
     const event = { type: 'item.started', item: { type: 'command_execution', command: `echo ${'x'.repeat(200)}` } }
     const parsed = parseHarnessEvent('codex', line(event))

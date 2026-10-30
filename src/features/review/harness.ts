@@ -67,12 +67,14 @@ export const runHarness: RunHarness = (run) =>
     let pending = ''
     let finalText = ''
     let model: string | undefined
+    let lastError = ''
     let stderr = ''
     const onLine = (line: string) => {
       const event = parseHarnessEvent(run.harness, line)
       if (event.kind === 'activity') run.onProgress?.(event.text)
       if (event.kind === 'final') finalText = event.text
       if (event.kind === 'model') model = event.model
+      if (event.kind === 'error') lastError = event.message
     }
     child.stdout.on('data', (chunk: Buffer) => {
       const lines = (pending + chunk.toString()).split('\n')
@@ -85,7 +87,8 @@ export const runHarness: RunHarness = (run) =>
     child.on('error', (error) => resolve({ ok: false, error: spawnError(run.harness, error) }))
     child.on('close', (code) => {
       onLine(pending)
-      if (code !== 0) return resolve({ ok: false, error: exitError(run.harness, code, stderr || finalText) })
+      if (code !== 0)
+        return resolve({ ok: false, error: exitError(run.harness, code, [stderr || finalText, lastError].filter(Boolean).join('\n')) })
       if (run.harness === 'claude') writeFileSync(run.outputPath, finalText)
       if (!hasReview(run.outputPath)) return resolve({ ok: false, error: `${run.harness} returned an empty review` })
       resolve(model ? { ok: true, model } : { ok: true })

@@ -4,6 +4,7 @@ export type HarnessEvent =
   | { kind: 'activity'; text: string }
   | { kind: 'final'; text: string }
   | { kind: 'model'; model: string }
+  | { kind: 'error'; message: string }
   | { kind: 'ignore' }
 
 const maxSummary = 80
@@ -56,7 +57,15 @@ function unwrapShell(command: string): string {
   return truncate(wrapped?.[1]?.replace(/\\"/g, '"') ?? command)
 }
 
+function codexError(event: Json): string | undefined {
+  if (event.type === 'error') return text(event, 'message')
+  if (event.type === 'turn.failed' && isJson(event.error)) return text(event.error, 'message')
+  return undefined
+}
+
 function codexEvent(event: Json): HarnessEvent {
+  const message = codexError(event)
+  if (message) return { kind: 'error', message }
   const item = event.item
   if (event.type !== 'item.started' || !isJson(item)) return { kind: 'ignore' }
   const command = text(item, 'command')
