@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { recordSlot } from './cachedSlots'
 import { findingMarker, type PriorComment } from './comments'
 import { parseSynthesis } from './findings'
 import type { Harness, HarnessResult, HarnessRun } from './harness'
@@ -14,6 +15,7 @@ import { reviewRunDir, saveReview } from './review'
 import { type ReviewContext, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
+import type { StepName } from './usedModels'
 
 const synthesis = `## Summary
 
@@ -65,6 +67,11 @@ function context({ reviews = {}, synthesis: synthesised = synthesis }: Fake = {}
       return { ok: true }
     },
   }
+}
+
+function cache(step: StepName, output: string, slot: string): void {
+  writeFileSync(join(reviewDir, `${step}.md`), output)
+  recordSlot(reviewDir, step, slot)
 }
 
 describe('runReview', () => {
@@ -164,8 +171,8 @@ describe('runReview', () => {
   })
 
   it('reuses a cached review and reruns synthesis when a reviewer had to run', async () => {
-    writeFileSync(join(reviewDir, 'reviewer1.md'), 'cached claude review')
-    writeFileSync(join(reviewDir, 'synthesis.md'), 'stale synthesis')
+    cache('reviewer1', 'cached claude review', 'claude: default model')
+    cache('synthesis', 'stale synthesis', 'claude: default model')
     const { report } = await runReview('request', context())
     expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer2.md', 'synthesis.md'])
     expect(logs).toContain('reviewer1 (claude: default model): cached')
@@ -173,12 +180,20 @@ describe('runReview', () => {
   })
 
   it('reuses the cached synthesis when every reviewer was cached', async () => {
-    writeFileSync(join(reviewDir, 'reviewer1.md'), 'claude')
-    writeFileSync(join(reviewDir, 'reviewer2.md'), 'codex')
-    writeFileSync(join(reviewDir, 'synthesis.md'), synthesis)
+    cache('reviewer1', 'claude', 'claude: default model')
+    cache('reviewer2', 'codex', 'codex: default model')
+    cache('synthesis', synthesis, 'claude: default model')
     await runReview('request', context())
     expect(runs).toEqual([])
     expect(logs).toContain('synthesis (claude: default model): cached')
+  })
+
+  it('reruns a step and the synthesis when its slot changed since it was cached', async () => {
+    cache('reviewer1', 'claude', 'claude: default model')
+    cache('reviewer2', 'codex', 'codex: gpt-5')
+    cache('synthesis', synthesis, 'claude: default model')
+    await runReview('request', context())
+    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer2.md', 'synthesis.md'])
   })
 
   it('does not cache the output of a failed reviewer', async () => {

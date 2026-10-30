@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { cachedSlot, recordSlot } from './cachedSlots'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import type { HarnessRun, RunHarness } from './harness'
 import { ReviewError } from './pr'
@@ -40,6 +41,7 @@ async function runStep({ name, label, slot, ...step }: Step, context: ReviewCont
   if (result.ok) {
     status.succeed(`${label} done in ${seconds(started)}`)
     recordUsedModel(context.reviewDir, name, harness, slot.model ?? result.model)
+    recordSlot(context.reviewDir, name, describeSlot(slot))
     return true
   }
   status.fail(`${label} failed after ${seconds(started)}: ${result.error}`)
@@ -48,12 +50,13 @@ async function runStep({ name, label, slot, ...step }: Step, context: ReviewCont
   return false
 }
 
-function hasOutput(path: string): boolean {
-  return existsSync(path) && readFileSync(path, 'utf8').trim().length > 0
+function hasOutput({ name, slot, outputPath }: Step, context: ReviewContext): boolean {
+  if (cachedSlot(context.reviewDir, name) !== describeSlot(slot)) return false
+  return existsSync(outputPath) && readFileSync(outputPath, 'utf8').trim().length > 0
 }
 
 async function runOrReuse(step: Step, context: ReviewContext): Promise<{ ok: boolean; ran: boolean }> {
-  if (!hasOutput(step.outputPath)) return { ok: await runStep(step, context), ran: true }
+  if (!hasOutput(step, context)) return { ok: await runStep(step, context), ran: true }
   context.log(`${step.label}: cached`)
   return { ok: true, ran: false }
 }
