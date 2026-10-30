@@ -30,7 +30,6 @@ yoke sync --user   # ~/.claude/skills
 yoke sync [--user]      # write yoke's skills
 yoke review [number]    # review a PR (used by /review)
 yoke models             # list each provider's models
-yoke config             # list or set settings
 ```
 
 ## Configuration
