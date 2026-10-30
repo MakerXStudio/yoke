@@ -38,6 +38,10 @@ export function harnessArgs({ harness, reviewDir, outputPath, override }: Harnes
   ]
 }
 
+export function windowsQuote(arg: string): string {
+  return /[\s"]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
+}
+
 function tail(text: string): string {
   return text.trim().split('\n').slice(-tailLines).join('\n')
 }
@@ -58,11 +62,13 @@ function hasReview(path: string): boolean {
 
 export const runHarness: RunHarness = (run) =>
   new Promise((resolve) => {
-    const child = spawn(run.harness, harnessArgs(run), {
+    const shell = process.platform === 'win32'
+    const args = harnessArgs(run)
+    const child = spawn(run.harness, shell ? args.map(windowsQuote) : args, {
       cwd: run.cwd,
       env: { ...process.env, ...run.override?.env },
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
+      shell,
     })
     let pending = ''
     let finalText = ''

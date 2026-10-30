@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { harnessArgs, type HarnessRun } from './harness'
+import { harnessArgs, type HarnessRun, windowsQuote } from './harness'
 
 const run: HarnessRun = { harness: 'codex', prompt: 'p', cwd: '/repo', reviewDir: '/review', outputPath: '/review/out.md' }
 
@@ -26,5 +26,19 @@ describe('harnessArgs', () => {
       '--model',
       'sonnet',
     ])
+  })
+})
+
+describe('windowsQuote', () => {
+  it('leaves arguments without spaces or quotes untouched', () => {
+    expect(windowsQuote('Edit,Write,NotebookEdit')).toBe('Edit,Write,NotebookEdit')
+  })
+
+  it('quotes a path that contains a space', () => {
+    expect(windowsQuote('C:\\Users\\Jane Doe\\review')).toBe('"C:\\Users\\Jane Doe\\review"')
+  })
+
+  it('escapes embedded quotes', () => {
+    expect(windowsQuote('say "hi"')).toBe('"say \\"hi\\""')
   })
 })
