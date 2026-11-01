@@ -35,3 +35,35 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 | `review.<slot>.harness` | `claude` or `codex`. Defaults: `claude`, `codex`, reviewer1's harness. |
 | `review.<slot>.provider` | `litellm` or `foundry`. Unset: your own CLI login. |
 | `review.<slot>.model` | Model to run; required with a provider. See `yoke models`. |
+
+## CI
+
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo, with every slot going through one LiteLLM or Foundry provider. `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml`, taking each slot's harness and model from your settings or its flags, and prints the `gh secret set` commands for the `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY` secrets. Pass `--provider foundry` to use Foundry, and `--force` to replace an existing caller. By hand, set the secrets, then call it:
+
+```yaml
+name: Review PR
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    uses: MakerXStudio/yoke/.github/workflows/review.yml@main
+    with:
+      reviewer1-model: bedrock/claude-opus-5-5
+      reviewer2-model: azure/gpt-6.1-sol
+    secrets: inherit
+```
+
+| Input | Description |
+|---|---|
+| `provider` | `litellm` or `foundry`. Default: `litellm`. |
+| `reviewer1-harness`, `reviewer2-harness` | `claude` or `codex`. Defaults: `claude`, `codex`. |
+| `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
+| `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
+| `yoke-version` | `@makerx/yoke` version to run. Default: `latest`. |

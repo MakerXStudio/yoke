@@ -69,6 +69,14 @@ describe('syncSkills', () => {
     expect(skill).toContain('yoke review $ARGUMENTS --post')
   })
 
+  it('writes a review-ci skill only the user can invoke', () => {
+    syncSkills(destination)
+    const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
+    expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
+    expect(skill).toContain('yoke review-ci $ARGUMENTS')
+    expect(skill).toContain('gh secret set REVIEW_CI_API_KEY')
+  })
+
   it('overwrites a stale yoke-owned copy of the skill', () => {
     syncSkills(destination)
     writeFileSync(skillPath, `---\nmetadata:\n  ${ownerMarker}\n---\nstale`)

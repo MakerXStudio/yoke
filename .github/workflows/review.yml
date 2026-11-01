@@ -1,0 +1,115 @@
+name: Review
+
+on:
+  workflow_call:
+    inputs:
+      provider:
+        description: litellm or foundry
+        type: string
+        default: litellm
+      reviewer1-harness:
+        description: claude or codex
+        type: string
+        default: claude
+      reviewer1-model:
+        description: Model reviewer 1 runs; see `yoke models`
+        type: string
+        required: true
+      reviewer2-harness:
+        description: claude or codex
+        type: string
+        default: codex
+      reviewer2-model:
+        description: Model reviewer 2 runs; see `yoke models`
+        type: string
+        required: true
+      synthesis-harness:
+        description: 'claude or codex. Default: reviewer1-harness'
+        type: string
+        default: ''
+      synthesis-model:
+        description: 'Model the synthesis runs. Default: reviewer1-model'
+        type: string
+        default: ''
+      yoke-version:
+        description: '@makerx/yoke version to run'
+        type: string
+        default: latest
+    secrets:
+      REVIEW_CI_BASE_URL:
+        description: LiteLLM proxy URL, or https://<resource>.services.ai.azure.com for Foundry
+        required: false
+      REVIEW_CI_API_KEY:
+        description: LiteLLM or Foundry API key
+        required: false
+
+permissions: {}
+
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      CLAUDE_CODE_VERSION: 2.1.316
+      CODEX_VERSION: 0.166.0
+    steps:
+      - name: Check review secrets
+        env:
+          PROVIDER: ${{ inputs.provider }}
+          BASE_URL: ${{ secrets.REVIEW_CI_BASE_URL }}
+          API_KEY: ${{ secrets.REVIEW_CI_API_KEY }}
+        run: |
+          failed=0
+          if [ "$PROVIDER" != litellm ] && [ "$PROVIDER" != foundry ]; then
+            echo "::error::provider \"$PROVIDER\" must be litellm or foundry"
+            failed=1
+          fi
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::Secret REVIEW_CI_BASE_URL is not set. Run: gh secret set REVIEW_CI_BASE_URL, and pass it to the review workflow (secrets: inherit)"
+            failed=1
+          fi
+          if [ -z "$API_KEY" ]; then
+            echo "::error::Secret REVIEW_CI_API_KEY is not set. Run: gh secret set REVIEW_CI_API_KEY, and pass it to the review workflow (secrets: inherit)"
+            failed=1
+          fi
+          exit "$failed"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install Claude Code and Codex
+        run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION"
+
+      - name: Allow unprivileged user namespaces for the Codex sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Review PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          YOKE_VERSION: ${{ inputs.yoke-version }}
+          YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_BASE_URL || '' }}
+          YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
+          YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_BASE_URL || '' }}
+          YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_API_KEY || '' }}
+          YOKE_REVIEW_REVIEWER_1_HARNESS: ${{ inputs.reviewer1-harness }}
+          YOKE_REVIEW_REVIEWER_1_PROVIDER: ${{ inputs.provider }}
+          YOKE_REVIEW_REVIEWER_1_MODEL: ${{ inputs.reviewer1-model }}
+          YOKE_REVIEW_REVIEWER_2_HARNESS: ${{ inputs.reviewer2-harness }}
+          YOKE_REVIEW_REVIEWER_2_PROVIDER: ${{ inputs.provider }}
+          YOKE_REVIEW_REVIEWER_2_MODEL: ${{ inputs.reviewer2-model }}
+          YOKE_REVIEW_SYNTHESIS_HARNESS: ${{ inputs.synthesis-harness || inputs.reviewer1-harness }}
+          YOKE_REVIEW_SYNTHESIS_PROVIDER: ${{ inputs.provider }}
+          YOKE_REVIEW_SYNTHESIS_MODEL: ${{ inputs.synthesis-model || inputs.reviewer1-model }}
+        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review "$PR_NUMBER" --post --verbose
