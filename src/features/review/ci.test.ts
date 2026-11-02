@@ -17,7 +17,7 @@ import {
   repoRoot,
   reviewCiReport,
   reviewWorkflowRef,
-  secretCommands,
+  setupCommands,
   workflowSecrets,
   writeCallerWorkflow,
 } from './ci'
@@ -43,7 +43,9 @@ const workflowSchema = z.object({
 
 type Workflow = z.infer<typeof workflowSchema>
 
-const reusable = workflowSchema.parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/workflows/review.yml'), 'utf8')))
+const reusableSource = readFileSync(join(import.meta.dirname, '../../../.github/workflows/review.yml'), 'utf8')
+
+const reusable = workflowSchema.parse(parse(reusableSource))
 
 const models: Settings = { 'review.reviewer1.model': 'bedrock/claude-opus-5-5', 'review.reviewer2.model': 'azure/gpt-6.1-sol' }
 
@@ -62,11 +64,12 @@ describe('callerWorkflow', () => {
     expect(workflow.jobs.review?.uses).toBe(reviewWorkflowRef)
   })
 
-  it('passes only the review secrets, never every repository secret', () => {
-    expect(generated().jobs.review?.secrets).toEqual({
-      REVIEW_CI_BASE_URL: '${{ secrets.REVIEW_CI_BASE_URL }}',
-      REVIEW_CI_API_KEY: '${{ secrets.REVIEW_CI_API_KEY }}',
-    })
+  it('passes only the API key secret, never every repository secret', () => {
+    expect(generated().jobs.review?.secrets).toEqual({ REVIEW_CI_API_KEY: '${{ secrets.REVIEW_CI_API_KEY }}' })
+  })
+
+  it('reads the base URL from a variable', () => {
+    expect(inputsOf()['base-url']).toBe('${{ vars.REVIEW_CI_BASE_URL }}')
   })
 
   it('passes only inputs the reusable workflow declares, including every required one', () => {
@@ -77,14 +80,21 @@ describe('callerWorkflow', () => {
     expect(Object.keys(passed)).toEqual(expect.arrayContaining(required))
   })
 
-  it('passes exactly the secrets the reusable workflow reads', () => {
-    expect(Object.keys(reusable.on.workflow_call?.secrets ?? {}).toSorted()).toEqual(
-      Object.keys(generated().jobs.review?.secrets ?? {}).toSorted(),
+  it('passes only secrets the reusable workflow declares', () => {
+    expect(Object.keys(reusable.on.workflow_call?.secrets ?? {})).toEqual(
+      expect.arrayContaining(Object.keys(generated().jobs.review?.secrets ?? {})),
     )
+  })
+
+  it('still accepts the base URL as a secret from older callers', () => {
+    expect(reusable.on.workflow_call?.secrets).toHaveProperty('REVIEW_CI_BASE_URL')
+    expect(reusableSource).toContain("inputs.provider == 'litellm' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL)")
+    expect(reusableSource).toContain("inputs.provider == 'foundry' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL)")
   })
 
   it('defaults to litellm with claude and codex reviewers', () => {
     expect(inputsOf()).toEqual({
+      'base-url': '${{ vars.REVIEW_CI_BASE_URL }}',
       provider: 'litellm',
       'reviewer1-harness': 'claude',
       'reviewer1-model': 'bedrock/claude-opus-5-5',
@@ -142,8 +152,8 @@ describe('Entra auth', () => {
     expect(entraWorkflow({ ...entra, environment: 'review' }).jobs.review?.with).toMatchObject({ environment: 'review' })
   })
 
-  it('passes only the base URL secret', () => {
-    expect(entraWorkflow().jobs.review?.secrets).toEqual({ REVIEW_CI_BASE_URL: '${{ secrets.REVIEW_CI_BASE_URL }}' })
+  it('passes no secrets', () => {
+    expect(renderCallerWorkflow(callerWorkflow(models, 'foundry', entra))).not.toContain('secrets:')
   })
 
   it('passes only inputs the reusable workflow declares', () => {
@@ -166,30 +176,30 @@ describe('Entra auth', () => {
   })
 })
 
-describe('secretCommands', () => {
+describe('setupCommands', () => {
   const litellm = callerWorkflow(models, 'litellm')
 
-  it('fills in the base URL the provider is configured with', () => {
-    expect(secretCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, litellm)).toEqual([
-      "gh secret set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'",
+  it('sets the base URL the provider is configured with as a variable', () => {
+    expect(setupCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, litellm)).toEqual([
+      "gh variable set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'",
       'gh secret set REVIEW_CI_API_KEY',
     ])
   })
 
   it('prompts for the base URL when it is not configured', () => {
-    expect(secretCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, callerWorkflow(models, 'foundry'))[0]).toBe(
-      'gh secret set REVIEW_CI_BASE_URL',
+    expect(setupCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, callerWorkflow(models, 'foundry'))[0]).toBe(
+      'gh variable set REVIEW_CI_BASE_URL',
     )
   })
 
   it('never puts the API key on the command line', () => {
-    expect(secretCommands({ 'litellm.apiKey': 'sk-secret' }, litellm).join('\n')).not.toContain('sk-secret')
+    expect(setupCommands({ 'litellm.apiKey': 'sk-secret' }, litellm).join('\n')).not.toContain('sk-secret')
   })
 
   it('asks for no API key with Entra auth', () => {
     const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
-    expect(secretCommands({}, workflow)).toEqual(['gh secret set REVIEW_CI_BASE_URL'])
-    expect(workflowSecrets(workflow)).toEqual(['REVIEW_CI_BASE_URL'])
+    expect(setupCommands({}, workflow)).toEqual(['gh variable set REVIEW_CI_BASE_URL'])
+    expect(workflowSecrets(workflow)).toEqual([])
   })
 })
 
@@ -249,9 +259,9 @@ function noRepo(): string {
 describe('reviewCiReport', () => {
   it('lists the workflow and each secret command', () => {
     const report = reviewCiReport('wrote', { 'litellm.baseUrl': 'https://litellm.example.com' }, callerWorkflow(models), noRepo)
-    expect(report).toContain('reads REVIEW_CI_BASE_URL and REVIEW_CI_API_KEY. Set them')
+    expect(report).toContain('reads variable REVIEW_CI_BASE_URL and secret REVIEW_CI_API_KEY. Set them')
     expect(report).toContain(`wrote ${callerWorkflowPath}`)
-    expect(report).toContain("  gh secret set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY")
+    expect(report).toContain("  gh variable set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY")
     expect(report).not.toContain('federated credential')
   })
 
@@ -259,7 +269,7 @@ describe('reviewCiReport', () => {
     const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
     const report = reviewCiReport('unchanged', {}, workflow, () => 'o/r')
     expect(report).toContain(`kept ${callerWorkflowPath}`)
-    expect(report).toContain('reads REVIEW_CI_BASE_URL. Set it')
+    expect(report).toContain('reads variable REVIEW_CI_BASE_URL. Set it')
     expect(report).not.toContain('gh secret set REVIEW_CI_API_KEY')
     expect(report).toContain('Entra app client-1')
     expect(report).toContain('  issuer:   https://token.actions.githubusercontent.com')

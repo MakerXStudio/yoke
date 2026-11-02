@@ -43,11 +43,11 @@ The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` o
 `yoke review-ci` (or `/review-ci`) sets up a repo:
 
 - Writes the caller below to `.github/workflows/review-pr.yml`, with each slot's harness and model from your settings or its flags.
-- Prints the `gh secret set` commands for `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY`.
+- Prints the `gh variable set` command for the `REVIEW_CI_BASE_URL` variable and the `gh secret set` command for the `REVIEW_CI_API_KEY` secret.
 - `--provider foundry` uses Foundry, with an API key or [Entra auth](#foundry-with-entra-auth).
 - `--force` replaces an existing caller.
 
-By hand, set the secrets, then call it:
+By hand, set the variable and secret, then call it:
 
 ```yaml
 name: Review PR
@@ -66,14 +66,15 @@ jobs:
     with:
       reviewer1-model: bedrock/claude-opus-5-5
       reviewer2-model: azure/gpt-6.1-sol
+      base-url: ${{ vars.REVIEW_CI_BASE_URL }}
     secrets:
-      REVIEW_CI_BASE_URL: ${{ secrets.REVIEW_CI_BASE_URL }}
       REVIEW_CI_API_KEY: ${{ secrets.REVIEW_CI_API_KEY }}
 ```
 
 | Input | Description |
 |---|---|
 | `provider` | `litellm` or `foundry`. Default: `litellm`. |
+| `base-url` | LiteLLM proxy URL, or `https://<resource>.services.ai.azure.com` for Foundry. Not sensitive, so keep it in a variable. Callers that still pass it as the `REVIEW_CI_BASE_URL` secret keep working. |
 | `reviewer1-harness`, `reviewer2-harness` | `claude` or `codex`. Defaults: `claude`, `codex`. |
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
@@ -89,7 +90,7 @@ A Foundry resource with local auth disabled rejects API keys. Use an Entra app i
 yoke review-ci --provider foundry --azure-client-id <id> --azure-tenant-id <id> [--environment <name>]
 ```
 
-The caller then grants `id-token: write`, passes those as inputs, and passes only `REVIEW_CI_BASE_URL`. `yoke review` reads them as `foundry.azureClientId` and `foundry.azureTenantId` and exchanges the job's GitHub OIDC token for a masked Entra token, which both harnesses and the preflight probe send to Foundry as a bearer token.
+The caller then grants `id-token: write`, passes those as inputs alongside `base-url`, and passes no secrets. `yoke review` reads them as `foundry.azureClientId` and `foundry.azureTenantId` and exchanges the job's GitHub OIDC token for a masked Entra token, which both harnesses and the preflight probe send to Foundry as a bearer token.
 
 Instead of the `REVIEW_CI_API_KEY` command, `yoke review-ci` prints the federated credential to add to the app, with an `az ad app federated-credential create` command for it:
 

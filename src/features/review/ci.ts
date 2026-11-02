@@ -10,7 +10,7 @@ export const reviewWorkflowRef = 'MakerXStudio/yoke/.github/workflows/review.yml
 
 export const callerWorkflowPath = join('.github', 'workflows', 'review-pr.yml')
 
-export const baseUrlSecret = 'REVIEW_CI_BASE_URL'
+export const baseUrlVariable = 'REVIEW_CI_BASE_URL'
 export const apiKeySecret = 'REVIEW_CI_API_KEY'
 
 type Input = [name: string, value: string]
@@ -22,7 +22,7 @@ type EntraAuth = { clientId: string; environment?: string }
 export type CallerWorkflow = { provider: ProviderKind; inputs: Input[]; entra?: EntraAuth }
 
 export function workflowSecrets({ entra }: CallerWorkflow): string[] {
-  return entra ? [baseUrlSecret] : [baseUrlSecret, apiKeySecret]
+  return entra ? [] : [apiKeySecret]
 }
 
 function entraInputs({ azureClientId, azureTenantId, environment }: EntraFlags, provider: string, errors: string[]): Input[] {
@@ -86,6 +86,7 @@ function yamlValue(value: string): string {
 }
 
 export function renderCallerWorkflow(workflow: CallerWorkflow): string {
+  const secrets = workflowSecrets(workflow)
   return [
     'name: Review PR',
     '',
@@ -103,8 +104,8 @@ export function renderCallerWorkflow(workflow: CallerWorkflow): string {
     `    uses: ${reviewWorkflowRef}`,
     '    with:',
     ...workflow.inputs.map(([name, value]) => `      ${name}: ${yamlValue(value)}`),
-    '    secrets:',
-    ...workflowSecrets(workflow).map((secret) => `      ${secret}: \${{ secrets.${secret} }}`),
+    `      base-url: \${{ vars.${baseUrlVariable} }}`,
+    ...(secrets.length > 0 ? ['    secrets:', ...secrets.map((secret) => `      ${secret}: \${{ secrets.${secret} }}`)] : []),
     '',
   ].join('\n')
 }
@@ -113,11 +114,12 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
 }
 
-export function secretCommands(settings: Settings, workflow: CallerWorkflow): string[] {
+export function setupCommands(settings: Settings, workflow: CallerWorkflow): string[] {
   const baseUrl = settings[`${workflow.provider}.baseUrl`]
-  return workflowSecrets(workflow).map((secret) =>
-    secret === baseUrlSecret && baseUrl ? `gh secret set ${secret} --body ${shellQuote(baseUrl)}` : `gh secret set ${secret}`,
-  )
+  return [
+    `gh variable set ${baseUrlVariable}${baseUrl ? ` --body ${shellQuote(baseUrl)}` : ''}`,
+    ...workflowSecrets(workflow).map((secret) => `gh secret set ${secret}`),
+  ]
 }
 
 const githubOidcIssuer = 'https://token.actions.githubusercontent.com'
@@ -198,12 +200,12 @@ function entraSetup({ clientId, environment }: EntraAuth, repo: string): string[
 
 export function reviewCiReport(outcome: WriteOutcome, settings: Settings, workflow: CallerWorkflow, repo: () => string): string {
   const action = outcome === 'wrote' ? 'wrote' : 'kept'
-  const secrets = workflowSecrets(workflow)
+  const reads = [`variable ${baseUrlVariable}`, ...workflowSecrets(workflow).map((secret) => `secret ${secret}`)]
   return [
     `${action} ${callerWorkflowPath}`,
     '',
-    `The workflow reads ${secrets.join(' and ')}. Set ${secrets.length > 1 ? 'them' : 'it'} on the repo (or the org) with:`,
-    ...secretCommands(settings, workflow).map((command) => `  ${command}`),
+    `The workflow reads ${reads.join(' and ')}. Set ${reads.length > 1 ? 'them' : 'it'} on the repo (or the org) with:`,
+    ...setupCommands(settings, workflow).map((command) => `  ${command}`),
     ...(workflow.entra ? entraSetup(workflow.entra, repo()) : []),
     '',
     'Commit and push the workflow; each PR opened from this repo then gets a review.',

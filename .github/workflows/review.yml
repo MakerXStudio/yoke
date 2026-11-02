@@ -47,9 +47,13 @@ on:
         description: GitHub environment the review job runs in, so its OIDC subject matches the app's federated credential
         type: string
         default: ''
+      base-url:
+        description: LiteLLM proxy URL, or https://<resource>.services.ai.azure.com for Foundry; typically vars.REVIEW_CI_BASE_URL
+        type: string
+        default: ''
     secrets:
       REVIEW_CI_BASE_URL:
-        description: LiteLLM proxy URL, or https://<resource>.services.ai.azure.com for Foundry
+        description: 'Deprecated: pass the base-url input instead'
         required: false
       REVIEW_CI_API_KEY:
         description: LiteLLM or Foundry API key
@@ -86,9 +90,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           YOKE_VERSION: ${{ inputs.yoke-version }}
-          YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_BASE_URL || '' }}
+          YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
           YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
-          YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_BASE_URL || '' }}
+          YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
           YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && inputs.azure-client-id == '' && secrets.REVIEW_CI_API_KEY || '' }}
           YOKE_FOUNDRY_AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
           YOKE_FOUNDRY_AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
