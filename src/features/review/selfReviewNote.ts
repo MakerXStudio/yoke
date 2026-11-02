@@ -1,11 +1,9 @@
 import { parseDiff } from './diff'
 
-const addsYokeCaller = /^\+.*\buses:\s*['"]?MakerXStudio\/yoke\/\.github\/workflows\/review\.yml@/i
+const yokeCaller = /\buses:\s*['"]?MakerXStudio\/yoke\/\.github\/workflows\/review\.yml@/i
 
 function editsYokeCaller(diff: string): boolean {
-  return parseDiff(diff).some(
-    ({ text, file, line }) => line !== null && file?.startsWith('.github/workflows/') && addsYokeCaller.test(text),
-  )
+  return parseDiff(diff).some(({ text, file, line }) => line !== null && file?.startsWith('.github/workflows/') && yokeCaller.test(text))
 }
 
 export function selfReviewNote(diff: string): string {

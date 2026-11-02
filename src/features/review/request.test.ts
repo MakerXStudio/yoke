@@ -60,7 +60,17 @@ describe('buildRequest', () => {
     ].join('\n')
     const removed = caller.replace('+    uses', '-    uses').replace('@@ -0,0 +1 @@', '@@ -1 +0,0 @@')
     const readme = caller.replaceAll('.github/workflows/review-pr.yml', 'README.md')
+    const secretsOnly = [
+      'diff --git a/.github/workflows/review-pr.yml b/.github/workflows/review-pr.yml',
+      '--- a/.github/workflows/review-pr.yml',
+      '+++ b/.github/workflows/review-pr.yml',
+      '@@ -1,2 +1,2 @@',
+      '     uses: MakerXStudio/yoke/.github/workflows/review.yml@main',
+      '-    secrets: inherit',
+      '+    secrets:',
+    ].join('\n')
     expect(buildRequest(pr, caller)).toContain("## Yoke's own review workflow")
+    expect(buildRequest(pr, secretsOnly)).toContain("## Yoke's own review workflow")
     expect(buildRequest(pr, diff)).not.toContain("## Yoke's own review workflow")
     expect(buildRequest(pr, removed)).not.toContain("## Yoke's own review workflow")
     expect(buildRequest(pr, readme)).not.toContain("## Yoke's own review workflow")
