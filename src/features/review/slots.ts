@@ -1,5 +1,5 @@
 import { howToSet, type SettingKey, type Settings } from '../config/settings'
-import { apiKeySecret, baseUrlSecret } from './ci'
+import { apiKeySecret, baseUrlVariable } from './ci'
 import { isCi } from './ciRun'
 import type { Harness } from './harness'
 import { ReviewError } from './pr'
@@ -29,8 +29,8 @@ const slotNames: SlotName[] = ['reviewer1', 'reviewer2', 'synthesis']
 
 type SlotSpec = { harness?: Harness; model?: string; provider?: ProviderKind }
 
-function notSet(key: SettingKey, secret: string, placeholder: string, env: NodeJS.ProcessEnv): string {
-  return isCi(env) ? `Secret ${secret} is not set` : `${key} is not set; ${howToSet(key, placeholder)}`
+function notSet(key: SettingKey, ciName: string, placeholder: string, env: NodeJS.ProcessEnv): string {
+  return isCi(env) ? `${ciName} is not set` : `${key} is not set; ${howToSet(key, placeholder)}`
 }
 
 export function readProvider(settings: Settings, kind: ProviderKind, env: NodeJS.ProcessEnv = process.env): Provider | string[] {
@@ -42,8 +42,8 @@ export function readProvider(settings: Settings, kind: ProviderKind, env: NodeJS
   if (baseUrl && token) return { kind, baseUrl, token }
   if (baseUrl && apiKey) return { kind, baseUrl, apiKey }
   return [
-    baseUrl ? null : notSet(baseUrlKey, baseUrlSecret, '<url>', env),
-    apiKey || token ? null : notSet(apiKeyKey, apiKeySecret, '<key>', env),
+    baseUrl ? null : notSet(baseUrlKey, `Variable ${baseUrlVariable}`, '<url>', env),
+    apiKey || token ? null : notSet(apiKeyKey, `Secret ${apiKeySecret}`, '<key>', env),
   ].filter((error) => error !== null)
 }
 

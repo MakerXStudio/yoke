@@ -77,12 +77,12 @@ describe('resolveSlots', () => {
     ])
   })
 
-  it('names the unset review secrets in CI', () => {
+  it('names the unset review variable and secret in CI', () => {
     vi.stubEnv('GITHUB_ACTIONS', 'true')
     const message = errorOf(() => resolveSlots({ 'review.reviewer1.provider': 'litellm', 'review.reviewer1.model': 'sonnet' }))
     expect(message.split('\n')).toEqual([
       'Review settings are incomplete:',
-      '- Secret REVIEW_CI_BASE_URL is not set',
+      '- Variable REVIEW_CI_BASE_URL is not set',
       '- Secret REVIEW_CI_API_KEY is not set',
     ])
   })
