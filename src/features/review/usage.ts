@@ -75,7 +75,7 @@ export function usageTable(usage: StepUsage): string {
   ].join('\n')
 }
 
-export function jobSummary(summary: string, usage: StepUsage): string {
+function jobSummary(summary: string, usage: StepUsage): string {
   return ['## Adversarial review', summary || 'No summary was given.', usageTable(usage)].join('\n\n')
 }
 

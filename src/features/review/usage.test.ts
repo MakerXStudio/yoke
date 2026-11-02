@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { addUsage, jobSummary, usageTable, writeJobSummary } from './usage'
+import { addUsage, usageTable, writeJobSummary } from './usage'
 
 describe('addUsage', () => {
   it('sums each value, keeping one that only one side reported', () => {
@@ -55,10 +55,25 @@ describe('writeJobSummary', () => {
   it('appends the review summary and token usage table', () => {
     const path = join(dir, 'summary.md')
     writeFileSync(path, 'earlier step\n')
-    const usage = { reviewer2: { input: 5 } }
-    expect(writeJobSummary('One bug.', usage, { GITHUB_STEP_SUMMARY: path })).toBe(true)
-    expect(readFileSync(path, 'utf8')).toBe(`earlier step\n${jobSummary('One bug.', usage)}\n`)
-    expect(jobSummary('One bug.', usage)).toMatch(/^## Adversarial review\n\nOne bug\.\n\n## Token usage\n/)
+    expect(writeJobSummary('One bug.', { reviewer2: { input: 5 } }, { GITHUB_STEP_SUMMARY: path })).toBe(true)
+    expect(readFileSync(path, 'utf8')).toBe(
+      [
+        'earlier step',
+        '## Adversarial review',
+        '',
+        'One bug.',
+        '',
+        '## Token usage',
+        '',
+        '| Slot | Input | Output | Cache read | Cache write |',
+        '| --- | ---: | ---: | ---: | ---: |',
+        '| Reviewer 1 | — | — | — | — |',
+        '| Reviewer 2 | 5 | — | — | — |',
+        '| Synthesis | — | — | — | — |',
+        '| **Total** | 5 | — | — | — |',
+        '',
+      ].join('\n'),
+    )
   })
 
   it('writes nothing without GITHUB_STEP_SUMMARY', () => {
