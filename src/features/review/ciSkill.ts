@@ -6,6 +6,8 @@ export const reviewCiSkill: Skill = {
   disableModelInvocation: true,
   userLevel: true,
   body: `
+First read every workflow in \`.github/workflows/\` and find any that already reviews PRs with an LLM, whatever its file name or the tool behind it. Take the provider, models, base URL and Entra app IDs it uses and pass them as \`yoke review-ci\` flags, and reuse the variables and secrets it already reads instead of asking for new ones. Only ask the user for what it doesn't tell you. Afterwards, ask whether to delete the old workflow, since both would review every PR.
+
 Run \`yoke review-ci $ARGUMENTS\`. If it reports that a model is required, run \`yoke models\` to list what the provider serves, ask the user which model each reviewer should run, and rerun with \`--reviewer-1-model\` and \`--reviewer-2-model\`. If it reports the workflow already exists and differs, show the user the difference and ask before rerunning with \`--force\`.
 
 With \`--provider foundry\`, if the Foundry resource has local (API key) auth disabled or the user prefers Entra, rerun with \`--azure-client-id\` and \`--azure-tenant-id\` of the Entra app the job signs in as, plus \`--environment\` if the job should run in a GitHub environment. Ask the user for these values; don't guess them.
