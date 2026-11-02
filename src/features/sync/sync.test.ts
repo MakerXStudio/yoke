@@ -77,6 +77,21 @@ describe('syncSkills', () => {
     expect(skill).toContain('gh secret set REVIEW_CI_API_KEY')
   })
 
+  it('has the review-ci skill edit an existing review workflow in place instead of overwriting it', () => {
+    syncSkills(destination, destination)
+    const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
+    expect(skill).toContain('yoke review-ci $ARGUMENTS --print')
+    expect(skill).toContain('Never ask whether to overwrite a workflow')
+    expect(skill).not.toContain('--force')
+  })
+
+  it('has the review-ci skill never ask about org-level settings', () => {
+    syncSkills(destination, destination)
+    const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
+    expect(skill).toContain('Never ask whether they are set for the organisation')
+    expect(skill).toContain('skip it if the secret is already set for the organisation')
+  })
+
   it('writes the review-ci skill to the user .claude/skills even when syncing the repo', () => {
     const home = join(target, 'home', '.claude', 'skills')
     const { written } = syncSkills(destination, home)
