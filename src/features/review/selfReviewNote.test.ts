@@ -11,6 +11,8 @@ const reusable = z
 
 describe('selfReviewNote', () => {
   it('rests the deliberate missing concurrency block on the reusable review job skipping synchronize events', () => {
-    expect(reusable.jobs.review.if).toContain("github.event.action != 'synchronize' &&")
+    const condition = reusable.jobs.review.if
+    expect(condition).not.toContain('||')
+    expect(condition.split('&&').map((clause) => clause.trim())).toContain("github.event.action != 'synchronize'")
   })
 })
