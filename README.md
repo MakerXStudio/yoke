@@ -23,12 +23,14 @@ yoke sync --user   # ~/.claude/skills
 
 - `/pr` raises a PR with a short What/Why/(How) description.
 - `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them. [Configure](src/features/review/README.md#settings).
+- `/review-ci` adds a workflow that reviews each PR in CI and helps set its secrets. [Details](src/features/review/README.md#ci).
 
 ## CLI
 
 ```bash
 yoke sync [--user]      # write yoke's skills
 yoke review [number]    # review a PR (used by /review)
+yoke review-ci          # add the CI review workflow (used by /review-ci)
 yoke models             # list each provider's models
 ```
 

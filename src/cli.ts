@@ -15,6 +15,15 @@ import {
 import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
+import {
+  callerWorkflow,
+  callerWorkflowPath,
+  renderCallerWorkflow,
+  repoRoot,
+  reviewCiReport,
+  secretCommands,
+  writeCallerWorkflow,
+} from './features/review/ci'
 import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
@@ -107,6 +116,30 @@ addSettingOptions(
       process.exitCode = 1
     } finally {
       ui.stop()
+    }
+  })
+
+const ciKeys = settingKeys.filter((key) => /^review\.\w+\.(harness|model)$/.test(key))
+
+addSettingOptions(
+  program
+    .command('review-ci')
+    .description(`Write ${callerWorkflowPath} so each PR in this repo is reviewed in CI, then print the gh secret set commands it needs`)
+    .option('--provider <provider>', 'litellm or foundry; every slot uses it in CI. Default: review.reviewer1.provider, else litellm')
+    .option('--force', `overwrite an existing ${callerWorkflowPath} that differs`),
+  ciKeys,
+)
+  .addHelpText('after', settingsHelp)
+  .action((options: { provider?: string; force?: boolean } & Record<string, unknown>) => {
+    try {
+      const settings = resolveSettings(flagSettings(options, ciKeys), process.env, readUserConfig(userConfigPath()))
+      const workflow = callerWorkflow(settings, options.provider)
+      const outcome = writeCallerWorkflow(repoRoot(), renderCallerWorkflow(workflow), options.force ?? false)
+      console.log(reviewCiReport(outcome, secretCommands(settings, workflow.provider)))
+    } catch (error) {
+      if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
     }
   })
 
