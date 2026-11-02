@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { parseHarnessEvent } from './progress'
 import type { Override } from './provider'
+import { addUsage, type TokenUsage } from './usage'
 
 export type Harness = 'claude' | 'codex'
 
@@ -16,7 +17,7 @@ export type HarnessRun = {
   onProgress?: (activity: string) => void
 }
 
-export type HarnessResult = { ok: true; model?: string } | { ok: false; error: string }
+export type HarnessResult = { ok: true; model?: string; usage?: TokenUsage } | { ok: false; error: string }
 
 export type RunHarness = (run: HarnessRun) => Promise<HarnessResult>
 
@@ -73,12 +74,17 @@ export const runHarness: RunHarness = (run) =>
     let pending = ''
     let finalText = ''
     let model: string | undefined
+    let usage: TokenUsage | undefined
     let lastError = ''
     let stderr = ''
     const onLine = (line: string) => {
       const event = parseHarnessEvent(run.harness, line)
       if (event.kind === 'activity') run.onProgress?.(event.text)
-      if (event.kind === 'final') finalText = event.text
+      if (event.kind === 'final') {
+        finalText = event.text
+        if (event.usage) usage = event.usage
+      }
+      if (event.kind === 'usage') usage = addUsage(usage, event.usage)
       if (event.kind === 'model') model = event.model
       if (event.kind === 'error') lastError = event.message
     }
@@ -99,6 +105,6 @@ export const runHarness: RunHarness = (run) =>
         return resolve({ ok: false, error: exitError(run.harness, code, [stderr || finalText, lastError].filter(Boolean).join('\n')) })
       if (run.harness === 'claude') writeFileSync(run.outputPath, finalText)
       if (!hasReview(run.outputPath)) return resolve({ ok: false, error: `${run.harness} returned an empty review` })
-      resolve(model ? { ok: true, model } : { ok: true })
+      resolve({ ok: true, ...(model ? { model } : {}), ...(usage ? { usage } : {}) })
     })
   })
