@@ -11,11 +11,14 @@ import type { Settings } from '../config/settings'
 import {
   callerWorkflow,
   callerWorkflowPath,
+  type EntraFlags,
+  federatedCredential,
   renderCallerWorkflow,
   repoRoot,
   reviewCiReport,
   reviewWorkflowRef,
   secretCommands,
+  workflowSecrets,
   writeCallerWorkflow,
 } from './ci'
 
@@ -121,20 +124,72 @@ describe('callerWorkflow', () => {
   })
 })
 
+describe('Entra auth', () => {
+  const entra = { azureClientId: 'client-1', azureTenantId: 'tenant-1' }
+
+  function entraWorkflow(flags: EntraFlags = entra): Workflow {
+    return workflowSchema.parse(parse(renderCallerWorkflow(callerWorkflow(models, 'foundry', flags))))
+  }
+
+  it('passes the client and tenant IDs and grants id-token write', () => {
+    const rendered = renderCallerWorkflow(callerWorkflow(models, 'foundry', entra))
+    expect(rendered).toContain('permissions:\n  contents: read\n  pull-requests: write\n  id-token: write\n')
+    expect(entraWorkflow().jobs.review?.with).toMatchObject({ 'azure-client-id': 'client-1', 'azure-tenant-id': 'tenant-1' })
+    expect(entraWorkflow().jobs.review?.with).not.toHaveProperty('environment')
+  })
+
+  it('passes the environment when given', () => {
+    expect(entraWorkflow({ ...entra, environment: 'review' }).jobs.review?.with).toMatchObject({ environment: 'review' })
+  })
+
+  it('passes only the base URL secret', () => {
+    expect(entraWorkflow().jobs.review?.secrets).toEqual({ REVIEW_CI_BASE_URL: '${{ secrets.REVIEW_CI_BASE_URL }}' })
+  })
+
+  it('passes only inputs the reusable workflow declares', () => {
+    const declared = Object.keys(reusable.on.workflow_call?.inputs ?? {})
+    expect(declared).toEqual(
+      expect.arrayContaining(Object.keys(entraWorkflow({ ...entra, environment: 'review' }).jobs.review?.with ?? {})),
+    )
+  })
+
+  it('leaves id-token write and the Entra inputs out for an API key', () => {
+    expect(renderCallerWorkflow(callerWorkflow(models, 'foundry'))).not.toContain('id-token')
+    expect(inputsOf(models, 'foundry')).not.toHaveProperty('azure-client-id')
+  })
+
+  it('needs both IDs, foundry, and Entra for an environment', () => {
+    expect(() => callerWorkflow(models, 'foundry', { azureClientId: 'client-1' })).toThrow(/--azure-tenant-id is required/)
+    expect(() => callerWorkflow(models, 'foundry', { azureTenantId: 'tenant-1' })).toThrow(/--azure-client-id is required/)
+    expect(() => callerWorkflow(models, 'litellm', entra)).toThrow(/need --provider foundry/)
+    expect(() => callerWorkflow(models, 'foundry', { environment: 'review' })).toThrow(/--environment needs --azure-client-id/)
+  })
+})
+
 describe('secretCommands', () => {
+  const litellm = callerWorkflow(models, 'litellm')
+
   it('fills in the base URL the provider is configured with', () => {
-    expect(secretCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, 'litellm')).toEqual([
+    expect(secretCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, litellm)).toEqual([
       "gh secret set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'",
       'gh secret set REVIEW_CI_API_KEY',
     ])
   })
 
   it('prompts for the base URL when it is not configured', () => {
-    expect(secretCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, 'foundry')[0]).toBe('gh secret set REVIEW_CI_BASE_URL')
+    expect(secretCommands({ 'litellm.baseUrl': 'https://litellm.example.com' }, callerWorkflow(models, 'foundry'))[0]).toBe(
+      'gh secret set REVIEW_CI_BASE_URL',
+    )
   })
 
   it('never puts the API key on the command line', () => {
-    expect(secretCommands({ 'litellm.apiKey': 'sk-secret' }, 'litellm').join('\n')).not.toContain('sk-secret')
+    expect(secretCommands({ 'litellm.apiKey': 'sk-secret' }, litellm).join('\n')).not.toContain('sk-secret')
+  })
+
+  it('asks for no API key with Entra auth', () => {
+    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
+    expect(secretCommands({}, workflow)).toEqual(['gh secret set REVIEW_CI_BASE_URL'])
+    expect(workflowSecrets(workflow)).toEqual(['REVIEW_CI_BASE_URL'])
   })
 })
 
@@ -173,10 +228,53 @@ describe('writeCallerWorkflow', () => {
   })
 })
 
+describe('federatedCredential', () => {
+  it('trusts pull_request tokens from the repo without an environment', () => {
+    expect(federatedCredential('o/r')).toEqual({
+      issuer: 'https://token.actions.githubusercontent.com',
+      audience: 'api://AzureADTokenExchange',
+      subject: 'repo:o/r:pull_request',
+    })
+  })
+
+  it('trusts the environment when the job runs in one', () => {
+    expect(federatedCredential('o/r', 'review').subject).toBe('repo:o/r:environment:review')
+  })
+})
+
+function noRepo(): string {
+  throw new Error('repo looked up without Entra auth')
+}
+
 describe('reviewCiReport', () => {
   it('lists the workflow and each secret command', () => {
-    const report = reviewCiReport('wrote', ['gh secret set A', 'gh secret set B'])
+    const report = reviewCiReport('wrote', { 'litellm.baseUrl': 'https://litellm.example.com' }, callerWorkflow(models), noRepo)
+    expect(report).toContain('reads REVIEW_CI_BASE_URL and REVIEW_CI_API_KEY. Set them')
     expect(report).toContain(`wrote ${callerWorkflowPath}`)
-    expect(report).toContain('  gh secret set A\n  gh secret set B')
+    expect(report).toContain("  gh secret set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY")
+    expect(report).not.toContain('federated credential')
+  })
+
+  it('prints the federated credential to create instead of the API key command with Entra auth', () => {
+    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
+    const report = reviewCiReport('unchanged', {}, workflow, () => 'o/r')
+    expect(report).toContain(`kept ${callerWorkflowPath}`)
+    expect(report).toContain('reads REVIEW_CI_BASE_URL. Set it')
+    expect(report).not.toContain('gh secret set REVIEW_CI_API_KEY')
+    expect(report).toContain('Entra app client-1')
+    expect(report).toContain('  issuer:   https://token.actions.githubusercontent.com')
+    expect(report).toContain('  audience: api://AzureADTokenExchange')
+    expect(report).toContain('  subject:  repo:o/r:pull_request')
+    expect(report).toContain(
+      `az ad app federated-credential create --id 'client-1' --parameters '{"name":"yoke-review-ci","issuer":"https://token.actions.githubusercontent.com","subject":"repo:o/r:pull_request","audiences":["api://AzureADTokenExchange"]}'`,
+    )
+    expect(report).not.toContain('environment')
+  })
+
+  it('uses the environment subject and names the environment when one is given', () => {
+    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1', environment: 'review' })
+    const report = reviewCiReport('wrote', {}, workflow, () => 'o/r')
+    expect(report).toContain('  subject:  repo:o/r:environment:review')
+    expect(report).toContain('runs in the review environment')
   })
 })

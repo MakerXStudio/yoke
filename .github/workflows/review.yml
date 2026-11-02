@@ -35,6 +35,18 @@ on:
         description: '@makerx/yoke version to run'
         type: string
         default: latest
+      azure-client-id:
+        description: Entra app (client) ID to reach Foundry with a GitHub OIDC token instead of REVIEW_CI_API_KEY. The caller must grant id-token write
+        type: string
+        default: ''
+      azure-tenant-id:
+        description: Entra tenant ID of azure-client-id
+        type: string
+        default: ''
+      environment:
+        description: GitHub environment the review job runs in, so its OIDC subject matches the app's federated credential
+        type: string
+        default: ''
     secrets:
       REVIEW_CI_BASE_URL:
         description: LiteLLM proxy URL, or https://<resource>.services.ai.azure.com for Foundry
@@ -43,41 +55,16 @@ on:
         description: LiteLLM or Foundry API key
         required: false
 
-permissions: {}
-
 jobs:
   review:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: read
-      pull-requests: write
+    environment: ${{ inputs.environment }}
     env:
       CLAUDE_CODE_VERSION: 2.1.316
       CODEX_VERSION: 0.166.0
     steps:
-      - name: Check review secrets
-        env:
-          PROVIDER: ${{ inputs.provider }}
-          BASE_URL: ${{ secrets.REVIEW_CI_BASE_URL }}
-          API_KEY: ${{ secrets.REVIEW_CI_API_KEY }}
-        run: |
-          failed=0
-          if [ "$PROVIDER" != litellm ] && [ "$PROVIDER" != foundry ]; then
-            echo "::error::provider \"$PROVIDER\" must be litellm or foundry"
-            failed=1
-          fi
-          if [ -z "$BASE_URL" ]; then
-            echo "::error::Secret REVIEW_CI_BASE_URL is not set. Run: gh secret set REVIEW_CI_BASE_URL, and pass it to the review workflow under secrets:"
-            failed=1
-          fi
-          if [ -z "$API_KEY" ]; then
-            echo "::error::Secret REVIEW_CI_API_KEY is not set. Run: gh secret set REVIEW_CI_API_KEY, and pass it to the review workflow under secrets:"
-            failed=1
-          fi
-          exit "$failed"
-
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -102,7 +89,9 @@ jobs:
           YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_BASE_URL || '' }}
           YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
           YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_BASE_URL || '' }}
-          YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_API_KEY || '' }}
+          YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && inputs.azure-client-id == '' && secrets.REVIEW_CI_API_KEY || '' }}
+          YOKE_FOUNDRY_AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+          YOKE_FOUNDRY_AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
           YOKE_REVIEW_REVIEWER_1_HARNESS: ${{ inputs.reviewer1-harness }}
           YOKE_REVIEW_REVIEWER_1_PROVIDER: ${{ inputs.provider }}
           YOKE_REVIEW_REVIEWER_1_MODEL: ${{ inputs.reviewer1-model }}

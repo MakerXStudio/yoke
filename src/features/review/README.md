@@ -38,7 +38,16 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo, with every slot going through one LiteLLM or Foundry provider. `yoke sync` always puts `/review-ci` in `~/.claude/skills`, since it sets up other repos. `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml`, taking each slot's harness and model from your settings or its flags, and prints the `gh secret set` commands for the `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY` secrets. Pass `--provider foundry` to use Foundry, and `--force` to replace an existing caller. By hand, set the secrets, then call it:
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo. Every slot goes through one LiteLLM or Foundry provider.
+
+`yoke review-ci` (or `/review-ci`) sets up a repo:
+
+- Writes the caller below to `.github/workflows/review-pr.yml`, with each slot's harness and model from your settings or its flags.
+- Prints the `gh secret set` commands for `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY`.
+- `--provider foundry` uses Foundry, with an API key or [Entra auth](#foundry-with-entra-auth).
+- `--force` replaces an existing caller.
+
+By hand, set the secrets, then call it:
 
 ```yaml
 name: Review PR
@@ -69,6 +78,28 @@ jobs:
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
 | `yoke-version` | `@makerx/yoke` version to run. Default: `latest`. |
+| `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
+| `environment` | GitHub environment the review job runs in. |
+
+### Foundry with Entra auth
+
+A Foundry resource with local auth disabled rejects API keys. Use an Entra app instead:
+
+```sh
+yoke review-ci --provider foundry --azure-client-id <id> --azure-tenant-id <id> [--environment <name>]
+```
+
+The caller then grants `id-token: write`, passes those as inputs, and passes only `REVIEW_CI_BASE_URL`. `yoke review` reads them as `foundry.azureClientId` and `foundry.azureTenantId` and exchanges the job's GitHub OIDC token for a masked Entra token, which both harnesses and the preflight probe send to Foundry as a bearer token.
+
+Instead of the `REVIEW_CI_API_KEY` command, `yoke review-ci` prints the federated credential to add to the app, with an `az ad app federated-credential create` command for it:
+
+| Field | Value |
+|---|---|
+| Issuer | `https://token.actions.githubusercontent.com` |
+| Audience | `api://AzureADTokenExchange` |
+| Subject | `repo:<owner>/<repo>:environment:<environment>` with `--environment`, else `repo:<owner>/<repo>:pull_request` |
+
+The app also needs the Cognitive Services User role on the Foundry resource.
 
 In CI (`GITHUB_ACTIONS=true`), `yoke review --post` always posts a review, ending with a note that marking the PR as draft and then ready for review re-runs it:
 

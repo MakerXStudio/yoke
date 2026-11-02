@@ -16,6 +16,18 @@ describe('buildProbe', () => {
     expect(probe.url).toBe('https://res/anthropic/v1/messages')
     expect(probe.headers).toEqual({ 'x-api-key': 'k', 'anthropic-version': '2023-06-01' })
   })
+
+  it('pings Foundry with an Entra token as a bearer token on both paths', () => {
+    const provider = { kind: 'foundry', baseUrl: 'https://res', token: 't' } as const
+    expect(buildProbe({ harness: 'claude', model: 'sonnet' }, provider).headers).toEqual({
+      Authorization: 'Bearer t',
+      'anthropic-version': '2023-06-01',
+    })
+    expect(buildProbe({ harness: 'codex', model: 'gpt-5' }, provider)).toMatchObject({
+      url: 'https://res/openai/v1/responses',
+      headers: { Authorization: 'Bearer t' },
+    })
+  })
 })
 
 describe('deriveEndpoints', () => {
@@ -75,5 +87,21 @@ describe('buildOverride', () => {
       args: ['--model', 'sonnet-x'],
       env: { CLAUDE_CODE_USE_FOUNDRY: '1', ANTHROPIC_FOUNDRY_BASE_URL: 'https://res/anthropic', ANTHROPIC_FOUNDRY_API_KEY: 'k', ...pinned },
     })
+  })
+
+  const entra = { kind: 'foundry', baseUrl: 'https://res', token: 't' } as const
+
+  it('sends Claude an Entra token as a bearer auth token at the Foundry anthropic endpoint', () => {
+    expect(buildOverride({ harness: 'claude', model: 'sonnet-x' }, entra)).toEqual({
+      args: ['--model', 'sonnet-x'],
+      env: { ANTHROPIC_BASE_URL: 'https://res/anthropic', ANTHROPIC_AUTH_TOKEN: 't', ...pinned },
+    })
+  })
+
+  it('gives Codex an Entra token through its bearer env key', () => {
+    const { args, env } = buildOverride({ harness: 'codex', model: 'gpt-5-codex' }, entra)
+    expect(args).toContain('model_providers.yoke.base_url=https://res/openai/v1')
+    expect(args).toContain('model_providers.yoke.env_key=YOKE_FOUNDRY_TOKEN')
+    expect(env).toEqual({ YOKE_FOUNDRY_TOKEN: 't' })
   })
 })

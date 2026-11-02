@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ReviewError } from './pr'
 import { resolveSlots } from './slots'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 const foundry = { 'foundry.baseUrl': 'https://res', 'foundry.apiKey': 'k' }
 
@@ -30,6 +34,15 @@ describe('resolveSlots', () => {
     expect(slots.reviewer2).toEqual({ harness: 'codex', model: 'gpt-5', override: { args: ['-m', 'gpt-5'], env: {} } })
   })
 
+  it('reaches Foundry with foundry.token over foundry.apiKey, and needs no API key with a token', () => {
+    const slot = { 'review.reviewer1.provider': 'foundry', 'review.reviewer1.model': 'sonnet' }
+    for (const settings of [
+      { ...foundry, 'foundry.token': 't', ...slot },
+      { 'foundry.baseUrl': 'https://res', 'foundry.token': 't', ...slot },
+    ])
+      expect(resolveSlots(settings).reviewer1.probe?.headers).toMatchObject({ Authorization: 'Bearer t' })
+  })
+
   it('lets a slot swap its harness', () => {
     expect(resolveSlots({ 'review.reviewer1.harness': 'codex' }).reviewer1).toEqual({ harness: 'codex' })
   })
@@ -55,11 +68,22 @@ describe('resolveSlots', () => {
   })
 
   it('names every missing setting of the provider a slot uses, and how to set it', () => {
+    vi.stubEnv('GITHUB_ACTIONS', '')
     const message = errorOf(() => resolveSlots({ 'review.reviewer1.provider': 'litellm', 'review.reviewer1.model': 'sonnet' }))
     expect(message.split('\n')).toEqual([
       'Review settings are incomplete:',
       '- litellm.baseUrl is not set; pass --litellm-base-url, set YOKE_LITELLM_BASE_URL or run `yoke config set --user litellm.baseUrl <url>`',
       '- litellm.apiKey is not set; set YOKE_LITELLM_API_KEY or run `yoke config set --user litellm.apiKey <key>`',
+    ])
+  })
+
+  it('names the unset review secrets in CI', () => {
+    vi.stubEnv('GITHUB_ACTIONS', 'true')
+    const message = errorOf(() => resolveSlots({ 'review.reviewer1.provider': 'litellm', 'review.reviewer1.model': 'sonnet' }))
+    expect(message.split('\n')).toEqual([
+      'Review settings are incomplete:',
+      '- Secret REVIEW_CI_BASE_URL is not set',
+      '- Secret REVIEW_CI_API_KEY is not set',
     ])
   })
 

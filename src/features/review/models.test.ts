@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { listModels, modelsRequest } from './models'
 import { ReviewError } from './pr'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 const litellm = { 'litellm.baseUrl': 'https://llm/', 'litellm.apiKey': 'k' }
 
@@ -35,6 +39,10 @@ describe('modelsRequest', () => {
       headers: { 'api-key': 'k' },
     })
   })
+
+  it('asks Foundry with an Entra token as a bearer token', () => {
+    expect(modelsRequest({ kind: 'foundry', baseUrl: 'https://res', token: 't' }).headers).toEqual({ Authorization: 'Bearer t' })
+  })
 })
 
 describe('listModels', () => {
@@ -56,6 +64,7 @@ describe('listModels', () => {
   })
 
   it('names the missing setting of a half-configured provider', async () => {
+    vi.stubEnv('GITHUB_ACTIONS', '')
     const message = await errorOf(() => listModels({ 'foundry.baseUrl': 'https://res' }, respond(200, { data: [] })))
     expect(message.split('\n')).toEqual([
       'Model provider settings are incomplete:',
