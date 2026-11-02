@@ -123,23 +123,6 @@ export function setupCommands(settings: Settings, workflow: CallerWorkflow): str
   ]
 }
 
-const gateRuleset = {
-  name: 'yoke review',
-  target: 'branch',
-  enforcement: 'active',
-  conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-  rules: [
-    {
-      type: 'required_status_checks',
-      parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: gateCheck }] },
-    },
-  ],
-}
-
-export function rulesetCommand(): string {
-  return `echo ${shellQuote(JSON.stringify(gateRuleset))} | gh api --method POST 'repos/{owner}/{repo}/rulesets' --input -`
-}
-
 const unknownRepo = '<owner>/<repo>'
 
 export function githubRepo(cwd = process.cwd()): string {
@@ -213,8 +196,6 @@ export function reviewCiReport(outcome: ReportOutcome, settings: Settings, workf
       ? "Once the repo's review workflow runs this review, commit and push it; each PR opened from this repo then gets a review."
       : `Commit and push ${callerWorkflowPath}; each PR opened from this repo then gets a review.`,
     '',
-    `To block merging while the review fails, require the ${gateCheck} check on the default branch with:`,
-    `  ${rulesetCommand()}`,
-    'Run it only after this workflow is merged to the default branch, or pushes to open PRs get stuck waiting for a status.',
+    `To block merging while the review fails, run /review-ci-gate once this workflow is merged to the default branch; it requires the ${gateCheck} check there.`,
   ].join('\n')
 }

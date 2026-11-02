@@ -34,7 +34,7 @@ Never ask whether they are set for the organisation, and don't query org setting
 
 With Entra, check \`az ad app federated-credential list --id <client-id>\` and show the printed create command if the credential is missing.
 
-Finish with what changed and what's left: commit and push the workflow, then, only once it is merged to the default branch, run the printed \`gh api\` ruleset command requiring \`review / gate\`. Don't run it before then.
+Finish with what changed and what's left: commit and push the workflow, then, once it is merged to the default branch, run \`/review-ci-gate\` to require \`review / gate\` before merging.
 
 If \`yoke\` is not found, run \`npm i -g @makerx/yoke\`.
 `,

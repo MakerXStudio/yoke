@@ -77,6 +77,23 @@ describe('syncSkills', () => {
     expect(skill).toContain('gh secret set REVIEW_CI_API_KEY')
   })
 
+  it('has the review-ci skill point to /review-ci-gate instead of a ruleset command', () => {
+    syncSkills(destination, destination)
+    const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
+    expect(skill).toContain('once it is merged to the default branch, run `/review-ci-gate`')
+    expect(skill).not.toContain('gh api')
+    expect(skill).not.toContain('ruleset')
+  })
+
+  it('writes a user-level review-ci-gate skill, only the user can invoke, that runs yoke review-ci-gate', () => {
+    const home = join(target, 'home', '.claude', 'skills')
+    syncSkills(destination, home)
+    const skill = readFileSync(join(home, 'review-ci-gate', 'SKILL.md'), 'utf8')
+    expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
+    expect(skill).toContain('Run `yoke review-ci-gate` and relay its output.')
+    expect(skill).toContain('say what is missing and how to fix it')
+  })
+
   it('has the review-ci skill edit an existing review workflow in place instead of overwriting it', () => {
     syncSkills(destination, destination)
     const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
