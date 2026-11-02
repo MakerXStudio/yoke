@@ -8,7 +8,7 @@ import { withEntraToken } from './entra'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { runHarness } from './harness'
 import { postFindings } from './post'
-import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github } from './pr'
+import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github, ReviewError } from './pr'
 import { assertViable } from './preflight'
 import { buildRequest, type PullRequest } from './request'
 import { logged, reviewLog } from './reviewLog'
@@ -58,13 +58,20 @@ async function reviewAtHead(
   }
 }
 
-export type ReviewOptions = { post: boolean; force: boolean }
+export type ReviewOptions = { post: boolean; force: boolean; head?: string }
 
 export type ReviewIo = { out: Log; ui: StatusUi }
 
 function savedReview(path: string, post: boolean): Synthesis | null {
   if (!post || !existsSync(path)) return null
   return parseSynthesis(readFileSync(path, 'utf8'))
+}
+
+export function assertHead(pr: PullRequest, head: string | undefined): void {
+  if (head && pr.headRefOid !== head)
+    throw new ReviewError(
+      `#${pr.number} moved from ${head.slice(0, 7)} to ${pr.headRefOid.slice(0, 7)}, so its new commits were not approved; not reviewing it`,
+    )
 }
 
 export function saveReview(path: string, markdown: string | null): void {
@@ -75,7 +82,7 @@ export function saveReview(path: string, markdown: string | null): void {
 export async function reviewPr(
   number: string | undefined,
   settings: Settings,
-  { post, force }: ReviewOptions,
+  { post, force, head }: ReviewOptions,
   io: ReviewIo,
 ): Promise<void> {
   const file = reviewLog()
@@ -91,6 +98,7 @@ export async function reviewPr(
   const [diff, prior] = await timed(ui, 'fetching the diff and earlier review comments', () =>
     Promise.all([fetchDiff(pr), fetchPriorComments(pr)]),
   )
+  assertHead(pr, head)
   const reviewDir = reviewRunDir(pr)
   prepareRunDir(reviewDir, force)
   file.attach(reviewDir)

@@ -11,8 +11,9 @@ const reusable = z
 
 describe('selfReviewNote', () => {
   it('rests the deliberate missing concurrency block on the reusable review job skipping synchronize events', () => {
-    const condition = reusable.jobs.review.if
-    expect(condition).not.toContain('||')
-    expect(condition.split('&&').map((clause) => clause.trim())).toContain("github.event.action != 'synchronize'")
+    let topLevel = reusable.jobs.review.if
+    while (/\([^()]*\)/.test(topLevel)) topLevel = topLevel.replace(/\([^()]*\)/g, 'group')
+    expect(topLevel).not.toContain('||')
+    expect(topLevel.split('&&').map((clause) => clause.trim())).toContain("github.event.action != 'synchronize'")
   })
 })

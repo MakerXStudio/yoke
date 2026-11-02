@@ -9,6 +9,7 @@ import { z } from 'zod'
 
 import type { Settings } from '../config/settings'
 import {
+  callerTargetTypes,
   callerWorkflow,
   callerTriggerTypes,
   callerWorkflowPath,
@@ -72,8 +73,12 @@ describe('callerWorkflow', () => {
     expect(workflow.jobs.review?.uses).toBe(reviewWorkflowRef)
   })
 
-  it('lets the gate read earlier runs', () => {
-    expect(renderCallerWorkflow(callerWorkflow(models))).toContain('permissions:\n  actions: read\n')
+  it('runs the approved review when a fork PR is labelled, and withdraws the approval when it is pushed to', () => {
+    expect(generated().on.pull_request_target?.types).toEqual(['labeled', 'synchronize'])
+  })
+
+  it('lets the gate read earlier runs, record approved reviews and re-run the gate', () => {
+    expect(generated().permissions).toEqual({ actions: 'write', contents: 'read', 'pull-requests': 'write', statuses: 'write' })
   })
 
   it('passes only the API key secret, never every repository secret', () => {
@@ -156,17 +161,42 @@ describe('reusable workflow', () => {
 })
 
 describe('gate', () => {
-  it('runs after the review whatever its result', () => {
-    expect(reusable.jobs.gate).toMatchObject({ needs: 'review', if: 'always()' })
+  it('runs after the review whatever its result, and on pull_request_target only after an approved review', () => {
+    expect(reusable.jobs.gate).toMatchObject({
+      needs: 'review',
+      if: "always() && (github.event_name == 'pull_request' || needs.review.result != 'skipped')",
+    })
   })
 
-  it('skips the review on pushes', () => {
-    expect(reusable.jobs.review?.if).toMatch(/^github\.event\.action != 'synchronize' && /)
+  it('skips the review on pushes, and runs it on pull_request_target only for a fork labelled review', () => {
+    const condition = reusable.jobs.review?.if ?? ''
+    expect(condition).toMatch(/^github\.event\.action != 'synchronize' && /)
+    expect(condition).toContain("github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository")
+    expect(condition).toContain(
+      "github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'review' && github.event.pull_request.head.repo.full_name != github.repository",
+    )
   })
 
-  it("triggers yoke's own review on pushes and lets the gate read earlier runs", () => {
+  it('removes the review label only on a push to a labelled fork PR', () => {
+    const { unapprove } = reusable.jobs
+    expect(unapprove?.if).toBe(
+      "github.event_name == 'pull_request_target' && github.event.action == 'synchronize' && github.event.pull_request.head.repo.full_name != github.repository && contains(github.event.pull_request.labels.*.name, 'review')",
+    )
+    expect(unapprove?.needs).toBeUndefined()
+    expect(reusableSource).toContain('review-unapprove')
+  })
+
+  it('reviews only the approved head on pull_request_target', () => {
+    expect(reusableSource).toContain(
+      "APPROVED_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}",
+    )
+    expect(reusableSource).toContain('${APPROVED_HEAD:+--head "$APPROVED_HEAD"}')
+  })
+
+  it("triggers yoke's own review like the generated caller", () => {
     expect(ownCaller.on.pull_request?.types).toEqual(callerTriggerTypes)
-    expect(ownCaller.permissions).toMatchObject({ actions: 'read' })
+    expect(ownCaller.on.pull_request_target?.types).toEqual(callerTargetTypes)
+    expect(ownCaller.permissions).toEqual(generated().permissions)
   })
 
   it('names the check the ruleset requires after the caller and gate jobs', () => {
@@ -184,7 +214,9 @@ describe('Entra auth', () => {
 
   it('passes the client and tenant IDs and grants id-token write', () => {
     const rendered = renderCallerWorkflow(callerWorkflow(models, 'foundry', entra))
-    expect(rendered).toContain('permissions:\n  actions: read\n  contents: read\n  pull-requests: write\n  id-token: write\n')
+    expect(rendered).toContain(
+      'permissions:\n  actions: write\n  contents: read\n  pull-requests: write\n  statuses: write\n  id-token: write\n',
+    )
     expect(entraWorkflow().jobs.review?.with).toMatchObject({ 'azure-client-id': 'client-1', 'azure-tenant-id': 'tenant-1' })
     expect(entraWorkflow().jobs.review?.with).not.toHaveProperty('environment')
   })

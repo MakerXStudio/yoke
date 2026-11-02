@@ -10,6 +10,7 @@ Two reviewers review a PR independently, then a third pass combines and ranks th
 | `--post` | Post the findings as one GitHub review, reusing the saved review when there is one. |
 | `--force` | Discard the cached reviews and run every pass again. |
 | `--verbose` | Print each step and reviewer tool call as log lines instead of spinners. |
+| `--head <sha>` | Refuse to review unless the PR's head is this commit. CI passes the commit a maintainer approved on a fork PR. |
 
 ## Settings
 
@@ -38,7 +39,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR, with every slot on one LiteLLM or Foundry provider. It skips drafts, forks and bots.
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR, with every slot on one LiteLLM or Foundry provider. It skips drafts and bots, and runs on a fork PR only once a maintainer [approves it](#fork-prs).
 
 `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml` and prints the commands to set its variable and secret, then points to `/review-ci-gate` for the [merge gate](#merge-gate). `--print` shows them without saving anything. It never replaces a `review-pr.yml` that differs from its version; it stops and says to edit that file in place.
 
@@ -52,11 +53,14 @@ name: Review PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [labeled, synchronize]
 
 permissions:
-  actions: read
+  actions: write
   contents: read
   pull-requests: write
+  statuses: write
 
 jobs:
   review:
@@ -84,9 +88,24 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 
 ### Merge gate
 
-The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push.
+The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for bots, which never get one. It runs on every push.
 
-`/review-ci-gate` (or `yoke review-ci-gate`) adds a ruleset requiring the check on the default branch. It first checks that the caller workflow is merged there with the `synchronize` trigger, `actions: read` and no `paths` or branch filters that skip PRs to it, and that the gate has reported on a recent PR; otherwise it creates nothing and says what to fix.
+For a PR from a fork, the gate fails until a review a maintainer approved succeeds for the PR's head commit. See [Fork PRs](#fork-prs).
+
+`/review-ci-gate` (or `yoke review-ci-gate`) adds a ruleset requiring the check on the default branch. It first checks that the caller workflow is merged there with the `synchronize` trigger, the `pull_request_target` `labeled` and `synchronize` triggers, `actions: write` and `statuses: write`, and no `paths` or branch filters that skip PRs to it, and that the gate has reported on a recent PR; otherwise it creates nothing and says what to fix.
+
+### Fork PRs
+
+The review doesn't run automatically on a PR from a fork: it needs the repo's secrets, and its reviewers run on the fork's code. The gate fails for the PR, telling a maintainer to read the diff and add the `review` label.
+
+> [!WARNING]
+> Adding the `review` label runs Claude and Codex, with `REVIEW_CI_API_KEY` (or the Entra app's token) and a GitHub token that can write to the repo's PRs, statuses and Actions runs, on the fork's code. Read the whole diff first, including workflows, scripts and any instructions aimed at an AI agent, and add the label only when nothing in it could leak a secret or misuse that token.
+
+Adding the label runs the review on `pull_request_target`, which takes the workflow from the PR's base branch and checks out the labelled commit. It reviews only that commit: if the fork pushed after the label was added, the review fails without running. It posts its findings like any other review.
+
+`pull_request_target` checks attach to the base branch's commit, not the PR's, so the gate job on that run records the outcome as a `review / approved review` commit status on the PR's head commit, then re-runs the `review / gate` job of that commit's `pull_request` run. The gate reads that status and passes once the approved review succeeded, without anyone pushing again. To re-run a failed approved review, remove the label and add it again.
+
+An approval covers only the commit that was labelled. When the fork pushes again, the `unapprove` job on the `pull_request_target` `synchronize` event runs `yoke review-unapprove`, which removes the `review` label, and the gate fails for the new head until a maintainer reads the new commits and adds the label again.
 
 ### Foundry with Entra auth
 

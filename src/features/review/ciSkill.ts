@@ -19,7 +19,7 @@ A workflow is an LLM review if it has a model review PRs, whatever tool it uses.
 
 Never ask whether to overwrite a workflow. If \`review-pr.yml\` exists and differs, edit it in place.
 
-The \`review / gate\` merge gate needs the \`synchronize\` trigger and \`actions: read\` permission from \`--print\`; add them to an edited workflow if missing.
+The \`review / gate\` merge gate needs the \`synchronize\` trigger, the \`pull_request_target\` \`labeled\` and \`synchronize\` triggers, and the \`actions: write\` and \`statuses: write\` permissions from \`--print\`; add them to an edited workflow if missing.
 
 If no workflow or setting names the models, ask which model each reviewer runs. For LiteLLM, offer \`yoke models\`. For Foundry, ask for deployment names.
 

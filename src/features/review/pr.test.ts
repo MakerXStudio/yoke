@@ -9,6 +9,8 @@ import {
   fetchDiff,
   fetchPr,
   fetchPriorComments,
+  githubDelete,
+  githubPost,
   openPendingReview,
   ReviewError,
   type Run,
@@ -169,5 +171,30 @@ describe('pending review', () => {
     const exec = returning('')
     await discardPendingReview(pr, review, exec)
     expect(exec).toHaveBeenCalledWith('gh', ['api', '--method', 'DELETE', 'repos/{owner}/{repo}/pulls/9/reviews/5'])
+  })
+})
+
+describe('githubDelete', () => {
+  it('sends a DELETE request', async () => {
+    const exec = returning('')
+    await githubDelete('repos/o/r/issues/5/labels/review', exec)
+    expect(exec).toHaveBeenCalledWith('gh', ['api', '--method', 'DELETE', 'repos/o/r/issues/5/labels/review'])
+  })
+})
+
+describe('githubPost', () => {
+  it('sends the body and parses the response', async () => {
+    const exec = returning('{"id":1}')
+    expect(await githubPost('repos/o/r/statuses/abc', { state: 'success' }, exec)).toEqual({ id: 1 })
+    expect(exec).toHaveBeenCalledWith(
+      'gh',
+      ['api', '--method', 'POST', 'repos/o/r/statuses/abc', '--input', '-'],
+      undefined,
+      '{"state":"success"}',
+    )
+  })
+
+  it('returns null for an empty response', async () => {
+    expect(await githubPost('repos/o/r/actions/jobs/1/rerun', {}, returning(''))).toBeNull()
   })
 })

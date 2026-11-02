@@ -17,6 +17,8 @@ export const apiKeySecret = 'REVIEW_CI_API_KEY'
 
 export const callerTriggerTypes = ['opened', 'synchronize', 'reopened', 'ready_for_review']
 
+export const callerTargetTypes = ['labeled', 'synchronize']
+
 export const gateCheck = 'review / gate'
 
 type Input = [name: string, value: string]
@@ -97,11 +99,14 @@ export function renderCallerWorkflow(workflow: CallerWorkflow): string {
     'on:',
     '  pull_request:',
     `    types: [${callerTriggerTypes.join(', ')}]`,
+    '  pull_request_target:',
+    `    types: [${callerTargetTypes.join(', ')}]`,
     '',
     'permissions:',
-    '  actions: read',
+    '  actions: write',
     '  contents: read',
     '  pull-requests: write',
+    '  statuses: write',
     ...(workflow.entra ? ['  id-token: write'] : []),
     '',
     'jobs:',

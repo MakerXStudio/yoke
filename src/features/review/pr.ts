@@ -132,7 +132,12 @@ export async function githubGet(path: string, exec: Run = run): Promise<unknown>
 }
 
 export async function githubPost(path: string, body: unknown, exec: Run = run): Promise<unknown> {
-  return JSON.parse(await exec('gh', ['api', '--method', 'POST', path, '--input', '-'], undefined, JSON.stringify(body)))
+  const output = await exec('gh', ['api', '--method', 'POST', path, '--input', '-'], undefined, JSON.stringify(body))
+  return output.trim() ? JSON.parse(output) : null
+}
+
+export async function githubDelete(path: string, exec: Run = run): Promise<void> {
+  await exec('gh', ['api', '--method', 'DELETE', path])
 }
 
 export type ReviewApi = {
