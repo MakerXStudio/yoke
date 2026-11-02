@@ -85,6 +85,7 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 ### Merge gate
 
 The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push, so require it with the ruleset `yoke review-ci` prints, once the caller is merged.
+
 ### Foundry with Entra auth
 
 For a Foundry resource that rejects API keys, sign in as an Entra app with the job's GitHub OIDC token:
