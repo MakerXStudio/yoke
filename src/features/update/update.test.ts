@@ -88,7 +88,7 @@ describe('updateYoke on a git clone', () => {
     expect(updateYoke(deps({ dir: cloneDir, install: 'git', targets: () => ['user', 'repo'], run }))).toBe(0)
     expect(run.mock.calls).toEqual([
       ['git pull', cloneDir],
-      ['npm i', cloneDir],
+      ['npm ci', cloneDir],
       ['npm run build', cloneDir],
       ['yoke sync --user'],
       ['yoke sync'],

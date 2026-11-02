@@ -25,7 +25,7 @@ function installLatest(install: 'git' | 'npm', dir: string, run: Run, log: (line
   log('Pulling the latest yoke...')
   run('git pull', dir)
   log('Installing dependencies...')
-  run('npm i', dir)
+  run('npm ci', dir)
   log('Building...')
   run('npm run build', dir)
 }
