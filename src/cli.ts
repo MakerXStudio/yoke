@@ -3,15 +3,9 @@ import { relative } from 'node:path'
 import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
-import {
-  type FlagSettings,
-  listSettings,
-  resolveSettings,
-  settingDescription,
-  settingFlag,
-  type SettingKey,
-  settingKeys,
-} from './features/config/settings'
+import { flagSettings } from './features/config/flagSettings'
+import { addSettingOptions } from './features/config/settingOptions'
+import { listSettings, resolveSettings, settingKeys } from './features/config/settings'
 import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
@@ -31,6 +25,9 @@ import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
 import { lineUi, spinnerUi } from './features/review/status'
 import { skillsRoot, syncSkills } from './features/sync/sync'
+import { detectInstall, installDir } from './features/update/install'
+import { syncTargets } from './features/update/targets'
+import { updateYoke } from './features/update/update'
 
 const { version } = packageJson
 
@@ -48,6 +45,20 @@ program
     const { written, skipped } = syncSkills(skillsRoot(user), skillsRoot(true), options.force ?? false)
     for (const file of written) console.log(`wrote ${display(file)}`)
     for (const dir of skipped) console.log(`skipped ${display(dir)} (not yoke's skill; rerun with --force to overwrite it)`)
+  })
+
+program
+  .command('update')
+  .description('Update yoke to the latest version, then re-sync its skills wherever they were synced before')
+  .action(() => {
+    const dir = installDir()
+    process.exitCode = updateYoke({
+      dir,
+      install: detectInstall(dir),
+      targets: () => syncTargets(),
+      log: console.log,
+      error: console.error,
+    })
   })
 
 const pr = program.command('pr').description('Pull request commands')
@@ -70,29 +81,6 @@ pr.command('raise')
   })
 
 const providerKeys = settingKeys.filter((key) => !key.startsWith('review.'))
-
-function addSettingOptions(command: Command, keys: readonly SettingKey[]): Command {
-  for (const key of keys) {
-    const flag = settingFlag(key)
-    if (flag) command.option(`${flag} <value>`, settingDescription(key))
-  }
-  return command
-}
-
-function optionName(flag: string): string {
-  return flag.slice(2).replace(/-(.)/g, (_, next: string) => next.toUpperCase())
-}
-
-function flagSettings(options: Record<string, unknown>, keys: readonly SettingKey[]): FlagSettings {
-  const flags: FlagSettings = {}
-  for (const key of keys) {
-    const flag = settingFlag(key)
-    const value = flag && options[optionName(flag)]
-    if (typeof value === 'string') flags[key] = value
-  }
-  return flags
-}
-
 const settingsHelp =
   '\nEach setting falls back to its YOKE_* env var, then `yoke config set --user`; API keys come from env or config only. Run `yoke config` to see them all.'
 

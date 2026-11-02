@@ -7,7 +7,7 @@ import { prSkill } from '../pr/skill'
 import { reviewCiSkill } from '../review/ciSkill'
 import { reviewSkill } from '../review/skill'
 
-const bundledSkills: Skill[] = [prSkill, reviewSkill, reviewCiSkill]
+export const bundledSkills: Skill[] = [prSkill, reviewSkill, reviewCiSkill]
 
 export type SyncResult = { written: string[]; skipped: string[] }
 

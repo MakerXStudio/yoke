@@ -29,6 +29,7 @@ yoke sync --user   # ~/.claude/skills
 
 ```bash
 yoke sync [--user] [--force]  # write yoke's skills
+yoke update                   # update yoke and re-sync its skills where they were synced
 yoke review [number]          # review a PR (used by /review)
 yoke review-ci                # add the CI review workflow (used by /review-ci)
 yoke review-gate <result>     # block merging until the PR's latest review succeeds (used by review.yml)
