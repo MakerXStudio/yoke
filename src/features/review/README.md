@@ -68,4 +68,10 @@ jobs:
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
 | `yoke-version` | `@makerx/yoke` version to run. Default: `latest`. |
 
-When `GITHUB_ACTIONS=true`, `yoke review --post` always posts a review: with no new findings (none raised, or all already on the PR) it posts the summary and `No findings were raised.` The footer also says the review can be re-run by marking the PR as draft and then ready for review again. If either reviewer fails, the synthesis fails or its output can't be parsed, it posts a `## Code review failed` review naming the failed step and linking the workflow run, then exits non-zero. When `GITHUB_STEP_SUMMARY` is set, it appends the review summary and a token usage table to the job summary: Input, Output, Cache read and Cache write for Reviewer 1, Reviewer 2 and Synthesis plus a Total, read from `claude`'s `result` event and `codex`'s `turn.completed` events. A slot or value that wasn't reported, such as a cached slot or `codex`'s cache write, shows `—`. Local runs post nothing when there is nothing new, and still synthesise from one reviewer when the other fails.
+In CI (`GITHUB_ACTIONS=true`), `yoke review --post` always posts a review, ending with a note that marking the PR as draft and then ready for review re-runs it:
+
+- No new findings: the summary and `No findings were raised.`
+- A reviewer or the synthesis fails: a `## Code review failed` review linking the workflow run, and a non-zero exit.
+- With `GITHUB_STEP_SUMMARY` set, the review summary and a token usage table per step go to the job summary.
+
+Locally it posts nothing when there's nothing new, and synthesises from one reviewer if the other fails.
