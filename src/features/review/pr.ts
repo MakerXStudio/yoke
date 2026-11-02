@@ -127,6 +127,10 @@ export async function discardPendingReview(pr: PullRequest, review: PendingRevie
   await exec('gh', ['api', '--method', 'DELETE', `${reviewsPath(pr)}/${review.id}`])
 }
 
+export async function githubGet(path: string, exec: Run = run): Promise<unknown> {
+  return JSON.parse(await exec('gh', ['api', path]))
+}
+
 export type ReviewApi = {
   open: (pr: PullRequest) => Promise<PendingReview>
   add: (review: PendingReview, comment: ReviewComment) => Promise<void>

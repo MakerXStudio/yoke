@@ -146,6 +146,15 @@ describe('callerWorkflow', () => {
   })
 })
 
+describe('reusable workflow', () => {
+  const stepsSchema = z.object({ jobs: z.record(z.string(), z.object({ steps: z.array(z.object({ run: z.string().optional() })) })) })
+
+  it('keeps logic in yoke, not in run scripts', () => {
+    const runs = Object.values(stepsSchema.parse(parse(reusableSource)).jobs).flatMap((job) => job.steps.flatMap((step) => step.run ?? []))
+    for (const run of runs) expect(run.trim().split('\n').length, run).toBeLessThanOrEqual(2)
+  })
+})
+
 describe('gate', () => {
   it('runs after the review whatever its result', () => {
     expect(reusable.jobs.gate).toMatchObject({ needs: 'review', if: 'always()' })
@@ -319,10 +328,6 @@ describe('rulesetCommand', () => {
         },
       ],
     })
-  })
-
-  it('matches the command the README documents', () => {
-    expect(readFileSync(join(import.meta.dirname, 'README.md'), 'utf8')).toContain(rulesetCommand())
   })
 
   it('prints the federated credential to create instead of the API key command with Entra auth', () => {

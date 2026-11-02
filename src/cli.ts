@@ -25,6 +25,7 @@ import {
   reviewCiReport,
   writeCallerWorkflow,
 } from './features/review/ci'
+import { runReviewGate } from './features/review/gate'
 import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
@@ -150,6 +151,20 @@ addSettingOptions(
       console.log(reviewCiReport(outcome, settings, workflow, () => githubRepo(root)))
     } catch (error) {
       if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command('review-gate')
+  .description("Block merging until the latest review that ran for the PR succeeds; fork and bot PRs pass. Used by review.yml's gate job")
+  .argument('<result>', 'result of the review job on this event: success, failure, cancelled or skipped')
+  .action(async (result: string) => {
+    try {
+      if (!(await runReviewGate(result, console.log))) process.exitCode = 1
+    } catch (error) {
+      if (!(error instanceof ReviewError)) throw error
       console.error(error.message)
       process.exitCode = 1
     }

@@ -38,17 +38,11 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo. Every slot goes through one LiteLLM or Foundry provider.
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR, with every slot on one LiteLLM or Foundry provider. It skips drafts, forks and bots.
 
-`yoke review-ci` (or `/review-ci`) sets up a repo:
+`yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml` and prints the commands to set its variable, secret and [merge gate](#merge-gate) ruleset. `--force` replaces an existing caller.
 
-- Writes the caller below to `.github/workflows/review-pr.yml`, with each slot's harness and model from your settings or its flags.
-- Prints the `gh variable set` command for the `REVIEW_CI_BASE_URL` variable and the `gh secret set` command for the `REVIEW_CI_API_KEY` secret.
-- Prints the `gh api` command that adds a ruleset requiring the [`review / gate`](#merge-gate) check on the default branch.
-- `--provider foundry` uses Foundry, with an API key or [Entra auth](#foundry-with-entra-auth).
-- `--force` replaces an existing caller.
-
-By hand, set the variable and secret, then call it:
+The caller:
 
 ```yaml
 name: Review PR
@@ -76,7 +70,7 @@ jobs:
 | Input | Description |
 |---|---|
 | `provider` | `litellm` or `foundry`. Default: `litellm`. |
-| `base-url` | LiteLLM proxy URL, or `https://<resource>.services.ai.azure.com` for Foundry. Not sensitive, so keep it in a variable. Callers that still pass it as the `REVIEW_CI_BASE_URL` secret keep working. |
+| `base-url` | LiteLLM proxy URL, or `https://<resource>.services.ai.azure.com` for Foundry. |
 | `reviewer1-harness`, `reviewer2-harness` | `claude` or `codex`. Defaults: `claude`, `codex`. |
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
@@ -84,50 +78,20 @@ jobs:
 | `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
 | `environment` | GitHub environment the review job runs in. |
 
+In CI, `yoke review --post` always posts a review, even with no findings, and a failed reviewer or synthesis posts `## Code review failed`. Locally it posts nothing new and synthesises from one reviewer if the other fails. To re-run a CI review, mark the PR as draft, then ready for review.
+
 ### Merge gate
 
-Findings are advisory `COMMENT` reviews and never block a merge. A review job that fails (missing settings, or a reviewer or the synthesis failing) does, through the `gate` job in the reusable workflow, which reports as `review / gate`:
+The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push, so require it with the ruleset `yoke review-ci` prints, once the caller is merged.
 
-- When the review ran on this event, the gate passes or fails with it.
-- When the review was skipped (a push, a draft, a fork or a bot), the gate looks back through the caller's earlier runs for this PR and takes the result of the latest one whose review job ran, waiting for it if it's still running. With no such run it passes, so fork and bot PRs, which never get a review, aren't blocked.
-- Pushes (`synchronize`) run only the gate, not the review, so each new head commit gets a status. A failed review keeps blocking until it's re-run by marking the PR as draft, then ready for review.
-
-The gate reads the run history with the caller's `actions: read` permission, since a settings failure exits before posting any review.
-
-Requiring the check takes a branch ruleset. `yoke review-ci` prints the command, which runs against the current repo:
-
-```sh
-echo '{"name":"yoke review","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"required_status_checks":[{"context":"review / gate"}]}}]}' | gh api --method POST 'repos/{owner}/{repo}/rulesets' --input -
-```
-
-Add it only after the caller with `synchronize` is merged to the default branch; before that, pushes to open PRs get no `review / gate` status and stay stuck waiting for one.
-
-To migrate a repo set up before the gate: run `yoke review-ci --force` to rewrite the caller with `synchronize` and `actions: read`, merge it, then add the ruleset.
+To add the gate to an existing repo, run `yoke review-ci --force`, merge the caller, then add the ruleset.
 
 ### Foundry with Entra auth
 
-A Foundry resource with local auth disabled rejects API keys. Use an Entra app instead:
+For a Foundry resource that rejects API keys, sign in as an Entra app with the job's GitHub OIDC token:
 
 ```sh
 yoke review-ci --provider foundry --azure-client-id <id> --azure-tenant-id <id> [--environment <name>]
 ```
 
-The caller then grants `id-token: write`, passes those as inputs alongside `base-url`, and passes no secrets. `yoke review` reads them as `foundry.azureClientId` and `foundry.azureTenantId` and exchanges the job's GitHub OIDC token for a masked Entra token, which both harnesses and the preflight probe send to Foundry as a bearer token.
-
-Instead of the `REVIEW_CI_API_KEY` command, `yoke review-ci` prints the federated credential to add to the app, with an `az ad app federated-credential create` command for it:
-
-| Field | Value |
-|---|---|
-| Issuer | `https://token.actions.githubusercontent.com` |
-| Audience | `api://AzureADTokenExchange` |
-| Subject | `repo:<owner>/<repo>:environment:<environment>` with `--environment`, else `repo:<owner>/<repo>:pull_request` |
-
-The app also needs the Cognitive Services User role on the Foundry resource.
-
-In CI (`GITHUB_ACTIONS=true`), `yoke review --post` always posts a review, ending with a note that marking the PR as draft and then ready for review re-runs it:
-
-- No new findings: the summary and `No new findings were raised.`
-- A reviewer or the synthesis fails: a `## Code review failed` review linking the workflow run, and a non-zero exit.
-- With `GITHUB_STEP_SUMMARY` set, the review summary and a token usage table per step go to the job summary.
-
-Locally it posts nothing when there's nothing new, and synthesises from one reviewer if the other fails.
+`yoke review-ci` then prints the federated credential to add to the app. The app also needs the Cognitive Services User role on the Foundry resource.
