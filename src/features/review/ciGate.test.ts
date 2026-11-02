@@ -31,14 +31,22 @@ type FakeOptions = {
   rules?: Rule[]
   workflows?: Record<string, string> | null
   gateShas?: string[]
+  rulesets?: { id: number; name: string; enforcement: string }[]
 }
 
-function fakeApi({ admin = true, rules = [], workflows = { 'review-pr.yml': callerYaml }, gateShas = ['b'] }: FakeOptions = {}) {
+function fakeApi({
+  admin = true,
+  rules = [],
+  workflows = { 'review-pr.yml': callerYaml },
+  gateShas = ['b'],
+  rulesets = [{ id: 3, name: 'protect main', enforcement: 'active' }],
+}: FakeOptions = {}) {
   const gets: string[] = []
   const posts: [string, unknown][] = []
   const responses = new Map<string, unknown>([
     ['repos/{owner}/{repo}', { full_name: 'o/r', html_url: 'https://github.com/o/r', default_branch: 'main', permissions: { admin } }],
     ['repos/o/r/rules/branches/main', rules],
+    ['repos/o/r/rulesets?includes_parents=false&per_page=100', rulesets],
     ['repos/o/r/pulls?state=all&sort=updated&direction=desc&per_page=20', ['a', 'b'].map((sha) => ({ head: { sha } }))],
     ...['a', 'b'].map((sha) => [checkRunsPath(sha), { total_count: gateShas.includes(sha) ? 1 : 0 }] as const),
   ])
@@ -124,6 +132,13 @@ describe('enforceReviewGate', () => {
       'Cannot require review / gate on main yet:',
       "Your gh user can't manage o/r's rulesets",
       'Ask a repo admin to run `yoke review-ci-gate`',
+    )
+  })
+
+  it('creates nothing and links an inactive yoke review ruleset instead of posting a duplicate', async () => {
+    await expectRefused(
+      fakeApi({ rulesets: [{ id: 9, name: 'yoke review', enforcement: 'disabled' }] }),
+      'The "yoke review" ruleset already exists with enforcement `disabled` but doesn\'t require review / gate on main: https://github.com/o/r/rules/9. Set its enforcement to Active',
     )
   })
 

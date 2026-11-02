@@ -41,6 +41,7 @@ const fileSchema = z.object({ content: z.string() })
 const pullsSchema = z.array(z.object({ head: z.object({ sha: z.string() }) }))
 const checkRunsSchema = z.object({ total_count: z.number() })
 const createdSchema = z.object({ id: z.number() })
+const rulesetsSchema = z.array(z.object({ id: z.number(), name: z.string(), enforcement: z.string() }))
 
 export type GateApi = {
   get: (path: string) => Promise<unknown>
@@ -95,12 +96,21 @@ async function gateHasReported(api: GateApi, repo: Repo): Promise<boolean> {
   return false
 }
 
+async function rulesetProblem(api: GateApi, repo: Repo): Promise<string | undefined> {
+  const rulesets = rulesetsSchema.parse(await api.get(`repos/${repo.full_name}/rulesets?includes_parents=false&per_page=100`))
+  const existing = rulesets.find((ruleset) => ruleset.name === gateRuleset.name)
+  if (!existing) return undefined
+  return `The "${gateRuleset.name}" ruleset already exists with enforcement \`${existing.enforcement}\` but doesn't require ${gateCheck} on ${repo.default_branch}: ${repo.html_url}/rules/${existing.id}. Set its enforcement to Active and its required check to ${gateCheck}, or delete it and run this again.`
+}
+
 async function problems(api: GateApi, repo: Repo): Promise<string[]> {
   const found: string[] = []
   if (!repo.permissions?.admin)
     found.push(
       `Your gh user can't manage ${repo.full_name}'s rulesets. Ask a repo admin to run \`yoke review-ci-gate\`, or to grant you the admin role.`,
     )
+  const ruleset = await rulesetProblem(api, repo)
+  if (ruleset) found.push(ruleset)
   const caller = await callerProblem(api, repo)
   if (caller) found.push(caller)
   if (!(await gateHasReported(api, repo)))
