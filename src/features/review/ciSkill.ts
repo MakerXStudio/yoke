@@ -16,7 +16,7 @@ Then set the variable and secret it printed. Run \`gh variable list\` and \`gh s
 
 With Entra auth, show the user the federated credential it printed (issuer, audience, subject) and the \`az ad app federated-credential create\` command, and ask whether to run it or whether they will add the credential in the Azure portal. The app also needs the Cognitive Services User role on the Foundry resource, and the environment, if given, must exist on the repo.
 
-Finish by running \`gh variable list\` and \`gh secret list\` and telling the user to commit and push the workflow file.
+Finish by running \`gh variable list\` and \`gh secret list\` and telling the user to commit and push the workflow file. Show them the printed \`gh api\` ruleset command requiring \`review / gate\`, and tell them to run it only once the workflow is merged to the default branch; don't run it before then.
 
 If \`yoke\` is not found, run \`npm i -g @makerx/yoke\` and retry.
 `,

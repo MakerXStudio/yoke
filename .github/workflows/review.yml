@@ -61,7 +61,7 @@ on:
 
 jobs:
   review:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
+    if: github.event.action != 'synchronize' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
@@ -108,3 +108,65 @@ jobs:
         run: |
           gh auth setup-git
           npx --yes "@makerx/yoke@$YOKE_VERSION" review "$PR_NUMBER" --post --verbose
+
+  gate:
+    needs: review
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Require the latest review to have succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          EVENT_ACTION: ${{ github.event.action }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+        run: |
+          set -euo pipefail
+          verdict() {
+            echo "$2"
+            echo "$2" >> "$GITHUB_STEP_SUMMARY"
+            [ "$1" = success ] || echo "::error::$2 Mark the PR as draft, then ready for review, to run the review again."
+            [ "$1" = success ]
+          }
+
+          if [ "$REVIEW_RESULT" != skipped ]; then
+            verdict "$REVIEW_RESULT" "The review on this event finished with $REVIEW_RESULT."
+            exit
+          fi
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [ "$AUTHOR_TYPE" = Bot ]; then
+            verdict success "No review runs for PRs from forks or bots."
+            exit
+          fi
+          if [ "$EVENT_ACTION" = opened ]; then
+            verdict success "No review has run for this PR yet."
+            exit
+          fi
+
+          workflow_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .workflow_id)
+          runs=$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_id/runs" \
+            -f event=pull_request -f branch="$HEAD_REF" -F per_page=100 \
+            --jq "[.workflow_runs[] | select(.run_number < $GITHUB_RUN_NUMBER and any(.pull_requests[]; .number == $PR_NUMBER))] | sort_by(-.run_number) | .[].id")
+
+          for run in $runs; do
+            while :; do
+              review=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs" \
+                --jq '[.jobs[] | select(.name | endswith(" / review"))] | if length == 0 then "none" else (.[0] | "\(.status) \(.conclusion)") end')
+              case "$review" in
+                none | "completed skipped") continue 2 ;;
+                completed\ *)
+                  conclusion=${review#completed }
+                  verdict "$conclusion" "The latest review for this PR, in run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run, finished with $conclusion."
+                  exit
+                  ;;
+                *)
+                  echo "Waiting for the review in run $run to finish ($review)"
+                  sleep 30
+                  ;;
+              esac
+            done
+          done
+          verdict success "No review has run for this PR yet."

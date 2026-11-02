@@ -44,6 +44,7 @@ The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` o
 
 - Writes the caller below to `.github/workflows/review-pr.yml`, with each slot's harness and model from your settings or its flags.
 - Prints the `gh variable set` command for the `REVIEW_CI_BASE_URL` variable and the `gh secret set` command for the `REVIEW_CI_API_KEY` secret.
+- Prints the `gh api` command that adds a ruleset requiring the [`review / gate`](#merge-gate) check on the default branch.
 - `--provider foundry` uses Foundry, with an API key or [Entra auth](#foundry-with-entra-auth).
 - `--force` replaces an existing caller.
 
@@ -54,9 +55,10 @@ name: Review PR
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
+  actions: read
   contents: read
   pull-requests: write
 
@@ -81,6 +83,26 @@ jobs:
 | `yoke-version` | `@makerx/yoke` version to run. Default: `latest`. |
 | `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
 | `environment` | GitHub environment the review job runs in. |
+
+### Merge gate
+
+Findings are advisory `COMMENT` reviews and never block a merge. A review job that fails (missing settings, or a reviewer or the synthesis failing) does, through the `gate` job in the reusable workflow, which reports as `review / gate`:
+
+- When the review ran on this event, the gate passes or fails with it.
+- When the review was skipped (a push, a draft, a fork or a bot), the gate looks back through the caller's earlier runs for this PR and takes the result of the latest one whose review job ran, waiting for it if it's still running. With no such run it passes, so fork and bot PRs, which never get a review, aren't blocked.
+- Pushes (`synchronize`) run only the gate, not the review, so each new head commit gets a status. A failed review keeps blocking until it's re-run by marking the PR as draft, then ready for review.
+
+The gate reads the run history with the caller's `actions: read` permission, since a settings failure exits before posting any review.
+
+Requiring the check takes a branch ruleset. `yoke review-ci` prints the command, which runs against the current repo:
+
+```sh
+echo '{"name":"yoke review","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"required_status_checks":[{"context":"review / gate"}]}}]}' | gh api --method POST 'repos/{owner}/{repo}/rulesets' --input -
+```
+
+Add it only after the caller with `synchronize` is merged to the default branch; before that, pushes to open PRs get no `review / gate` status and stay stuck waiting for one.
+
+To migrate a repo set up before the gate: run `yoke review-ci --force` to rewrite the caller with `synchronize` and `actions: read`, merge it, then add the ruleset.
 
 ### Foundry with Entra auth
 

@@ -10,17 +10,20 @@ import { z } from 'zod'
 import type { Settings } from '../config/settings'
 import {
   callerWorkflow,
+  callerTriggerTypes,
   callerWorkflowPath,
   type EntraFlags,
-  federatedCredential,
+  gateCheck,
   renderCallerWorkflow,
   repoRoot,
   reviewCiReport,
   reviewWorkflowRef,
+  rulesetCommand,
   setupCommands,
   workflowSecrets,
   writeCallerWorkflow,
 } from './ci'
+import { federatedCredential } from './ciEntra'
 
 const workflowSchema = z.object({
   on: z.record(
@@ -31,9 +34,12 @@ const workflowSchema = z.object({
       secrets: z.record(z.string(), z.unknown()).optional(),
     }),
   ),
+  permissions: z.record(z.string(), z.string()).optional(),
   jobs: z.record(
     z.string(),
     z.object({
+      if: z.string().optional(),
+      needs: z.string().optional(),
       uses: z.string().optional(),
       with: z.record(z.string(), z.string()).optional(),
       secrets: z.record(z.string(), z.string()).optional(),
@@ -47,6 +53,8 @@ const reusableSource = readFileSync(join(import.meta.dirname, '../../../.github/
 
 const reusable = workflowSchema.parse(parse(reusableSource))
 
+const ownCaller = workflowSchema.parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/workflows/review-pr.yml'), 'utf8')))
+
 const models: Settings = { 'review.reviewer1.model': 'bedrock/claude-opus-5-5', 'review.reviewer2.model': 'azure/gpt-6.1-sol' }
 
 function generated(settings: Settings = models, provider?: string): Workflow {
@@ -58,10 +66,14 @@ function inputsOf(settings: Settings = models, provider?: string): Record<string
 }
 
 describe('callerWorkflow', () => {
-  it('calls the reusable review workflow on new and ready PRs', () => {
+  it('calls the reusable review workflow on new, ready and pushed-to PRs', () => {
     const workflow = generated()
-    expect(workflow.on.pull_request?.types).toEqual(['opened', 'reopened', 'ready_for_review'])
+    expect(workflow.on.pull_request?.types).toEqual(['opened', 'synchronize', 'reopened', 'ready_for_review'])
     expect(workflow.jobs.review?.uses).toBe(reviewWorkflowRef)
+  })
+
+  it('lets the gate read earlier runs', () => {
+    expect(renderCallerWorkflow(callerWorkflow(models))).toContain('permissions:\n  actions: read\n')
   })
 
   it('passes only the API key secret, never every repository secret', () => {
@@ -134,6 +146,26 @@ describe('callerWorkflow', () => {
   })
 })
 
+describe('gate', () => {
+  it('runs after the review whatever its result', () => {
+    expect(reusable.jobs.gate).toMatchObject({ needs: 'review', if: 'always()' })
+  })
+
+  it('skips the review on pushes', () => {
+    expect(reusable.jobs.review?.if).toMatch(/^github\.event\.action != 'synchronize' && /)
+  })
+
+  it("triggers yoke's own review on pushes and lets the gate read earlier runs", () => {
+    expect(ownCaller.on.pull_request?.types).toEqual(callerTriggerTypes)
+    expect(ownCaller.permissions).toMatchObject({ actions: 'read' })
+  })
+
+  it('names the check the ruleset requires after the caller and gate jobs', () => {
+    expect(Object.keys(generated().jobs)).toEqual(['review'])
+    expect(gateCheck).toBe('review / gate')
+  })
+})
+
 describe('Entra auth', () => {
   const entra = { azureClientId: 'client-1', azureTenantId: 'tenant-1' }
 
@@ -143,7 +175,7 @@ describe('Entra auth', () => {
 
   it('passes the client and tenant IDs and grants id-token write', () => {
     const rendered = renderCallerWorkflow(callerWorkflow(models, 'foundry', entra))
-    expect(rendered).toContain('permissions:\n  contents: read\n  pull-requests: write\n  id-token: write\n')
+    expect(rendered).toContain('permissions:\n  actions: read\n  contents: read\n  pull-requests: write\n  id-token: write\n')
     expect(entraWorkflow().jobs.review?.with).toMatchObject({ 'azure-client-id': 'client-1', 'azure-tenant-id': 'tenant-1' })
     expect(entraWorkflow().jobs.review?.with).not.toHaveProperty('environment')
   })
@@ -263,6 +295,34 @@ describe('reviewCiReport', () => {
     expect(report).toContain(`wrote ${callerWorkflowPath}`)
     expect(report).toContain("  gh variable set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY")
     expect(report).not.toContain('federated credential')
+  })
+
+  it('prints the ruleset command requiring the gate, to run once the caller is merged', () => {
+    const report = reviewCiReport('wrote', {}, callerWorkflow(models), noRepo)
+    expect(report).toContain(`  ${rulesetCommand()}\n`)
+    expect(report).toMatch(/only after this workflow is merged to the default branch, or pushes to open PRs get stuck/)
+  })
+})
+
+describe('rulesetCommand', () => {
+  it('posts a ruleset requiring review / gate on the default branch', () => {
+    const match = /^echo '(.*)' \| gh api --method POST 'repos\/\{owner\}\/\{repo\}\/rulesets' --input -$/.exec(rulesetCommand())
+    expect(JSON.parse(match?.[1] ?? '')).toEqual({
+      name: 'yoke review',
+      target: 'branch',
+      enforcement: 'active',
+      conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+      rules: [
+        {
+          type: 'required_status_checks',
+          parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: 'review / gate' }] },
+        },
+      ],
+    })
+  })
+
+  it('matches the command the README documents', () => {
+    expect(readFileSync(join(import.meta.dirname, 'README.md'), 'utf8')).toContain(rulesetCommand())
   })
 
   it('prints the federated credential to create instead of the API key command with Entra auth', () => {
