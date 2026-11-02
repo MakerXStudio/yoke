@@ -149,7 +149,14 @@ describe('enforceReviewGate', () => {
   it('creates nothing when the caller lacks actions: read', async () => {
     await expectRefused(
       fakeApi({ workflows: { 'review-pr.yml': callerYaml.replace('  actions: read\n', '') } }),
-      'lacks `actions: read` in its permissions. Add them and merge the change to main.',
+      'lacks `actions: read` in its permissions. Fix it and merge the change to main.',
+    )
+  })
+
+  it('creates nothing when the caller has a paths filter', async () => {
+    await expectRefused(
+      fakeApi({ workflows: { 'review-pr.yml': callerYaml.replace('ready_for_review]\n', "ready_for_review]\n    paths: ['src/**']\n") } }),
+      "calls yoke's review.yml but skips some PRs to main through its `pull_request` `paths` filter, so those PRs could never merge.",
     )
   })
 

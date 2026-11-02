@@ -7,8 +7,10 @@ const yokeRef = 'MakerXStudio/yoke/.github/workflows/review.yml@main'
 const actionsRead = 'permissions:\n  actions: read\n'
 
 function check(content: string, repo = 'o/r') {
-  return checkCallerWorkflows([{ path: 'w.yml', content }], repo)
+  return checkCallerWorkflows([{ path: 'w.yml', content }], repo, 'main')
 }
+
+const filtered = (filter: string) => `on:\n  pull_request:\n${filter}${actionsRead}${job(yokeRef)}`
 
 describe('checkCallerWorkflows', () => {
   it.each([
@@ -19,13 +21,16 @@ describe('checkCallerWorkflows', () => {
     ['job-level permissions', `on: pull_request\n${job(yokeRef, '    permissions:\n      actions: write\n')}`],
     ['read-all permissions', `on: pull_request\npermissions: read-all\n${job(yokeRef)}`],
     ['another ref of review.yml', `on: pull_request\n${actionsRead}${job('makerxstudio/yoke/.github/workflows/review.yml@v1')}`],
+    ['a branches filter naming the default branch', filtered('    branches: [main]\n')],
+    ['a branches glob matching the default branch', filtered("    branches: ['**']\n")],
+    ['a branches-ignore filter that spares the default branch', filtered("    branches-ignore: ['release/*']\n")],
   ])('accepts %s', (_, content) => {
-    expect(check(content)).toEqual({ path: 'w.yml', missing: [] })
+    expect(check(content)).toEqual({ path: 'w.yml', problems: [] })
   })
 
   it('accepts the local review.yml only in yoke itself', () => {
     const content = `on: pull_request\n${actionsRead}${job('./.github/workflows/review.yml')}`
-    expect(check(content, 'MakerXStudio/yoke')).toEqual({ path: 'w.yml', missing: [] })
+    expect(check(content, 'MakerXStudio/yoke')).toEqual({ path: 'w.yml', problems: [] })
     expect(check(content)).toBeUndefined()
   })
 
@@ -33,7 +38,21 @@ describe('checkCallerWorkflows', () => {
     ['no pull_request trigger', `on: push\n${actionsRead}${job(yokeRef)}`],
     ['a pull_request_target trigger', `on:\n  pull_request_target:\n${actionsRead}${job(yokeRef)}`],
   ])('reports the missing synchronize trigger with %s', (_, content) => {
-    expect(check(content)?.missing).toEqual(['the `synchronize` type in its `pull_request` trigger'])
+    expect(check(content)?.problems).toEqual(['lacks the `synchronize` type in its `pull_request` trigger'])
+  })
+
+  it.each([
+    ['paths', filtered("    paths: ['src/**']\n"), '`paths`'],
+    ['paths-ignore', filtered("    paths-ignore: ['docs/**']\n"), '`paths-ignore`'],
+    ['branches without the default branch', filtered('    branches: [develop]\n'), '`branches`'],
+    ['branches negating the default branch', filtered("    branches: ['**', '!main']\n"), '`branches`'],
+    ['branches-ignore matching the default branch', filtered("    branches-ignore: ['ma*']\n"), '`branches-ignore`'],
+    ['paths and branches', filtered("    branches: [develop]\n    paths: ['src/**']\n"), '`paths`, `branches` filters'],
+  ])('reports a %s filter that skips PRs to the default branch', (_, content, filters) => {
+    const named = filters.endsWith('filters') ? filters : `${filters} filter`
+    expect(check(content)?.problems).toEqual([
+      `skips some PRs to main through its \`pull_request\` ${named}, so those PRs could never merge`,
+    ])
   })
 
   it.each([
@@ -44,7 +63,7 @@ describe('checkCallerWorkflows', () => {
       `on: pull_request\n${actionsRead}${job(yokeRef, '    permissions:\n      contents: read\n')}`,
     ],
   ])('reports missing actions: read with %s', (_, content) => {
-    expect(check(content)?.missing).toEqual(['`actions: read` in its permissions'])
+    expect(check(content)?.problems).toEqual(['lacks `actions: read` in its permissions'])
   })
 
   it('prefers a complete caller over an incomplete one', () => {
@@ -52,7 +71,7 @@ describe('checkCallerWorkflows', () => {
       { path: 'bad.yml', content: `on: push\n${job(yokeRef)}` },
       { path: 'good.yml', content: `on: pull_request\n${actionsRead}${job(yokeRef)}` },
     ]
-    expect(checkCallerWorkflows(files, 'o/r')).toEqual({ path: 'good.yml', missing: [] })
+    expect(checkCallerWorkflows(files, 'o/r', 'main')).toEqual({ path: 'good.yml', problems: [] })
   })
 
   it('skips unparseable and unrelated workflows', () => {
@@ -61,6 +80,6 @@ describe('checkCallerWorkflows', () => {
       { path: 'list.yml', content: '- a' },
       { path: 'ci.yml', content: 'on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n  empty:\n' },
     ]
-    expect(checkCallerWorkflows(files, 'o/r')).toBeUndefined()
+    expect(checkCallerWorkflows(files, 'o/r', 'main')).toBeUndefined()
   })
 })

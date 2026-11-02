@@ -75,10 +75,10 @@ async function workflowFiles(api: GateApi, repo: Repo): Promise<{ path: string; 
 
 async function callerProblem(api: GateApi, repo: Repo): Promise<string | undefined> {
   const branch = repo.default_branch
-  const caller = checkCallerWorkflows(await workflowFiles(api, repo), repo.full_name)
+  const caller = checkCallerWorkflows(await workflowFiles(api, repo), repo.full_name, branch)
   if (!caller) return `No workflow on ${branch} calls yoke's review.yml. Run /review-ci, then merge its ${callerWorkflowPath} to ${branch}.`
-  if (caller.missing.length > 0)
-    return `${caller.path} on ${branch} calls yoke's review.yml but lacks ${caller.missing.join(' and ')}. Add them and merge the change to ${branch}.`
+  if (caller.problems.length > 0)
+    return `${caller.path} on ${branch} calls yoke's review.yml but ${caller.problems.join(' and ')}. Fix it and merge the change to ${branch}.`
   return undefined
 }
 
