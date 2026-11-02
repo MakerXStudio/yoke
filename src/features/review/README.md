@@ -40,7 +40,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR, with every slot on one LiteLLM or Foundry provider. It skips drafts, forks and bots.
 
-`yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml` and prints the commands to set its variable, secret and [merge gate](#merge-gate) ruleset. `--print` shows them without saving anything. It never replaces a `review-pr.yml` that differs from its version; it stops and says to edit that file in place.
+`yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml` and prints the commands to set its variable and secret, then points to `/review-ci-gate` for the [merge gate](#merge-gate). `--print` shows them without saving anything. It never replaces a `review-pr.yml` that differs from its version; it stops and says to edit that file in place.
 
 When the repo already has a workflow that reviews PRs with an LLM, whatever tool it uses, `/review-ci` edits that file in place so it runs yoke's review, keeping its provider, models, base URL, variable and secret names and other local changes. If the file already runs yoke's review, it only adds what is missing.
 
@@ -84,7 +84,9 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 
 ### Merge gate
 
-The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push, so require it with the ruleset `yoke review-ci` prints, once the caller is merged.
+The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push.
+
+`/review-ci-gate` (or `yoke review-ci-gate`) adds a ruleset requiring the check on the default branch. It first checks that the caller workflow is merged there with the `synchronize` trigger, `actions: read` and no `paths` or branch filters that skip PRs to it, and that the gate has reported on a recent PR; otherwise it creates nothing and says what to fix.
 
 ### Foundry with Entra auth
 

@@ -19,7 +19,6 @@ import {
   repoRoot,
   reviewCiReport,
   reviewWorkflowRef,
-  rulesetCommand,
   setupCommands,
   workflowSecrets,
   writeCallerWorkflow,
@@ -311,18 +310,19 @@ describe('reviewCiReport', () => {
     expect(report).not.toContain('federated credential')
   })
 
-  it('prints the ruleset command requiring the gate, to run once the caller is merged', () => {
+  it('points to /review-ci-gate, once the caller is merged, instead of printing a ruleset command', () => {
     for (const outcome of ['wrote', 'unchanged', 'printed'] as const) {
       const report = reviewCiReport(outcome, {}, callerWorkflow(models), noRepo)
-      expect(report).toContain(`  ${rulesetCommand()}\n`)
-      expect(report).toMatch(/only after this workflow is merged to the default branch, or pushes to open PRs get stuck/)
+      expect(report).toContain('run /review-ci-gate once this workflow is merged to the default branch')
+      expect(report).not.toContain('gh api')
+      expect(report).not.toContain('rulesets')
     }
   })
 
   it('says what happens to the repo without naming flags', () => {
     const settings = { 'litellm.baseUrl': 'https://litellm.example.com' }
     for (const outcome of ['wrote', 'unchanged', 'printed'] as const) {
-      const prose = reviewCiReport(outcome, settings, callerWorkflow(models), noRepo).replace(rulesetCommand(), '')
+      const prose = reviewCiReport(outcome, settings, callerWorkflow(models), noRepo)
       expect(prose).not.toMatch(/--(?!body)\w/)
     }
     expect(reviewCiReport('unchanged', settings, callerWorkflow(models), noRepo)).toContain('already matches')
@@ -359,23 +359,5 @@ describe('reviewCiReport', () => {
     const report = reviewCiReport('wrote', {}, workflow, () => 'o/r')
     expect(report).toContain('  subject:  repo:o/r:environment:review')
     expect(report).toContain('runs in the review environment')
-  })
-})
-
-describe('rulesetCommand', () => {
-  it('posts a ruleset requiring review / gate on the default branch', () => {
-    const match = /^echo '(.*)' \| gh api --method POST 'repos\/\{owner\}\/\{repo\}\/rulesets' --input -$/.exec(rulesetCommand())
-    expect(JSON.parse(match?.[1] ?? '')).toEqual({
-      name: 'yoke review',
-      target: 'branch',
-      enforcement: 'active',
-      conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
-      rules: [
-        {
-          type: 'required_status_checks',
-          parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: 'review / gate' }] },
-        },
-      ],
-    })
   })
 })

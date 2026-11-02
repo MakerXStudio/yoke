@@ -3,15 +3,8 @@ import { relative } from 'node:path'
 import { Command } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
-import {
-  type FlagSettings,
-  listSettings,
-  resolveSettings,
-  settingDescription,
-  settingFlag,
-  type SettingKey,
-  settingKeys,
-} from './features/config/settings'
+import { addSettingOptions, flagSettings, settingsHelp } from './cliSettings'
+import { listSettings, resolveSettings, settingKeys } from './features/config/settings'
 import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
@@ -19,12 +12,14 @@ import {
   callerWorkflow,
   callerWorkflowPath,
   type EntraFlags,
+  gateCheck,
   githubRepo,
   renderCallerWorkflow,
   repoRoot,
   reviewCiReport,
   writeCallerWorkflow,
 } from './features/review/ci'
+import { enforceReviewGate } from './features/review/ciGate'
 import { runReviewGate } from './features/review/gate'
 import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
@@ -70,31 +65,6 @@ pr.command('raise')
   })
 
 const providerKeys = settingKeys.filter((key) => !key.startsWith('review.'))
-
-function addSettingOptions(command: Command, keys: readonly SettingKey[]): Command {
-  for (const key of keys) {
-    const flag = settingFlag(key)
-    if (flag) command.option(`${flag} <value>`, settingDescription(key))
-  }
-  return command
-}
-
-function optionName(flag: string): string {
-  return flag.slice(2).replace(/-(.)/g, (_, next: string) => next.toUpperCase())
-}
-
-function flagSettings(options: Record<string, unknown>, keys: readonly SettingKey[]): FlagSettings {
-  const flags: FlagSettings = {}
-  for (const key of keys) {
-    const flag = settingFlag(key)
-    const value = flag && options[optionName(flag)]
-    if (typeof value === 'string') flags[key] = value
-  }
-  return flags
-}
-
-const settingsHelp =
-  '\nEach setting falls back to its YOKE_* env var, then `yoke config set --user`; API keys come from env or config only. Run `yoke config` to see them all.'
 
 addSettingOptions(
   program
@@ -151,6 +121,19 @@ addSettingOptions(
       console.log(reviewCiReport(outcome, settings, workflow, () => githubRepo(root)))
     } catch (error) {
       if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+      console.error(error.message)
+      process.exitCode = 1
+    }
+  })
+
+program
+  .command('review-ci-gate')
+  .description(`Require the ${gateCheck} check on the default branch with a ruleset, once the CI review workflow is merged`)
+  .action(async () => {
+    try {
+      console.log((await enforceReviewGate()).message)
+    } catch (error) {
+      if (!(error instanceof ReviewError)) throw error
       console.error(error.message)
       process.exitCode = 1
     }
