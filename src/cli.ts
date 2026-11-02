@@ -26,6 +26,9 @@ import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
 import { lineUi, spinnerUi } from './features/review/status'
 import { skillsRoot, syncSkills } from './features/sync/sync'
+import { detectInstall, installDir } from './features/update/install'
+import { syncTargets } from './features/update/targets'
+import { updateYoke } from './features/update/update'
 
 const { version } = packageJson
 
@@ -43,6 +46,20 @@ program
     const { written, skipped } = syncSkills(skillsRoot(user), skillsRoot(true), options.force ?? false)
     for (const file of written) console.log(`wrote ${display(file)}`)
     for (const dir of skipped) console.log(`skipped ${display(dir)} (not yoke's skill; rerun with --force to overwrite it)`)
+  })
+
+program
+  .command('update')
+  .description('Update yoke to the latest version, then re-sync its skills wherever they were synced before')
+  .action(() => {
+    const dir = installDir()
+    process.exitCode = updateYoke({
+      dir,
+      install: detectInstall(dir),
+      targets: () => syncTargets(),
+      log: console.log,
+      error: console.error,
+    })
   })
 
 const pr = program.command('pr').description('Pull request commands')
