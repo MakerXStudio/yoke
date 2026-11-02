@@ -11,7 +11,7 @@ import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFailure, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { ciRunUrl, isCi, reviewRunDir, saveReview } from './review'
+import { reviewRunDir, saveReview } from './review'
 import { type ReviewContext, ReviewFailure, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
@@ -383,25 +383,6 @@ describe('postFindings', () => {
     const api = await post(synthesis, fakeApi(), raised)
     expect(api.open).not.toHaveBeenCalled()
     expect(logs).toEqual(['skipped 1 finding(s) already raised on the PR', 'nothing new to post'])
-  })
-})
-
-describe('isCi', () => {
-  it('is true only when GITHUB_ACTIONS is "true"', () => {
-    expect(isCi({ GITHUB_ACTIONS: 'true' })).toBe(true)
-    expect(isCi({})).toBe(false)
-  })
-})
-
-describe('ciRunUrl', () => {
-  const env = { GITHUB_SERVER_URL: 'https://github.com', GITHUB_REPOSITORY: 'o/r', GITHUB_RUN_ID: '9' }
-
-  it('links the workflow run', () => {
-    expect(ciRunUrl(env)).toBe('https://github.com/o/r/actions/runs/9')
-  })
-
-  it.each(Object.keys(env))('is undefined without %s', (key) => {
-    expect(ciRunUrl({ ...env, [key]: '' })).toBeUndefined()
   })
 })
 

@@ -3,9 +3,10 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Settings } from '../config/settings'
+import { isCi, reportFailure } from './ciRun'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { runHarness } from './harness'
-import { postFailure, postFindings } from './post'
+import { postFindings } from './post'
 import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github } from './pr'
 import { assertViable } from './preflight'
 import { buildRequest, type PullRequest } from './request'
@@ -50,16 +51,6 @@ async function reviewAtHead(
   } finally {
     rmSync(checkoutDir, { recursive: true, force: true })
   }
-}
-
-export function isCi(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.GITHUB_ACTIONS === 'true'
-}
-
-export function ciRunUrl(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = env
-  if (!GITHUB_SERVER_URL || !GITHUB_REPOSITORY || !GITHUB_RUN_ID) return undefined
-  return `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`
 }
 
 export type ReviewOptions = { post: boolean; force: boolean }
@@ -126,12 +117,7 @@ export async function reviewPr(
     findings = synthesis
     if (ci && synthesis && writeJobSummary(synthesis.summary, usage)) log('wrote the review summary and token usage to the job summary')
   } catch (error) {
-    if (ci && error instanceof ReviewFailure) {
-      const { reason } = error
-      await timed(ui, `posting the failed review to #${pr.number}`, () =>
-        postFailure(pr, reason, ciRunUrl(), { api: github, log, footer: footer() }),
-      )
-    }
+    if (ci && error instanceof ReviewFailure) await reportFailure(pr, error.reason, ui, { api: github, log, footer: footer() })
     throw error
   }
   if (!post || !findings) return
