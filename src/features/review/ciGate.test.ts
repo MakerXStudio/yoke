@@ -27,7 +27,7 @@ jobs:
 const checkRunsPath = (sha: string) => `repos/o/r/commits/${sha}/check-runs?check_name=review%20%2F%20gate&per_page=1`
 
 type FakeOptions = {
-  admin?: boolean
+  postStatus?: number
   rules?: Rule[]
   workflows?: Record<string, string> | null
   gateShas?: string[]
@@ -35,7 +35,7 @@ type FakeOptions = {
 }
 
 function fakeApi({
-  admin = true,
+  postStatus,
   rules = [],
   workflows = { 'review-pr.yml': callerYaml },
   gateShas = ['b'],
@@ -44,7 +44,7 @@ function fakeApi({
   const gets: string[] = []
   const posts: [string, unknown][] = []
   const responses = new Map<string, unknown>([
-    ['repos/{owner}/{repo}', { full_name: 'o/r', html_url: 'https://github.com/o/r', default_branch: 'main', permissions: { admin } }],
+    ['repos/{owner}/{repo}', { full_name: 'o/r', html_url: 'https://github.com/o/r', default_branch: 'main' }],
     ['repos/o/r/rules/branches/main', rules],
     ['repos/o/r/rulesets?includes_parents=false&per_page=100', rulesets],
     ['repos/o/r/pulls?state=all&sort=updated&direction=desc&per_page=20', ['a', 'b'].map((sha) => ({ head: { sha } }))],
@@ -66,6 +66,7 @@ function fakeApi({
     },
     post: async (path, body) => {
       posts.push([path, body])
+      if (postStatus) throw new ReviewError(`\`gh api ${path}\` failed: gh: Request refused (HTTP ${postStatus})`)
       return { id: 42 }
     },
   }
@@ -114,25 +115,21 @@ describe('enforceReviewGate', () => {
     })
   })
 
-  it('reports already enforced even when the user cannot manage rulesets', async () => {
-    const api = fakeApi({ admin: false, rules: [gateRule] })
-    expect((await enforceReviewGate(api)).created).toBe(false)
-    expect(api.posts).toEqual([])
-  })
-
   it('creates the ruleset when other status checks are required but not review / gate', async () => {
     const api = fakeApi({ rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'build' }] } }] })
     expect((await enforceReviewGate(api)).created).toBe(true)
     expect(api.posts).toHaveLength(1)
   })
 
-  it('creates nothing and names the fix when the gh user cannot manage rulesets', async () => {
-    await expectRefused(
-      fakeApi({ admin: false }),
-      'Cannot require review / gate on main yet:',
-      "Your gh user can't manage o/r's rulesets",
-      'Ask a repo admin to run `yoke review-ci-gate`',
+  it.each([403, 404])('names the fix when GitHub refuses to create the ruleset with HTTP %i', async (status) => {
+    const api = fakeApi({ postStatus: status })
+    await expect(enforceReviewGate(api)).rejects.toThrow(
+      'GitHub refused to add the "yoke review" ruleset to o/r: your gh user can\'t edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run `yoke review-ci-gate`.',
     )
+  })
+
+  it('rethrows other ruleset creation failures', async () => {
+    await expect(enforceReviewGate(fakeApi({ postStatus: 422 }))).rejects.toThrow('Request refused (HTTP 422)')
   })
 
   it('creates nothing and links an inactive yoke review ruleset instead of posting a duplicate', async () => {
@@ -189,8 +186,8 @@ describe('enforceReviewGate', () => {
 
   it('lists every problem at once', async () => {
     await expectRefused(
-      fakeApi({ admin: false, workflows: null, gateShas: [] }),
-      "can't manage",
+      fakeApi({ rulesets: [{ id: 9, name: 'yoke review', enforcement: 'evaluate' }], workflows: null, gateShas: [] }),
+      'The "yoke review" ruleset already exists',
       'No workflow',
       'No review / gate check run',
     )

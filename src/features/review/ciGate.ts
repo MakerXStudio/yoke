@@ -23,7 +23,6 @@ const repoSchema = z.object({
   full_name: z.string(),
   html_url: z.string(),
   default_branch: z.string(),
-  permissions: z.object({ admin: z.boolean() }).optional(),
 })
 
 type Repo = z.infer<typeof repoSchema>
@@ -103,12 +102,20 @@ async function rulesetProblem(api: GateApi, repo: Repo): Promise<string | undefi
   return `The "${gateRuleset.name}" ruleset already exists with enforcement \`${existing.enforcement}\` but doesn't require ${gateCheck} on ${repo.default_branch}: ${repo.html_url}/rules/${existing.id}. Set its enforcement to Active and its required check to ${gateCheck}, or delete it and run this again.`
 }
 
+async function createRuleset(api: GateApi, repo: Repo): Promise<unknown> {
+  try {
+    return await api.post(`repos/${repo.full_name}/rulesets`, gateRuleset)
+  } catch (error) {
+    if (error instanceof ReviewError && /\(HTTP 40[34]\)/.test(error.message))
+      throw new ReviewError(
+        `GitHub refused to add the "${gateRuleset.name}" ruleset to ${repo.full_name}: your gh user can't edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run \`yoke review-ci-gate\`.`,
+      )
+    throw error
+  }
+}
+
 async function problems(api: GateApi, repo: Repo): Promise<string[]> {
   const found: string[] = []
-  if (!repo.permissions?.admin)
-    found.push(
-      `Your gh user can't manage ${repo.full_name}'s rulesets. Ask a repo admin to run \`yoke review-ci-gate\`, or to grant you the admin role.`,
-    )
   const ruleset = await rulesetProblem(api, repo)
   if (ruleset) found.push(ruleset)
   const caller = await callerProblem(api, repo)
@@ -135,7 +142,7 @@ export async function enforceReviewGate(api: GateApi = githubApi): Promise<GateO
   const found = await problems(api, repo)
   if (found.length > 0)
     throw new ReviewError([`Cannot require ${gateCheck} on ${branch} yet:`, ...found.map((problem) => `- ${problem}`)].join('\n'))
-  const { id } = createdSchema.parse(await api.post(`repos/${repo.full_name}/rulesets`, gateRuleset))
+  const { id } = createdSchema.parse(await createRuleset(api, repo))
   return {
     created: true,
     message: `Added the "${gateRuleset.name}" ruleset, which blocks merging to ${branch} until ${gateCheck} passes: ${repo.html_url}/rules/${id}`,

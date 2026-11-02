@@ -86,7 +86,7 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 
 The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push.
 
-`/review-ci-gate` (or `yoke review-ci-gate`) adds a ruleset requiring the check on the default branch. It first checks that the caller workflow is merged there with the `synchronize` trigger, `actions: read` and no `paths` or branch filters that skip PRs to it, that the gate has reported on a recent PR, and that you can manage rulesets; otherwise it creates nothing and says what to fix.
+`/review-ci-gate` (or `yoke review-ci-gate`) adds a ruleset requiring the check on the default branch. It first checks that the caller workflow is merged there with the `synchronize` trigger, `actions: read` and no `paths` or branch filters that skip PRs to it, and that the gate has reported on a recent PR; otherwise it creates nothing and says what to fix.
 
 ### Foundry with Entra auth
 
