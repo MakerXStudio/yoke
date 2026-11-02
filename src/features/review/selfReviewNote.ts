@@ -13,7 +13,8 @@ export function selfReviewNote(diff: string): string {
 This change adds or edits a workflow that calls \`MakerXStudio/yoke/.github/workflows/review.yml\`, the CI setup for this review. Review it like any other file, but these are yoke's deliberate design: do not raise them as findings, keep them in a consolidated review, or mention them in a summary.
 
 - Calling the workflow at \`@main\` rather than a tag or SHA.
-- The trigger types, including leaving out \`synchronize\`: a review is re-run by marking the PR as draft and then ready for review.
+- The trigger types, including \`synchronize\`: pushes run only the \`review / gate\` job, and a review is re-run by marking the PR as draft and then ready for review.
+- The \`actions: read\` permission: the gate reads earlier runs of the workflow to find the PR's latest review.
 - Draft PRs being reviewed twice: the reusable workflow already skips drafts.
 
 Real defects in it are still findings, such as:
