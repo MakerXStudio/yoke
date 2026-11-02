@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { addUsage, usageTable, writeJobSummary } from './usage'
 
@@ -55,7 +55,9 @@ describe('writeJobSummary', () => {
   it('appends the review summary and token usage table', () => {
     const path = join(dir, 'summary.md')
     writeFileSync(path, 'earlier step\n')
-    expect(writeJobSummary('One bug.', { reviewer2: { input: 5 } }, { GITHUB_STEP_SUMMARY: path })).toBe(true)
+    const log = vi.fn()
+    writeJobSummary('One bug.', { reviewer2: { input: 5 } }, log, { GITHUB_STEP_SUMMARY: path })
+    expect(log).toHaveBeenCalledWith('wrote the review summary and token usage to the job summary')
     expect(readFileSync(path, 'utf8')).toBe(
       [
         'earlier step',
@@ -77,6 +79,14 @@ describe('writeJobSummary', () => {
   })
 
   it('writes nothing without GITHUB_STEP_SUMMARY', () => {
-    expect(writeJobSummary('One bug.', {}, {})).toBe(false)
+    const log = vi.fn()
+    writeJobSummary('One bug.', {}, log, {})
+    expect(log).not.toHaveBeenCalled()
+  })
+
+  it('logs instead of throwing when the job summary cannot be written', () => {
+    const log = vi.fn()
+    writeJobSummary('One bug.', {}, log, { GITHUB_STEP_SUMMARY: join(dir, 'missing', 'summary.md') })
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/^could not write the job summary: ENOENT/))
   })
 })

@@ -79,9 +79,18 @@ function jobSummary(summary: string, usage: StepUsage): string {
   return ['## Adversarial review', summary || 'No summary was given.', usageTable(usage)].join('\n\n')
 }
 
-export function writeJobSummary(summary: string, usage: StepUsage, env: NodeJS.ProcessEnv = process.env): boolean {
+export function writeJobSummary(
+  summary: string,
+  usage: StepUsage,
+  log: (message: string) => void,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   const path = env.GITHUB_STEP_SUMMARY
-  if (!path) return false
-  appendFileSync(path, `${jobSummary(summary, usage)}\n`)
-  return true
+  if (!path) return
+  try {
+    appendFileSync(path, `${jobSummary(summary, usage)}\n`)
+    log('wrote the review summary and token usage to the job summary')
+  } catch (error) {
+    log(`could not write the job summary: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }

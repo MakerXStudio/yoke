@@ -115,7 +115,7 @@ export async function reviewPr(
   try {
     const { synthesis, usage } = await review()
     findings = synthesis
-    if (ci && synthesis && writeJobSummary(synthesis.summary, usage)) log('wrote the review summary and token usage to the job summary')
+    if (ci && synthesis) writeJobSummary(synthesis.summary, usage, log)
   } catch (error) {
     if (ci && error instanceof ReviewFailure) await reportFailure(pr, error.reason, ui, { api: github, log, footer: footer() })
     throw error
