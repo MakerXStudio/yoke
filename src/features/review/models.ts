@@ -1,6 +1,6 @@
 import type { Settings } from '../config/settings'
 import { ReviewError } from './pr'
-import { deriveEndpoints, type Provider, type ProviderKind, providerKinds } from './provider'
+import { credentialOf, deriveEndpoints, type Provider, type ProviderKind, providerKinds } from './provider'
 import { readProvider } from './slots'
 
 type Fetch = typeof fetch
@@ -9,9 +9,10 @@ const timeout = 60_000
 const maxBodyChars = 300
 const providerWidth = Math.max(...providerKinds.map((kind) => kind.length))
 
-export function modelsRequest({ kind, baseUrl, apiKey }: Provider): { url: string; headers: Record<string, string> } {
-  const url = `${deriveEndpoints(kind, baseUrl).responses}/models`
-  return { url, headers: kind === 'foundry' ? { 'api-key': apiKey } : { Authorization: `Bearer ${apiKey}` } }
+export function modelsRequest(provider: Provider): { url: string; headers: Record<string, string> } {
+  const url = `${deriveEndpoints(provider.kind, provider.baseUrl).responses}/models`
+  if (provider.kind === 'foundry' && 'apiKey' in provider) return { url, headers: { 'api-key': provider.apiKey } }
+  return { url, headers: { Authorization: `Bearer ${credentialOf(provider)}` } }
 }
 
 function isModelList(value: unknown): value is { data: { id: string }[] } {
@@ -43,7 +44,7 @@ async function providerModels(provider: Provider, fetchModels: Fetch): Promise<s
 }
 
 function isConfigured(settings: Settings, kind: ProviderKind): boolean {
-  return Boolean(settings[`${kind}.baseUrl`] || settings[`${kind}.apiKey`])
+  return Boolean(settings[`${kind}.baseUrl`] || settings[`${kind}.apiKey`] || (kind === 'foundry' && settings['foundry.token']))
 }
 
 export async function listModels(settings: Settings, fetchModels: Fetch = fetch): Promise<string[]> {

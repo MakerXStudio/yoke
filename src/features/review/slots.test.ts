@@ -30,6 +30,15 @@ describe('resolveSlots', () => {
     expect(slots.reviewer2).toEqual({ harness: 'codex', model: 'gpt-5', override: { args: ['-m', 'gpt-5'], env: {} } })
   })
 
+  it('reaches Foundry with foundry.token over foundry.apiKey, and needs no API key with a token', () => {
+    const slot = { 'review.reviewer1.provider': 'foundry', 'review.reviewer1.model': 'sonnet' }
+    for (const settings of [
+      { ...foundry, 'foundry.token': 't', ...slot },
+      { 'foundry.baseUrl': 'https://res', 'foundry.token': 't', ...slot },
+    ])
+      expect(resolveSlots(settings).reviewer1.probe?.headers).toMatchObject({ Authorization: 'Bearer t' })
+  })
+
   it('lets a slot swap its harness', () => {
     expect(resolveSlots({ 'review.reviewer1.harness': 'codex' }).reviewer1).toEqual({ harness: 'codex' })
   })

@@ -32,10 +32,12 @@ export function readProvider(settings: Settings, kind: ProviderKind): Provider |
   const apiKeyKey = `${kind}.apiKey` as const
   const baseUrl = settings[baseUrlKey]
   const apiKey = settings[apiKeyKey]
+  const token = kind === 'foundry' ? settings['foundry.token'] : undefined
+  if (baseUrl && token) return { kind, baseUrl, token }
   if (baseUrl && apiKey) return { kind, baseUrl, apiKey }
   return [
     baseUrl ? null : `${baseUrlKey} is not set; ${howToSet(baseUrlKey, '<url>')}`,
-    apiKey ? null : `${apiKeyKey} is not set; ${howToSet(apiKeyKey, '<key>')}`,
+    apiKey || token ? null : `${apiKeyKey} is not set; ${howToSet(apiKeyKey, '<key>')}`,
   ].filter((error) => error !== null)
 }
 

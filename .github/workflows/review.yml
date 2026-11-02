@@ -35,6 +35,18 @@ on:
         description: '@makerx/yoke version to run'
         type: string
         default: latest
+      azure-client-id:
+        description: Entra app (client) ID to reach Foundry with a GitHub OIDC token instead of REVIEW_CI_API_KEY. The caller must grant id-token write
+        type: string
+        default: ''
+      azure-tenant-id:
+        description: Entra tenant ID of azure-client-id
+        type: string
+        default: ''
+      environment:
+        description: GitHub environment the review job runs in, so its OIDC subject matches the app's federated credential
+        type: string
+        default: ''
     secrets:
       REVIEW_CI_BASE_URL:
         description: LiteLLM proxy URL, or https://<resource>.services.ai.azure.com for Foundry
@@ -43,16 +55,12 @@ on:
         description: LiteLLM or Foundry API key
         required: false
 
-permissions: {}
-
 jobs:
   review:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: read
-      pull-requests: write
+    environment: ${{ inputs.environment }}
     env:
       CLAUDE_CODE_VERSION: 2.1.316
       CODEX_VERSION: 0.166.0
@@ -62,6 +70,8 @@ jobs:
           PROVIDER: ${{ inputs.provider }}
           BASE_URL: ${{ secrets.REVIEW_CI_BASE_URL }}
           API_KEY: ${{ secrets.REVIEW_CI_API_KEY }}
+          AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+          AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
         run: |
           failed=0
           if [ "$PROVIDER" != litellm ] && [ "$PROVIDER" != foundry ]; then
@@ -72,11 +82,52 @@ jobs:
             echo "::error::Secret REVIEW_CI_BASE_URL is not set. Run: gh secret set REVIEW_CI_BASE_URL, and pass it to the review workflow under secrets:"
             failed=1
           fi
-          if [ -z "$API_KEY" ]; then
-            echo "::error::Secret REVIEW_CI_API_KEY is not set. Run: gh secret set REVIEW_CI_API_KEY, and pass it to the review workflow under secrets:"
+          if [ -n "$AZURE_CLIENT_ID$AZURE_TENANT_ID" ]; then
+            if [ -z "$AZURE_CLIENT_ID" ] || [ -z "$AZURE_TENANT_ID" ]; then
+              echo "::error::Entra auth needs both azure-client-id and azure-tenant-id"
+              failed=1
+            fi
+            if [ "$PROVIDER" != foundry ]; then
+              echo "::error::Entra auth (azure-client-id) needs provider foundry"
+              failed=1
+            fi
+            if [ -z "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+              echo "::error::No GitHub OIDC token endpoint; grant id-token: write in the calling workflow's permissions"
+              failed=1
+            fi
+          elif [ -z "$API_KEY" ]; then
+            echo "::error::Secret REVIEW_CI_API_KEY is not set. Run: gh secret set REVIEW_CI_API_KEY, and pass it to the review workflow under secrets:, or pass azure-client-id and azure-tenant-id to use Entra auth"
             failed=1
           fi
           exit "$failed"
+
+      - name: Get an Entra token for Foundry
+        id: entra
+        if: inputs.azure-client-id != ''
+        env:
+          AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+          AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
+        run: |
+          assertion=$(curl -sS --fail-with-body -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r '.value // empty')
+          if [ -z "$assertion" ]; then
+            echo "::error::GitHub OIDC token request returned no token"
+            exit 1
+          fi
+          echo "::add-mask::$assertion"
+          response=$(curl -sS -X POST "https://login.microsoftonline.com/$AZURE_TENANT_ID/oauth2/v2.0/token" \
+            --data-urlencode grant_type=client_credentials \
+            --data-urlencode "client_id=$AZURE_CLIENT_ID" \
+            --data-urlencode scope=https://cognitiveservices.azure.com/.default \
+            --data-urlencode client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer \
+            --data-urlencode "client_assertion=$assertion")
+          token=$(jq -r '.access_token // empty' <<<"$response")
+          if [ -z "$token" ]; then
+            echo "::error::Entra token exchange for client $AZURE_CLIENT_ID failed: $(jq -r '.error_description // .error // empty' <<<"$response" | head -c 500)"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -102,7 +153,8 @@ jobs:
           YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_BASE_URL || '' }}
           YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
           YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_BASE_URL || '' }}
-          YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && secrets.REVIEW_CI_API_KEY || '' }}
+          YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && inputs.azure-client-id == '' && secrets.REVIEW_CI_API_KEY || '' }}
+          YOKE_FOUNDRY_TOKEN: ${{ steps.entra.outputs.token }}
           YOKE_REVIEW_REVIEWER_1_HARNESS: ${{ inputs.reviewer1-harness }}
           YOKE_REVIEW_REVIEWER_1_PROVIDER: ${{ inputs.provider }}
           YOKE_REVIEW_REVIEWER_1_MODEL: ${{ inputs.reviewer1-model }}

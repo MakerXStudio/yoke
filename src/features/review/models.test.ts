@@ -35,6 +35,10 @@ describe('modelsRequest', () => {
       headers: { 'api-key': 'k' },
     })
   })
+
+  it('asks Foundry with an Entra token as a bearer token', () => {
+    expect(modelsRequest({ kind: 'foundry', baseUrl: 'https://res', token: 't' }).headers).toEqual({ Authorization: 'Bearer t' })
+  })
 })
 
 describe('listModels', () => {

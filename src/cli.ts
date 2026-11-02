@@ -18,10 +18,11 @@ import { PrValidationError, raisePr } from './features/pr/raise'
 import {
   callerWorkflow,
   callerWorkflowPath,
+  type EntraFlags,
+  githubRepo,
   renderCallerWorkflow,
   repoRoot,
   reviewCiReport,
-  secretCommands,
   writeCallerWorkflow,
 } from './features/review/ci'
 import { listModels } from './features/review/models'
@@ -125,18 +126,27 @@ const ciKeys = settingKeys.filter((key) => /^review\.\w+\.(harness|model)$/.test
 addSettingOptions(
   program
     .command('review-ci')
-    .description(`Write ${callerWorkflowPath} so each PR in this repo is reviewed in CI, then print the gh secret set commands it needs`)
+    .description(
+      `Write ${callerWorkflowPath} so each PR in this repo is reviewed in CI, then print the secrets, or Entra federated credential, it needs`,
+    )
     .option('--provider <provider>', 'litellm or foundry; every slot uses it in CI. Default: review.reviewer1.provider, else litellm')
+    .option(
+      '--azure-client-id <id>',
+      'Entra app (client) ID to sign in to Foundry with GitHub OIDC instead of an API key; needs --provider foundry',
+    )
+    .option('--azure-tenant-id <id>', 'Entra tenant ID of that app')
+    .option('--environment <name>', "GitHub environment the review job runs in, matching the app's federated credential subject")
     .option('--force', `overwrite an existing ${callerWorkflowPath} that differs`),
   ciKeys,
 )
   .addHelpText('after', settingsHelp)
-  .action((options: { provider?: string; force?: boolean } & Record<string, unknown>) => {
+  .action((options: { provider?: string; force?: boolean } & EntraFlags & Record<string, unknown>) => {
     try {
       const settings = resolveSettings(flagSettings(options, ciKeys), process.env, readUserConfig(userConfigPath()))
-      const workflow = callerWorkflow(settings, options.provider)
-      const outcome = writeCallerWorkflow(repoRoot(), renderCallerWorkflow(workflow), options.force ?? false)
-      console.log(reviewCiReport(outcome, secretCommands(settings, workflow.provider)))
+      const workflow = callerWorkflow(settings, options.provider, options)
+      const root = repoRoot()
+      const outcome = writeCallerWorkflow(root, renderCallerWorkflow(workflow), options.force ?? false)
+      console.log(reviewCiReport(outcome, settings, workflow, () => githubRepo(root)))
     } catch (error) {
       if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
       console.error(error.message)
