@@ -54,7 +54,9 @@ function claudeUsage(raw: unknown): TokenUsage | undefined {
 }
 
 function codexUsage(raw: unknown): TokenUsage | undefined {
-  return parseUsage(raw, { input: 'input_tokens', output: 'output_tokens', cacheRead: 'cached_input_tokens' })
+  const usage = parseUsage(raw, { input: 'input_tokens', output: 'output_tokens', cacheRead: 'cached_input_tokens' })
+  if (usage?.input !== undefined && usage.cacheRead !== undefined) usage.input = Math.max(0, usage.input - usage.cacheRead)
+  return usage
 }
 
 function claudeResult(event: Json): HarnessEvent {

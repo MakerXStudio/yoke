@@ -51,7 +51,7 @@ describe('parseHarnessEvent', () => {
     const usage = { input_tokens: 100, cached_input_tokens: 60, output_tokens: 7 }
     expect(parseHarnessEvent('codex', line({ type: 'turn.completed', usage }))).toEqual({
       kind: 'usage',
-      usage: { input: 100, output: 7, cacheRead: 60 },
+      usage: { input: 40, output: 7, cacheRead: 60 },
     })
   })
 
