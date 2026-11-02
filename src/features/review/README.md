@@ -38,7 +38,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo, with every slot going through one LiteLLM or Foundry provider. `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml`, taking each slot's harness and model from your settings or its flags, and prints the `gh secret set` commands for the `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY` secrets. Pass `--provider foundry` to use Foundry, and `--force` to replace an existing caller. By hand, set the secrets, then call it:
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo, with every slot going through one LiteLLM or Foundry provider. `yoke sync` always puts `/review-ci` in `~/.claude/skills`, since it sets up other repos. `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml`, taking each slot's harness and model from your settings or its flags, and prints the `gh secret set` commands for the `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY` secrets. Pass `--provider foundry` to use Foundry, and `--force` to replace an existing caller. By hand, set the secrets, then call it:
 
 ```yaml
 name: Review PR

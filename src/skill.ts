@@ -1,6 +1,6 @@
 export const ownerMarker = 'owner: "@makerx/yoke"'
 
-export type Skill = { name: string; description: string; body: string; disableModelInvocation?: boolean; userOnly?: boolean }
+export type Skill = { name: string; description: string; body: string; disableModelInvocation?: boolean; userLevel?: boolean }
 
 export function renderSkill({ name, description, body, disableModelInvocation }: Skill): string {
   const invocation = disableModelInvocation ? ['disable-model-invocation: true'] : []
