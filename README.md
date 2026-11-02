@@ -31,6 +31,7 @@ yoke sync --user   # ~/.claude/skills
 yoke sync [--user] [--force]  # write yoke's skills
 yoke review [number]          # review a PR (used by /review)
 yoke review-ci                # add the CI review workflow (used by /review-ci)
+yoke review-gate <result>     # block merging until the PR's latest review succeeds (used by review.yml)
 yoke models                   # list each provider's models
 ```
 

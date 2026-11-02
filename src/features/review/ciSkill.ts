@@ -19,6 +19,8 @@ A workflow is an LLM review if it has a model review PRs, whatever tool it uses.
 
 Never ask whether to overwrite a workflow. If \`review-pr.yml\` exists and differs, edit it in place.
 
+The \`review / gate\` merge gate needs the \`synchronize\` trigger and \`actions: read\` permission from \`--print\`; add them to an edited workflow if missing.
+
 If no workflow or setting names the models, ask which model each reviewer runs. For LiteLLM, offer \`yoke models\`. For Foundry, ask for deployment names.
 
 For Foundry with Entra, reuse the client and tenant IDs from the existing workflow; ask only if none is there.
@@ -32,7 +34,7 @@ Never ask whether they are set for the organisation, and don't query org setting
 
 With Entra, check \`az ad app federated-credential list --id <client-id>\` and show the printed create command if the credential is missing.
 
-Finish with what changed and what's left: commit and push the workflow.
+Finish with what changed and what's left: commit and push the workflow, then, only once it is merged to the default branch, run the printed \`gh api\` ruleset command requiring \`review / gate\`. Don't run it before then.
 
 If \`yoke\` is not found, run \`npm i -g @makerx/yoke\`.
 `,

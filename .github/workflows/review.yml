@@ -61,7 +61,7 @@ on:
 
 jobs:
   review:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
+    if: github.event.action != 'synchronize' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
@@ -108,3 +108,20 @@ jobs:
         run: |
           gh auth setup-git
           npx --yes "@makerx/yoke@$YOKE_VERSION" review "$PR_NUMBER" --post --verbose
+
+  gate:
+    needs: review
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Require the latest review to have succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YOKE_VERSION: ${{ inputs.yoke-version }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review-gate "$REVIEW_RESULT"

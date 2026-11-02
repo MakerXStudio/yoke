@@ -3,8 +3,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import { howToSet, type SettingKey, type Settings } from '../config/settings'
+import { type EntraAuth, entraSetup } from './ciEntra'
 import { ReviewError } from './pr'
 import { isHarness, isProviderKind, type ProviderKind, providerKinds } from './provider'
+import { shellQuote } from './shellQuote'
 
 export const reviewWorkflowRef = 'MakerXStudio/yoke/.github/workflows/review.yml@main'
 
@@ -13,11 +15,13 @@ export const callerWorkflowPath = join('.github', 'workflows', 'review-pr.yml')
 export const baseUrlVariable = 'REVIEW_CI_BASE_URL'
 export const apiKeySecret = 'REVIEW_CI_API_KEY'
 
+export const callerTriggerTypes = ['opened', 'synchronize', 'reopened', 'ready_for_review']
+
+export const gateCheck = 'review / gate'
+
 type Input = [name: string, value: string]
 
 export type EntraFlags = { azureClientId?: string; azureTenantId?: string; environment?: string }
-
-type EntraAuth = { clientId: string; environment?: string }
 
 export type CallerWorkflow = { provider: ProviderKind; inputs: Input[]; entra?: EntraAuth }
 
@@ -92,9 +96,10 @@ export function renderCallerWorkflow(workflow: CallerWorkflow): string {
     '',
     'on:',
     '  pull_request:',
-    '    types: [opened, reopened, ready_for_review]',
+    `    types: [${callerTriggerTypes.join(', ')}]`,
     '',
     'permissions:',
+    '  actions: read',
     '  contents: read',
     '  pull-requests: write',
     ...(workflow.entra ? ['  id-token: write'] : []),
@@ -110,10 +115,6 @@ export function renderCallerWorkflow(workflow: CallerWorkflow): string {
   ].join('\n')
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`
-}
-
 export function setupCommands(settings: Settings, workflow: CallerWorkflow): string[] {
   const baseUrl = settings[`${workflow.provider}.baseUrl`]
   return [
@@ -122,28 +123,21 @@ export function setupCommands(settings: Settings, workflow: CallerWorkflow): str
   ]
 }
 
-const githubOidcIssuer = 'https://token.actions.githubusercontent.com'
-
-const entraTokenExchangeAudience = 'api://AzureADTokenExchange'
-
-export type FederatedCredential = { issuer: string; audience: string; subject: string }
-
-export function federatedCredential(repo: string, environment?: string): FederatedCredential {
-  return {
-    issuer: githubOidcIssuer,
-    audience: entraTokenExchangeAudience,
-    subject: environment ? `repo:${repo}:environment:${environment}` : `repo:${repo}:pull_request`,
-  }
+const gateRuleset = {
+  name: 'yoke review',
+  target: 'branch',
+  enforcement: 'active',
+  conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+  rules: [
+    {
+      type: 'required_status_checks',
+      parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: gateCheck }] },
+    },
+  ],
 }
 
-function federatedCredentialCommand(clientId: string, credential: FederatedCredential): string {
-  const parameters = JSON.stringify({
-    name: 'yoke-review-ci',
-    issuer: credential.issuer,
-    subject: credential.subject,
-    audiences: [credential.audience],
-  })
-  return `az ad app federated-credential create --id ${shellQuote(clientId)} --parameters ${shellQuote(parameters)}`
+export function rulesetCommand(): string {
+  return `echo ${shellQuote(JSON.stringify(gateRuleset))} | gh api --method POST 'repos/{owner}/{repo}/rulesets' --input -`
 }
 
 const unknownRepo = '<owner>/<repo>'
@@ -188,21 +182,6 @@ export function writeCallerWorkflow(root: string, content: string): WriteOutcome
   return 'wrote'
 }
 
-function entraSetup({ clientId, environment }: EntraAuth, repo: string): string[] {
-  const credential = federatedCredential(repo, environment)
-  return [
-    '',
-    `Instead of an API key, the review signs in to Foundry as Entra app ${clientId}. So that the app trusts this repo's review runs, add a federated credential to it with:`,
-    `  issuer:   ${credential.issuer}`,
-    `  audience: ${credential.audience}`,
-    `  subject:  ${credential.subject}`,
-    'for example with:',
-    `  ${federatedCredentialCommand(clientId, credential)}`,
-    'and give the app the Cognitive Services User role on the Foundry resource.',
-    ...(environment ? [`The job runs in the ${environment} environment; create it on the repo if it does not exist.`] : []),
-  ]
-}
-
 export type ReportOutcome = WriteOutcome | 'printed'
 
 function reportHeading(outcome: ReportOutcome, workflow: CallerWorkflow): string[] {
@@ -233,5 +212,9 @@ export function reviewCiReport(outcome: ReportOutcome, settings: Settings, workf
     outcome === 'printed'
       ? "Once the repo's review workflow runs this review, commit and push it; each PR opened from this repo then gets a review."
       : `Commit and push ${callerWorkflowPath}; each PR opened from this repo then gets a review.`,
+    '',
+    `To block merging while the review fails, require the ${gateCheck} check on the default branch with:`,
+    `  ${rulesetCommand()}`,
+    'Run it only after this workflow is merged to the default branch, or pushes to open PRs get stuck waiting for a status.',
   ].join('\n')
 }
