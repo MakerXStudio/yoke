@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export type InstallType = 'git' | 'npm' | 'unknown'
@@ -24,9 +24,15 @@ export function isGitClone(dir: string, toplevel = gitToplevel): boolean {
   }
 }
 
-export function isGlobalNpmInstall(dir: string, globalRoot = npmGlobalRoot): boolean {
+function isInside(parent: string, child: string, platform = process.platform): boolean {
+  const fold = (path: string) => (platform === 'win32' ? resolve(path).toLowerCase() : resolve(path))
+  const rel = relative(fold(parent), fold(child))
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
+export function isGlobalNpmInstall(dir: string, globalRoot = npmGlobalRoot, platform = process.platform): boolean {
   try {
-    return resolve(dir).toLowerCase().startsWith(resolve(globalRoot()).toLowerCase())
+    return isInside(globalRoot(), dir, platform)
   } catch {
     return false
   }

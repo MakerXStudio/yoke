@@ -31,6 +31,18 @@ describe('isGlobalNpmInstall', () => {
     expect(isGlobalNpmInstall('/home/me/git/yoke', () => '/usr/local/lib/node_modules')).toBe(false)
   })
 
+  it('is false for a sibling directory sharing the root as a prefix', () => {
+    expect(isGlobalNpmInstall('/opt/node_modules-tools/yoke', () => '/opt/node_modules')).toBe(false)
+  })
+
+  it('is case-sensitive off Windows', () => {
+    expect(isGlobalNpmInstall('/Opt/node_modules/@makerx/yoke', () => '/opt/node_modules', 'linux')).toBe(false)
+  })
+
+  it('ignores case on Windows', () => {
+    expect(isGlobalNpmInstall('/Opt/Node_Modules/@makerx/yoke', () => '/opt/node_modules', 'win32')).toBe(true)
+  })
+
   it('is false when npm root -g fails', () => {
     expect(
       isGlobalNpmInstall('/home/me/git/yoke', () => {
