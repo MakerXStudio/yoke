@@ -111,5 +111,7 @@ jobs:
           YOKE_REVIEW_REVIEWER_2_MODEL: ${{ inputs.reviewer2-model }}
           YOKE_REVIEW_SYNTHESIS_HARNESS: ${{ inputs.synthesis-harness || inputs.reviewer1-harness }}
           YOKE_REVIEW_SYNTHESIS_PROVIDER: ${{ inputs.provider }}
-          YOKE_REVIEW_SYNTHESIS_MODEL: ${{ inputs.synthesis-model || inputs.reviewer1-model }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review "$PR_NUMBER" --post --verbose
+          YOKE_REVIEW_SYNTHESIS_MODEL: ${{ inputs.synthesis-model || (!inputs.synthesis-harness && inputs.reviewer1-model) || '' }}
+        run: |
+          gh auth setup-git
+          npx --yes "@makerx/yoke@$YOKE_VERSION" review "$PR_NUMBER" --post --verbose

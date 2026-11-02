@@ -32,6 +32,8 @@ function slotInputs(settings: Settings, errors: string[]): Input[] {
     if (harness && !isHarness(harness))
       errors.push(`${harnessKey} "${harness}" must be claude or codex; ${howToSet(harnessKey, '<claude|codex>')}`)
     if (required && !model) errors.push(`${modelKey} is required; ${howToSet(modelKey, '<model>')} (see \`yoke models\`)`)
+    if (!required && harness && !model)
+      errors.push(`${modelKey} is required when ${harnessKey} is set; ${howToSet(modelKey, '<model>')} (see \`yoke models\`)`)
     if (harness) inputs.push([`${slot}-harness`, harness])
     if (model) inputs.push([`${slot}-model`, model])
   }
@@ -49,7 +51,9 @@ export function callerWorkflow(settings: Settings, providerFlag?: string): Calle
 }
 
 function yamlValue(value: string): string {
-  return /^[\w./:@-]+$/.test(value) ? value : JSON.stringify(value)
+  return /^[\w./:@-]+$/.test(value) && !/^([-+.\d_eE]+|0[xo][\da-f]+|true|false|yes|no|on|off|y|n|null|~)$/i.test(value)
+    ? value
+    : JSON.stringify(value)
 }
 
 export function renderCallerWorkflow({ inputs }: CallerWorkflow): string {

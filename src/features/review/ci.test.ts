@@ -92,6 +92,16 @@ describe('callerWorkflow', () => {
     expect(inputsOf({ ...models, 'review.reviewer1.model': 'model: #1' })['reviewer1-model']).toBe('model: #1')
   })
 
+  it.each(['1.0', '123', 'true', 'No', 'null', '~', '1e3', '0x1f'])('keeps model %s a string', (model) => {
+    expect(inputsOf({ ...models, 'review.reviewer1.model': model })['reviewer1-model']).toBe(model)
+  })
+
+  it('requires a synthesis model when the synthesis harness is set', () => {
+    expect(() => callerWorkflow({ ...models, 'review.synthesis.harness': 'codex' })).toThrow(
+      /review\.synthesis\.model is required when review\.synthesis\.harness is set/,
+    )
+  })
+
   it('names every missing or invalid setting', () => {
     expect(() => callerWorkflow({ 'review.reviewer1.harness': 'gemini' }, 'bedrock')).toThrow(
       /provider "bedrock" must be litellm or foundry[\s\S]*review\.reviewer1\.harness "gemini"[\s\S]*review\.reviewer1\.model is required[\s\S]*review\.reviewer2\.model is required/,
