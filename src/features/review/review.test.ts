@@ -289,7 +289,7 @@ describe('postFindings', () => {
     expect(api.submit).toHaveBeenCalledWith(
       pr,
       review,
-      `## Adversarial review\n\nLooks fine.\n\nNo findings were raised.\n\n---\n_models_\n\n${rerun}`,
+      `## Adversarial review\n\nLooks fine.\n\nNo new findings were raised.\n\n---\n_models_\n\n${rerun}`,
     )
   })
 
@@ -299,7 +299,7 @@ describe('postFindings', () => {
     expect(api.submit).toHaveBeenCalledWith(
       pr,
       review,
-      `## Adversarial review\n\nOne bug.\n\nNo findings were raised.\n\n---\n_models_\n\n${rerun}`,
+      `## Adversarial review\n\nOne bug.\n\nNo new findings were raised.\n\n---\n_models_\n\n${rerun}`,
     )
   })
 

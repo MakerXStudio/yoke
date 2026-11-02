@@ -39,7 +39,7 @@ function outsideEntry(finding: Finding): string {
   return [...entry, `  ${findingMarker(finding)}`].join('\n')
 }
 
-const noFindingsNote = 'No findings were raised.'
+const noFindingsNote = 'No new findings were raised.'
 
 const rerunNote = 'To re-run this review, mark the PR as draft and then ready for review again.'
 

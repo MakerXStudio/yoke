@@ -70,7 +70,7 @@ jobs:
 
 In CI (`GITHUB_ACTIONS=true`), `yoke review --post` always posts a review, ending with a note that marking the PR as draft and then ready for review re-runs it:
 
-- No new findings: the summary and `No findings were raised.`
+- No new findings: the summary and `No new findings were raised.`
 - A reviewer or the synthesis fails: a `## Code review failed` review linking the workflow run, and a non-zero exit.
 - With `GITHUB_STEP_SUMMARY` set, the review summary and a token usage table per step go to the job summary.
 
