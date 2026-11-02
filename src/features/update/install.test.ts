@@ -14,21 +14,24 @@ describe('installDir', () => {
 })
 
 describe('isGlobalNpmInstall', () => {
-  it('is true inside node_modules without asking npm', () => {
-    const prefix = vi.fn(() => '/elsewhere')
-    expect(isGlobalNpmInstall('/home/me/.nvm/versions/node/v24/lib/node_modules/@makerx/yoke', prefix)).toBe(true)
-    expect(prefix).not.toHaveBeenCalled()
+  it('is true under the npm global root', () => {
+    const root = '/home/me/.nvm/versions/node/v24/lib/node_modules'
+    expect(isGlobalNpmInstall(`${root}/@makerx/yoke`, () => root)).toBe(true)
   })
 
-  it('is true under the npm global prefix', () => {
-    expect(isGlobalNpmInstall('/opt/npm-global/yoke', () => '/opt/npm-global')).toBe(true)
+  it('is false for a project-local node_modules', () => {
+    expect(isGlobalNpmInstall('/home/me/git/app/node_modules/@makerx/yoke', () => '/usr/local/lib/node_modules')).toBe(false)
+  })
+
+  it('is false for the npx cache', () => {
+    expect(isGlobalNpmInstall('/home/me/.npm/_npx/abc123/node_modules/@makerx/yoke', () => '/usr/local/lib/node_modules')).toBe(false)
   })
 
   it('is false elsewhere', () => {
-    expect(isGlobalNpmInstall('/home/me/git/yoke', () => '/usr/local')).toBe(false)
+    expect(isGlobalNpmInstall('/home/me/git/yoke', () => '/usr/local/lib/node_modules')).toBe(false)
   })
 
-  it('is false when npm prefix -g fails', () => {
+  it('is false when npm root -g fails', () => {
     expect(
       isGlobalNpmInstall('/home/me/git/yoke', () => {
         throw new Error('npm not found')
@@ -36,10 +39,10 @@ describe('isGlobalNpmInstall', () => {
     ).toBe(false)
   })
 
-  it('asks npm for the global prefix by default', () => {
-    execSync.mockReturnValueOnce(Buffer.from('/opt/npm-global\n'))
-    expect(isGlobalNpmInstall('/opt/npm-global/yoke')).toBe(true)
-    expect(execSync).toHaveBeenCalledWith('npm prefix -g', { stdio: 'pipe' })
+  it('asks npm for the global root by default', () => {
+    execSync.mockReturnValueOnce(Buffer.from('/usr/lib/node_modules\n'))
+    expect(isGlobalNpmInstall('/usr/lib/node_modules/@makerx/yoke')).toBe(true)
+    expect(execSync).toHaveBeenCalledWith('npm root -g', { stdio: 'pipe' })
   })
 })
 
@@ -73,16 +76,16 @@ function notGit(): string {
 
 describe('detectInstall', () => {
   it('detects a git clone ahead of the npm check', () => {
-    const prefix = vi.fn(() => '/home/me')
-    expect(detectInstall('/home/me/git/yoke', prefix, () => '/home/me/git/yoke')).toBe('git')
-    expect(prefix).not.toHaveBeenCalled()
+    const root = vi.fn(() => '/home/me')
+    expect(detectInstall('/home/me/git/yoke', root, () => '/home/me/git/yoke')).toBe('git')
+    expect(root).not.toHaveBeenCalled()
   })
 
   it('detects a global npm install', () => {
-    expect(detectInstall('/usr/lib/node_modules/@makerx/yoke', () => '/usr', notGit)).toBe('npm')
+    expect(detectInstall('/usr/lib/node_modules/@makerx/yoke', () => '/usr/lib/node_modules', notGit)).toBe('npm')
   })
 
   it('is unknown otherwise', () => {
-    expect(detectInstall('/home/me/git/yoke', () => '/usr/local', notGit)).toBe('unknown')
+    expect(detectInstall('/home/me/git/app/node_modules/@makerx/yoke', () => '/usr/lib/node_modules', notGit)).toBe('unknown')
   })
 })
