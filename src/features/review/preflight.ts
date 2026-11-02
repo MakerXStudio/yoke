@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
 
 import type { Harness } from './harness'
-import { ReviewError } from './pr'
 import type { ProbeRequest } from './provider'
+import { ReviewFailure } from './run'
 import type { ReviewSlots, Slot } from './slots'
 
 export type Checks = {
@@ -95,5 +95,6 @@ function slotsToRun(slots: ReviewSlots): SlotUse[] {
 export async function assertViable(slots: ReviewSlots, check: Checks = checks): Promise<void> {
   const problems = await Promise.all(slotsToRun(slots).map((use) => slotProblem(use, check)))
   const errors = problems.filter((problem) => problem !== undefined)
-  if (errors.length) throw new ReviewError(['Cannot review:', ...errors.map((error) => `- ${error}`)].join('\n'))
+  if (errors.length)
+    throw new ReviewFailure('a reviewer could not run', ['Cannot review:', ...errors.map((error) => `- ${error}`)].join('\n'))
 }
