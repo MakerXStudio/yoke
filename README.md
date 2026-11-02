@@ -24,6 +24,7 @@ yoke sync --user   # ~/.claude/skills
 - `/pr` raises a PR with a short What/Why/(How) description.
 - `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them. [Configure](src/features/review/README.md#settings).
 - `/review-ci` makes CI review each PR, adding a workflow or switching the repo's existing LLM review workflow over, and helps set its variable and secret. [Details](src/features/review/README.md#ci).
+- `/review-ci-gate` blocks merging until the CI review passes, once its workflow is merged. [Details](src/features/review/README.md#merge-gate).
 
 ## CLI
 
@@ -31,6 +32,7 @@ yoke sync --user   # ~/.claude/skills
 yoke sync [--user] [--force]  # write yoke's skills
 yoke review [number]          # review a PR (used by /review)
 yoke review-ci                # add the CI review workflow (used by /review-ci)
+yoke review-ci-gate           # require the review / gate check on the default branch (used by /review-ci-gate)
 yoke review-gate <result>     # block merging until the PR's latest review succeeds (used by review.yml)
 yoke models                   # list each provider's models
 ```
