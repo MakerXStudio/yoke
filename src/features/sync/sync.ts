@@ -19,12 +19,12 @@ function isOwnedByUser(skillFile: string): boolean {
   return existsSync(skillFile) && !readFileSync(skillFile, 'utf8').includes(ownerMarker)
 }
 
-export function syncSkills(destination: string, userDestination: string, skills = bundledSkills): SyncResult {
+export function syncSkills(destination: string, userDestination: string, force = false, skills = bundledSkills): SyncResult {
   const result: SyncResult = { written: [], skipped: [] }
   for (const skill of skills) {
     const target = join(skill.userLevel ? userDestination : destination, skill.name)
     const skillFile = join(target, 'SKILL.md')
-    if (isOwnedByUser(skillFile)) {
+    if (!force && isOwnedByUser(skillFile)) {
       result.skipped.push(target)
       continue
     }

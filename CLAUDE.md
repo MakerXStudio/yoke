@@ -5,3 +5,7 @@ The root README must not grow with each feature. Each skill under `## Skills` ge
 ## Verification
 
 After making code changes, run `/verify` and fix everything it reports before committing. Don't silence checks or game the metrics.
+
+## Pull requests
+
+PR titles must be conventional commits (`feat: …`, `fix: …`, `chore: …`); the `title` CI check rejects any other title.
