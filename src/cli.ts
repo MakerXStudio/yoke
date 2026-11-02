@@ -40,8 +40,9 @@ program
   .option('--user', 'write to ~/.claude/skills instead, for every repo')
   .action((options: { user?: boolean }) => {
     const user = options.user ?? false
-    const display = (path: string) => (user ? path : relative(process.cwd(), path))
-    const { written, skipped } = syncSkills(skillsRoot(user))
+    const cwd = process.cwd()
+    const display = (path: string) => (path.startsWith(cwd) ? relative(cwd, path) : path)
+    const { written, skipped } = syncSkills(skillsRoot(user), skillsRoot(true))
     for (const file of written) console.log(`wrote ${display(file)}`)
     for (const dir of skipped) console.log(`skipped ${display(dir)} (your own skill; delete it to take yoke's)`)
   })

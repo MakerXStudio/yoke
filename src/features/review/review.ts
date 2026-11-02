@@ -3,16 +3,18 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Settings } from '../config/settings'
+import { isCi, reportFailure } from './ciRun'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { runHarness } from './harness'
 import { postFindings } from './post'
-import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github, ReviewError } from './pr'
+import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github } from './pr'
 import { assertViable } from './preflight'
 import { buildRequest, type PullRequest } from './request'
 import { logged, reviewLog } from './reviewLog'
-import { type ReviewResult, runReview } from './run'
+import { type ReviewResult, ReviewFailure, runReview } from './run'
 import { type ReviewSlots, resolveSlots } from './slots'
 import { type StatusUi, timed } from './status'
+import { type StepUsage, writeJobSummary } from './usage'
 import { modelsFooter, readUsedModels } from './usedModels'
 
 type Log = (line: string) => void
@@ -30,12 +32,19 @@ function prepareRunDir(reviewDir: string, force: boolean): void {
   if (force) for (const name of cachedOutputs) rmSync(join(reviewDir, name), { force: true })
 }
 
-async function reviewAtHead(pr: PullRequest, reviewDir: string, request: string, slots: ReviewSlots, ui: StatusUi): Promise<ReviewResult> {
+async function reviewAtHead(
+  pr: PullRequest,
+  reviewDir: string,
+  request: string,
+  slots: ReviewSlots,
+  ui: StatusUi,
+  strict: boolean,
+): Promise<ReviewResult> {
   const checkoutDir = mkdtempSync(join(tmpdir(), 'yoke-review-'))
   try {
     const checkout = await timed(ui, `checking out ${pr.headRefOid.slice(0, 7)}`, () => checkoutHead(pr, checkoutDir))
     try {
-      return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track })
+      return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track, strict })
     } finally {
       await checkout.remove()
     }
@@ -80,22 +89,38 @@ export async function reviewPr(
   const reviewDir = reviewRunDir(pr)
   prepareRunDir(reviewDir, force)
   file.attach(reviewDir)
-  const path = join(reviewDir, 'review.md')
-  let synthesis = savedReview(path, post)
-  if (synthesis) {
-    log(`posting the saved review of #${pr.number} at ${pr.headRefOid.slice(0, 7)}`)
-    out(formatSynthesis(synthesis))
-  } else {
+  const ci = post && isCi()
+  const review = async (): Promise<{ synthesis: Synthesis | null; usage: StepUsage }> => {
+    const path = join(reviewDir, 'review.md')
+    const saved = savedReview(path, post)
+    if (saved) {
+      log(`posting the saved review of #${pr.number} at ${pr.headRefOid.slice(0, 7)}`)
+      out(formatSynthesis(saved))
+      return { synthesis: saved, usage: {} }
+    }
     await timed(ui, 'checking each reviewer can run', () => assertViable(slots))
     log(`review folder: ${reviewDir}`)
-    const result = await reviewAtHead(pr, reviewDir, buildRequest(pr, diff, prior), slots, ui)
+    const result = await reviewAtHead(pr, reviewDir, buildRequest(pr, diff, prior), slots, ui, ci)
     out(result.report)
-    synthesis = result.synthesis
     saveReview(path, result.markdown)
+    if (post && !result.synthesis)
+      throw new ReviewFailure(
+        'the synthesis could not be parsed',
+        'Not posting: the synthesis did not produce findings in the expected format.',
+      )
+    return result
   }
-  if (!post) return
-  if (!synthesis) throw new ReviewError('Not posting: the synthesis did not produce findings in the expected format.')
-  const findings = synthesis
-  const footer = modelsFooter(readUsedModels(reviewDir))
-  await timed(ui, `posting to #${pr.number}`, () => postFindings(pr, findings, diff, prior, { api: github, log, footer }))
+  const footer = () => modelsFooter(readUsedModels(reviewDir))
+  let findings: Synthesis | null
+  try {
+    const { synthesis, usage } = await review()
+    findings = synthesis
+    if (ci && synthesis) writeJobSummary(synthesis.summary, usage, log)
+  } catch (error) {
+    if (ci && error instanceof ReviewFailure) await reportFailure(pr, error.reason, ui, { api: github, log, footer: footer() })
+    throw error
+  }
+  if (!post || !findings) return
+  const synthesis = findings
+  await timed(ui, `posting to #${pr.number}`, () => postFindings(pr, synthesis, diff, prior, { api: github, log, footer: footer(), ci }))
 }

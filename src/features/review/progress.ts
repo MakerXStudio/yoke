@@ -1,8 +1,10 @@
 import type { Harness } from './harness'
+import { parseUsage, type TokenUsage } from './usage'
 
 export type HarnessEvent =
   | { kind: 'activity'; text: string }
-  | { kind: 'final'; text: string }
+  | { kind: 'final'; text: string; usage?: TokenUsage }
+  | { kind: 'usage'; usage: TokenUsage }
   | { kind: 'model'; model: string }
   | { kind: 'error'; message: string }
   | { kind: 'ignore' }
@@ -42,8 +44,29 @@ function describeTool(tool: string, summary: string): string {
   return summary ? `${tool} ${summary}` : tool
 }
 
+function claudeUsage(raw: unknown): TokenUsage | undefined {
+  return parseUsage(raw, {
+    input: 'input_tokens',
+    output: 'output_tokens',
+    cacheRead: 'cache_read_input_tokens',
+    cacheWrite: 'cache_creation_input_tokens',
+  })
+}
+
+function codexUsage(raw: unknown): TokenUsage | undefined {
+  const usage = parseUsage(raw, { input: 'input_tokens', output: 'output_tokens', cacheRead: 'cached_input_tokens' })
+  if (usage?.input !== undefined && usage.cacheRead !== undefined) usage.input = Math.max(0, usage.input - usage.cacheRead)
+  return usage
+}
+
+function claudeResult(event: Json): HarnessEvent {
+  const usage = claudeUsage(event.usage)
+  if (typeof event.result === 'string') return usage ? { kind: 'final', text: event.result, usage } : { kind: 'final', text: event.result }
+  return usage ? { kind: 'usage', usage } : { kind: 'ignore' }
+}
+
 function claudeEvent(event: Json): HarnessEvent {
-  if (event.type === 'result' && typeof event.result === 'string') return { kind: 'final', text: event.result }
+  if (event.type === 'result') return claudeResult(event)
   if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') return { kind: 'model', model: event.model }
   const content = isJson(event.message) ? event.message.content : undefined
   if (event.type !== 'assistant' || !Array.isArray(content)) return { kind: 'ignore' }
@@ -66,6 +89,8 @@ function codexError(event: Json): string | undefined {
 function codexEvent(event: Json): HarnessEvent {
   const message = codexError(event)
   if (message) return { kind: 'error', message }
+  const usage = event.type === 'turn.completed' ? codexUsage(event.usage) : undefined
+  if (usage) return { kind: 'usage', usage }
   const item = event.item
   if (event.type !== 'item.started' || !isJson(item)) return { kind: 'ignore' }
   const command = text(item, 'command')

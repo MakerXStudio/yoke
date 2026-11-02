@@ -8,11 +8,11 @@ import { recordSlot } from './cachedSlots'
 import { findingMarker, type PriorComment } from './comments'
 import { parseSynthesis } from './findings'
 import type { Harness, HarnessResult, HarnessRun } from './harness'
-import { type PostDeps, postFindings } from './post'
+import { type PostDeps, postFailure, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
 import { reviewRunDir, saveReview } from './review'
-import { type ReviewContext, runReview } from './run'
+import { type ReviewContext, ReviewFailure, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
 import type { StepName } from './usedModels'
@@ -87,6 +87,19 @@ describe('runReview', () => {
     expect(parsed?.findings.map((f) => f.title)).toEqual(['Crash'])
   })
 
+  it('returns the token usage each slot that ran reported, leaving cached slots out', async () => {
+    cache('reviewer1', 'cached review', 'claude: default model')
+    const base = context()
+    const { usage } = await runReview('request', {
+      ...base,
+      runHarness: async (run) => {
+        const result = await base.runHarness(run)
+        return result.ok ? { ...result, usage: { input: run.harness === 'codex' ? 2 : 3 } } : result
+      },
+    })
+    expect(usage).toEqual({ reviewer2: { input: 2 }, synthesis: { input: 3 } })
+  })
+
   it('starts the reviewers in parallel', async () => {
     const started: Harness[] = []
     let release: (() => void) | undefined
@@ -153,6 +166,23 @@ describe('runReview', () => {
     expect(runs).toHaveLength(2)
   })
 
+  it('names every failed reviewer when every reviewer fails', async () => {
+    const review = runReview('request', context({ reviews: { claude: new Error('down'), codex: new Error('down') } }))
+    await expect(review).rejects.toMatchObject({ reason: 'reviewer 1 and reviewer 2 failed' })
+  })
+
+  it('when strict, fails on one failed reviewer without synthesising', async () => {
+    const review = runReview('request', { ...context({ reviews: { codex: new Error('down') } }), strict: true })
+    await expect(review).rejects.toThrow(ReviewFailure)
+    await expect(review).rejects.toMatchObject({ reason: 'reviewer 2 failed' })
+    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer1.md', 'reviewer2.md'])
+  })
+
+  it('when strict, fails when synthesis fails instead of showing the raw reviews', async () => {
+    const review = runReview('request', { ...context({ synthesis: new Error('boom') }), strict: true })
+    await expect(review).rejects.toMatchObject({ reason: 'synthesis failed' })
+  })
+
   it('shows the raw reviews when synthesis fails', async () => {
     const { report: output, synthesis: parsed } = await runReview(
       'request',
@@ -167,6 +197,7 @@ describe('runReview', () => {
       report: `${reviewersLine}\n\nFree-form review.`,
       synthesis: null,
       markdown: null,
+      usage: {},
     })
   })
 
@@ -235,10 +266,72 @@ describe('postFindings', () => {
     }
   }
 
-  async function post(markdown: string, api = fakeApi(), prior: PriorComment[] = []) {
-    await postFindings(pr, parseSynthesis(markdown), diff, prior, { api, log: (line) => logs.push(line) })
+  async function post(markdown: string, api = fakeApi(), prior: PriorComment[] = [], extra: Partial<PostDeps> = {}) {
+    await postFindings(pr, parseSynthesis(markdown), diff, prior, { api, log: (line) => logs.push(line), ...extra })
     return api
   }
+
+  const raised: PriorComment[] = [
+    { path: 'src/a.ts', line: 3, author: 'me', body: `old\n\n${findingMarker({ file: 'src/a.ts', title: 'Crash' })}` },
+  ]
+  const noFindings = '## Summary\n\nLooks fine.\n\n## Findings\n'
+  const ci = { ci: true, footer: '---\n_models_' }
+  const rerun = '_To re-run this review, mark the PR as draft and then ready for review again._'
+
+  it('in CI, adds the re-run note after the models line', async () => {
+    const api = await post(synthesis, fakeApi(), [], ci)
+    expect(api.submit).toHaveBeenCalledWith(pr, review, `## Adversarial review\n\nOne bug.\n\n---\n_models_\n\n${rerun}`)
+  })
+
+  it('in CI, posts a body-only review when there are no findings', async () => {
+    const api = await post(noFindings, fakeApi(), [], ci)
+    expect(api.add).not.toHaveBeenCalled()
+    expect(api.submit).toHaveBeenCalledWith(
+      pr,
+      review,
+      `## Adversarial review\n\nLooks fine.\n\nNo new findings were raised.\n\n---\n_models_\n\n${rerun}`,
+    )
+  })
+
+  it('in CI, posts a body-only review when every finding was already raised', async () => {
+    const api = await post(synthesis, fakeApi(), raised, ci)
+    expect(api.add).not.toHaveBeenCalled()
+    expect(api.submit).toHaveBeenCalledWith(
+      pr,
+      review,
+      `## Adversarial review\n\nOne bug.\n\nNo new findings were raised.\n\n---\n_models_\n\n${rerun}`,
+    )
+  })
+
+  it('outside CI, posts nothing when there are no findings and adds no re-run note', async () => {
+    const api = await post(noFindings, fakeApi(), [], { footer: '---\n_models_' })
+    expect(api.open).not.toHaveBeenCalled()
+    expect(logs).toEqual(['nothing new to post'])
+    const posted = await post(synthesis, fakeApi(), [], { footer: '---\n_models_' })
+    expect(posted.submit).toHaveBeenCalledWith(pr, review, '## Adversarial review\n\nOne bug.\n\n---\n_models_')
+  })
+
+  describe('postFailure', () => {
+    const runUrl = 'https://github.com/o/r/actions/runs/9'
+
+    it('submits a failed review with the run link, models line and re-run note', async () => {
+      const api = fakeApi()
+      await postFailure(pr, 'reviewer 2 failed', runUrl, { api, log: (line) => logs.push(line), footer: '---\n_models_' })
+      expect(api.add).not.toHaveBeenCalled()
+      expect(api.submit).toHaveBeenCalledWith(
+        pr,
+        review,
+        `## Code review failed\n\nThe review did not complete: reviewer 2 failed. No findings were posted.\n\nSee the [workflow run](${runUrl}) for details.\n\n---\n_models_\n\n${rerun}`,
+      )
+      expect(logs).toEqual(['posted the failed review: https://github.com/o/r/pull/4#pullrequestreview-7'])
+    })
+
+    it('discards the pending review when submitting fails', async () => {
+      const api = fakeApi({ submit: vi.fn(async () => Promise.reject(new ReviewError('nope'))) })
+      await expect(postFailure(pr, 'synthesis failed', undefined, { api, log: (line) => logs.push(line) })).rejects.toThrow('nope')
+      expect(api.discard).toHaveBeenCalledWith(pr, review)
+    })
+  })
 
   it('adds each inline comment to one pending review, then submits it with the body', async () => {
     const api = await post(synthesis)
@@ -287,9 +380,7 @@ describe('postFindings', () => {
   })
 
   it('does not open a review when every finding was already raised', async () => {
-    const api = await post(synthesis, fakeApi(), [
-      { path: 'src/a.ts', line: 3, author: 'me', body: `old\n\n${findingMarker({ file: 'src/a.ts', title: 'Crash' })}` },
-    ])
+    const api = await post(synthesis, fakeApi(), raised)
     expect(api.open).not.toHaveBeenCalled()
     expect(logs).toEqual(['skipped 1 finding(s) already raised on the PR', 'nothing new to post'])
   })

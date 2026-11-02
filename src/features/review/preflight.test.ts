@@ -4,6 +4,7 @@ import type { Harness } from './harness'
 import { ReviewError } from './pr'
 import { assertViable, type Checks } from './preflight'
 import type { ProbeRequest } from './provider'
+import { ReviewFailure } from './run'
 import type { ReviewSlots } from './slots'
 
 const ownAuth: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
@@ -38,6 +39,12 @@ async function errorOf(run: () => Promise<unknown>): Promise<string> {
 describe('assertViable', () => {
   it('passes when both CLIs are installed and signed in', async () => {
     await expect(assertViable(ownAuth, fake())).resolves.toBeUndefined()
+  })
+
+  it('fails as a ReviewFailure so CI posts the failed review', async () => {
+    const failure = assertViable(ownAuth, fake({ signedOut: ['codex'] }))
+    await expect(failure).rejects.toBeInstanceOf(ReviewFailure)
+    await expect(failure).rejects.toMatchObject({ reason: 'a reviewer could not run' })
   })
 
   it('names a signed-out harness and how to sign in', async () => {

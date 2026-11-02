@@ -38,7 +38,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo, with every slot going through one LiteLLM or Foundry provider. `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml`, taking each slot's harness and model from your settings or its flags, and prints the `gh secret set` commands for the `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY` secrets. Pass `--provider foundry` to use Foundry, and `--force` to replace an existing caller. By hand, set the secrets, then call it:
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each non-draft PR opened from the same repo, with every slot going through one LiteLLM or Foundry provider. `yoke sync` always puts `/review-ci` in `~/.claude/skills`, since it sets up other repos. `yoke review-ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml`, taking each slot's harness and model from your settings or its flags, and prints the `gh secret set` commands for the `REVIEW_CI_BASE_URL` and `REVIEW_CI_API_KEY` secrets. Pass `--provider foundry` to use Foundry, and `--force` to replace an existing caller. By hand, set the secrets, then call it:
 
 ```yaml
 name: Review PR
@@ -67,3 +67,11 @@ jobs:
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
 | `yoke-version` | `@makerx/yoke` version to run. Default: `latest`. |
+
+In CI (`GITHUB_ACTIONS=true`), `yoke review --post` always posts a review, ending with a note that marking the PR as draft and then ready for review re-runs it:
+
+- No new findings: the summary and `No new findings were raised.`
+- A reviewer or the synthesis fails: a `## Code review failed` review linking the workflow run, and a non-zero exit.
+- With `GITHUB_STEP_SUMMARY` set, the review summary and a token usage table per step go to the job summary.
+
+Locally it posts nothing when there's nothing new, and synthesises from one reviewer if the other fails.

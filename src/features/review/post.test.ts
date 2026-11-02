@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { findingMarker, type PriorComment } from './comments'
 import type { Finding } from './findings'
-import { planPost, reviewBody } from './post'
+import { failedReviewBody, planPost, reviewBody } from './post'
 
 const diff = [
   'diff --git a/src/a.ts b/src/a.ts',
@@ -126,6 +126,28 @@ describe('reviewBody', () => {
 
   it('is just the heading with no summary', () => {
     expect(reviewBody('', [])).toBe('## Adversarial review')
+  })
+})
+
+describe('failedReviewBody', () => {
+  it('names the failure, links the run and ends with the footer', () => {
+    expect(failedReviewBody('reviewer 2 failed', 'https://github.com/o/r/actions/runs/9', '---\n_models_')).toBe(
+      [
+        '## Code review failed',
+        '',
+        'The review did not complete: reviewer 2 failed. No findings were posted.',
+        '',
+        'See the [workflow run](https://github.com/o/r/actions/runs/9) for details.',
+        '',
+        '---\n_models_',
+      ].join('\n'),
+    )
+  })
+
+  it('leaves out the run link when there is no run URL', () => {
+    expect(failedReviewBody('synthesis failed', undefined)).toBe(
+      '## Code review failed\n\nThe review did not complete: synthesis failed. No findings were posted.',
+    )
   })
 })
 
