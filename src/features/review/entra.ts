@@ -1,4 +1,5 @@
 import type { Settings } from '../config/settings'
+import { isCi } from './ciRun'
 import { ReviewError } from './pr'
 
 type Fetch = typeof fetch
@@ -62,12 +63,16 @@ async function exchangeForEntraToken(clientId: string, tenantId: string, env: No
 
 export type EntraDeps = { env: NodeJS.ProcessEnv; fetch?: Fetch; mask: (secret: string) => void }
 
+function usesFoundry(settings: Settings): boolean {
+  return (['reviewer1', 'reviewer2', 'synthesis'] as const).some((slot) => settings[`review.${slot}.provider`] === 'foundry')
+}
+
 export async function withEntraToken(settings: Settings, { env, fetch: fetchFn = fetch, mask }: EntraDeps): Promise<Settings> {
   const clientId = settings['foundry.azureClientId']
   const tenantId = settings['foundry.azureTenantId']
   if (!clientId && !tenantId) return settings
   if (!clientId || !tenantId) throw new ReviewError('Entra auth needs both foundry.azureClientId and foundry.azureTenantId')
-  if (settings['foundry.token']) return settings
+  if (settings['foundry.token'] || !usesFoundry(settings) || !isCi(env)) return settings
   const token = await exchangeForEntraToken(clientId, tenantId, env, fetchFn)
   mask(token)
   return { ...settings, 'foundry.token': token }

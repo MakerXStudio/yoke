@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { withEntraToken } from './entra'
 
-const env = { ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token?x=1', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-token' }
+const env = {
+  GITHUB_ACTIONS: 'true',
+  ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.example/token?x=1',
+  ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'request-token',
+}
 
-const entra = { 'foundry.azureClientId': 'client', 'foundry.azureTenantId': 'tenant' }
+const entra = { 'foundry.azureClientId': 'client', 'foundry.azureTenantId': 'tenant', 'review.reviewer2.provider': 'foundry' }
 
 function respond(...bodies: [number, string][]) {
   const fetch = vi.fn<typeof globalThis.fetch>()
@@ -37,8 +41,22 @@ describe('withEntraToken', () => {
     await expect(withEntraToken({ 'foundry.azureClientId': 'client' }, { env, mask: vi.fn() })).rejects.toThrow(/needs both/)
   })
 
+  it('skips the exchange outside GitHub Actions', async () => {
+    const fetch = respond()
+    const { GITHUB_ACTIONS: _, ...local } = env
+    expect(await withEntraToken(entra, { env: local, fetch, mask: vi.fn() })).toEqual(entra)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('skips the exchange when no slot uses Foundry', async () => {
+    const fetch = respond()
+    const settings = { ...entra, 'review.reviewer2.provider': 'litellm' }
+    expect(await withEntraToken(settings, { env, fetch, mask: vi.fn() })).toEqual(settings)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('asks for id-token: write without an OIDC endpoint', async () => {
-    await expect(withEntraToken(entra, { env: {}, mask: vi.fn() })).rejects.toThrow(/grant id-token: write/)
+    await expect(withEntraToken(entra, { env: { GITHUB_ACTIONS: 'true' }, mask: vi.fn() })).rejects.toThrow(/grant id-token: write/)
   })
 
   it('reports the Entra error description', async () => {
