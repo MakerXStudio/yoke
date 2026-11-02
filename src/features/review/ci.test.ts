@@ -15,6 +15,7 @@ import {
   type EntraFlags,
   gateCheck,
   renderCallerWorkflow,
+  editInPlaceMessage,
   repoRoot,
   reviewCiReport,
   reviewWorkflowRef,
@@ -256,16 +257,18 @@ describe('writeCallerWorkflow', () => {
   })
 
   it('writes the workflow, then leaves an identical copy alone', () => {
-    expect(writeCallerWorkflow(root, 'content', false)).toBe('wrote')
+    expect(writeCallerWorkflow(root, 'content')).toBe('wrote')
     expect(readFileSync(join(root, callerWorkflowPath), 'utf8')).toBe('content')
-    expect(writeCallerWorkflow(root, 'content', false)).toBe('unchanged')
+    expect(writeCallerWorkflow(root, 'content')).toBe('unchanged')
   })
 
-  it('refuses to overwrite a different workflow without --force', () => {
-    writeCallerWorkflow(root, 'mine', false)
-    expect(() => writeCallerWorkflow(root, 'yoke', false)).toThrow(/--force/)
-    expect(writeCallerWorkflow(root, 'yoke', true)).toBe('wrote')
-    expect(readFileSync(join(root, callerWorkflowPath), 'utf8')).toBe('yoke')
+  it('never overwrites a different workflow and says to edit it in place', () => {
+    writeCallerWorkflow(root, 'mine')
+    expect(() => writeCallerWorkflow(root, 'yoke')).toThrow(editInPlaceMessage)
+    expect(editInPlaceMessage).toContain('Edit it in place')
+    expect(editInPlaceMessage).toContain('yoke review-ci --print')
+    expect(editInPlaceMessage).not.toContain('--force')
+    expect(readFileSync(join(root, callerWorkflowPath), 'utf8')).toBe('mine')
   })
 
   it('finds the repo root from a subdirectory', () => {
@@ -300,16 +303,62 @@ function noRepo(): string {
 describe('reviewCiReport', () => {
   it('lists the workflow and each secret command', () => {
     const report = reviewCiReport('wrote', { 'litellm.baseUrl': 'https://litellm.example.com' }, callerWorkflow(models), noRepo)
-    expect(report).toContain('reads variable REVIEW_CI_BASE_URL and secret REVIEW_CI_API_KEY. Set them')
-    expect(report).toContain(`wrote ${callerWorkflowPath}`)
-    expect(report).toContain("  gh variable set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY")
+    expect(report).toContain('from the repo variable REVIEW_CI_BASE_URL and its API key from the secret REVIEW_CI_API_KEY. Set them')
+    expect(report).toContain(`Added ${callerWorkflowPath}`)
+    expect(report).toContain(
+      "  gh variable set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY\nSkip the secret if REVIEW_CI_API_KEY is already set for your organisation.",
+    )
     expect(report).not.toContain('federated credential')
   })
 
   it('prints the ruleset command requiring the gate, to run once the caller is merged', () => {
-    const report = reviewCiReport('wrote', {}, callerWorkflow(models), noRepo)
-    expect(report).toContain(`  ${rulesetCommand()}\n`)
-    expect(report).toMatch(/only after this workflow is merged to the default branch, or pushes to open PRs get stuck/)
+    for (const outcome of ['wrote', 'unchanged', 'printed'] as const) {
+      const report = reviewCiReport(outcome, {}, callerWorkflow(models), noRepo)
+      expect(report).toContain(`  ${rulesetCommand()}\n`)
+      expect(report).toMatch(/only after this workflow is merged to the default branch, or pushes to open PRs get stuck/)
+    }
+  })
+
+  it('says what happens to the repo without naming flags', () => {
+    const settings = { 'litellm.baseUrl': 'https://litellm.example.com' }
+    for (const outcome of ['wrote', 'unchanged', 'printed'] as const) {
+      const prose = reviewCiReport(outcome, settings, callerWorkflow(models), noRepo).replace(rulesetCommand(), '')
+      expect(prose).not.toMatch(/--(?!body)\w/)
+    }
+    expect(reviewCiReport('unchanged', settings, callerWorkflow(models), noRepo)).toContain('already matches')
+  })
+
+  it('prints the workflow and setup commands without claiming a write', () => {
+    const workflow = callerWorkflow(models)
+    const report = reviewCiReport('printed', { 'litellm.baseUrl': 'https://litellm.example.com' }, workflow, noRepo)
+    expect(report).toContain(`yoke's version of ${callerWorkflowPath}, not saved to the repo:`)
+    expect(report).toContain(renderCallerWorkflow(workflow).trimEnd())
+    expect(report).toContain("  gh variable set REVIEW_CI_BASE_URL --body 'https://litellm.example.com'\n  gh secret set REVIEW_CI_API_KEY")
+    expect(report).not.toContain(`Added ${callerWorkflowPath}`)
+    expect(report).not.toContain('already matches')
+  })
+
+  it('prints the federated credential to create instead of the API key command with Entra auth', () => {
+    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
+    const report = reviewCiReport('unchanged', {}, workflow, () => 'o/r')
+    expect(report).toContain(`${callerWorkflowPath} already matches`)
+    expect(report).toContain('from the repo variable REVIEW_CI_BASE_URL. Set it')
+    expect(report).not.toContain('REVIEW_CI_API_KEY')
+    expect(report).toContain('Entra app client-1')
+    expect(report).toContain('  issuer:   https://token.actions.githubusercontent.com')
+    expect(report).toContain('  audience: api://AzureADTokenExchange')
+    expect(report).toContain('  subject:  repo:o/r:pull_request')
+    expect(report).toContain(
+      `az ad app federated-credential create --id 'client-1' --parameters '{"name":"yoke-review-ci","issuer":"https://token.actions.githubusercontent.com","subject":"repo:o/r:pull_request","audiences":["api://AzureADTokenExchange"]}'`,
+    )
+    expect(report).not.toContain('environment')
+  })
+
+  it('uses the environment subject and names the environment when one is given', () => {
+    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1', environment: 'review' })
+    const report = reviewCiReport('wrote', {}, workflow, () => 'o/r')
+    expect(report).toContain('  subject:  repo:o/r:environment:review')
+    expect(report).toContain('runs in the review environment')
   })
 })
 
@@ -328,28 +377,5 @@ describe('rulesetCommand', () => {
         },
       ],
     })
-  })
-
-  it('prints the federated credential to create instead of the API key command with Entra auth', () => {
-    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
-    const report = reviewCiReport('unchanged', {}, workflow, () => 'o/r')
-    expect(report).toContain(`kept ${callerWorkflowPath}`)
-    expect(report).toContain('reads variable REVIEW_CI_BASE_URL. Set it')
-    expect(report).not.toContain('gh secret set REVIEW_CI_API_KEY')
-    expect(report).toContain('Entra app client-1')
-    expect(report).toContain('  issuer:   https://token.actions.githubusercontent.com')
-    expect(report).toContain('  audience: api://AzureADTokenExchange')
-    expect(report).toContain('  subject:  repo:o/r:pull_request')
-    expect(report).toContain(
-      `az ad app federated-credential create --id 'client-1' --parameters '{"name":"yoke-review-ci","issuer":"https://token.actions.githubusercontent.com","subject":"repo:o/r:pull_request","audiences":["api://AzureADTokenExchange"]}'`,
-    )
-    expect(report).not.toContain('environment')
-  })
-
-  it('uses the environment subject and names the environment when one is given', () => {
-    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1', environment: 'review' })
-    const report = reviewCiReport('wrote', {}, workflow, () => 'o/r')
-    expect(report).toContain('  subject:  repo:o/r:environment:review')
-    expect(report).toContain('runs in the review environment')
   })
 })

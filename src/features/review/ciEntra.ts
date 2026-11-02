@@ -30,7 +30,7 @@ export function entraSetup({ clientId, environment }: EntraAuth, repo: string): 
   const credential = federatedCredential(repo, environment)
   return [
     '',
-    `Instead of REVIEW_CI_API_KEY, the job signs in to Foundry as Entra app ${clientId} with its GitHub OIDC token. On that app, create a federated credential with:`,
+    `Instead of an API key, the review signs in to Foundry as Entra app ${clientId}. So that the app trusts this repo's review runs, add a federated credential to it with:`,
     `  issuer:   ${credential.issuer}`,
     `  audience: ${credential.audience}`,
     `  subject:  ${credential.subject}`,

@@ -23,7 +23,7 @@ yoke sync --user   # ~/.claude/skills
 
 - `/pr` raises a PR with a short What/Why/(How) description.
 - `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them. [Configure](src/features/review/README.md#settings).
-- `/review-ci` adds a workflow that reviews each PR in CI and helps set its variable and secret. [Details](src/features/review/README.md#ci).
+- `/review-ci` makes CI review each PR, adding a workflow or switching the repo's existing LLM review workflow over, and helps set its variable and secret. [Details](src/features/review/README.md#ci).
 
 ## CLI
 

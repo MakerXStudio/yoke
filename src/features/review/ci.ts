@@ -166,28 +166,52 @@ export function repoRoot(cwd = process.cwd()): string {
 
 export type WriteOutcome = 'wrote' | 'unchanged'
 
-export function writeCallerWorkflow(root: string, content: string, force: boolean): WriteOutcome {
+export const editInPlaceMessage = [
+  `${callerWorkflowPath} already exists and differs from yoke's version, so it was left as it is.`,
+  "Edit it in place to run yoke's review, keeping its provider, models and names. `yoke review-ci --print` shows yoke's version without saving it.",
+].join('\n')
+
+export function writeCallerWorkflow(root: string, content: string): WriteOutcome {
   const path = join(root, callerWorkflowPath)
   if (existsSync(path)) {
     if (readFileSync(path, 'utf8') === content) return 'unchanged'
-    if (!force) throw new ReviewError(`${callerWorkflowPath} already exists and differs; pass --force to overwrite it.`)
+    throw new ReviewError(editInPlaceMessage)
   }
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, content)
   return 'wrote'
 }
 
-export function reviewCiReport(outcome: WriteOutcome, settings: Settings, workflow: CallerWorkflow, repo: () => string): string {
-  const action = outcome === 'wrote' ? 'wrote' : 'kept'
-  const reads = [`variable ${baseUrlVariable}`, ...workflowSecrets(workflow).map((secret) => `secret ${secret}`)]
+export type ReportOutcome = WriteOutcome | 'printed'
+
+function reportHeading(outcome: ReportOutcome, workflow: CallerWorkflow): string[] {
+  if (outcome === 'printed')
+    return [`yoke's version of ${callerWorkflowPath}, not saved to the repo:`, '', renderCallerWorkflow(workflow).trimEnd()]
+  if (outcome === 'unchanged') return [`${callerWorkflowPath} already matches yoke's version; nothing changed.`]
+  return [`Added ${callerWorkflowPath}, which reviews each PR opened from this repo.`]
+}
+
+function variableAndSecretSetup(settings: Settings, workflow: CallerWorkflow): string[] {
+  const hasSecret = workflowSecrets(workflow).length > 0
   return [
-    `${action} ${callerWorkflowPath}`,
-    '',
-    `The workflow reads ${reads.join(' and ')}. Set ${reads.length > 1 ? 'them' : 'it'} on the repo (or the org) with:`,
+    hasSecret
+      ? `The review reads the model server's address from the repo variable ${baseUrlVariable} and its API key from the secret ${apiKeySecret}. Set them with:`
+      : `The review reads the model server's address from the repo variable ${baseUrlVariable}. Set it with:`,
     ...setupCommands(settings, workflow).map((command) => `  ${command}`),
+    ...(hasSecret ? [`Skip the secret if ${apiKeySecret} is already set for your organisation.`] : []),
+  ]
+}
+
+export function reviewCiReport(outcome: ReportOutcome, settings: Settings, workflow: CallerWorkflow, repo: () => string): string {
+  return [
+    ...reportHeading(outcome, workflow),
+    '',
+    ...variableAndSecretSetup(settings, workflow),
     ...(workflow.entra ? entraSetup(workflow.entra, repo()) : []),
     '',
-    'Commit and push the workflow; each PR opened from this repo then gets a review.',
+    outcome === 'printed'
+      ? "Once the repo's review workflow runs this review, commit and push it; each PR opened from this repo then gets a review."
+      : `Commit and push ${callerWorkflowPath}; each PR opened from this repo then gets a review.`,
     '',
     `To block merging while the review fails, require the ${gateCheck} check on the default branch with:`,
     `  ${rulesetCommand()}`,

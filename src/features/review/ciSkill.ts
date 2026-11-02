@@ -2,24 +2,40 @@ import type { Skill } from '../../skill'
 
 export const reviewCiSkill: Skill = {
   name: 'review-ci',
-  description: "Add yoke's adversarial PR review workflow to this repo and set the variable and secret it needs.",
+  description:
+    "Add yoke's adversarial PR review workflow to this repo, or switch its existing LLM review workflow to it, and set the variable and secret it needs.",
   disableModelInvocation: true,
   userLevel: true,
   body: `
-First read every workflow in \`.github/workflows/\` and find any that already reviews PRs with an LLM, whatever its file name or the tool behind it. Take the provider, models, base URL and Entra app IDs it uses and pass them as \`yoke review-ci\` flags, and reuse the variables and secrets it already reads instead of asking for new ones. Only ask the user for what it doesn't tell you. Afterwards, ask whether to delete the old workflow, since both would review every PR.
+Read \`.github/workflows/\`, recent review runs (\`gh run list\`, \`gh run view --log\`) and \`yoke config list\` before asking anything. Only ask what they don't answer, in plain words about the repo, not flags.
 
-Run \`yoke review-ci $ARGUMENTS\`. If it reports that a model is required, run \`yoke models\` to list what the provider serves, ask the user which model each reviewer should run, and rerun with \`--reviewer-1-model\` and \`--reviewer-2-model\`. If it reports the workflow already exists and differs, show the user the difference and ask before rerunning with \`--force\`.
+## Workflow
 
-With \`--provider foundry\`, if the Foundry resource has local (API key) auth disabled or the user prefers Entra, rerun with \`--azure-client-id\` and \`--azure-tenant-id\` of the Entra app the job signs in as, plus \`--environment\` if the job should run in a GitHub environment. Ask the user for these values; don't guess them.
+A workflow is an LLM review if it has a model review PRs, whatever tool it uses.
 
-Then set the variable and secret it printed. Run \`gh variable list\` and \`gh secret list\` first; if one is missing, ask whether it is already set at the org level before setting it on the repo.
-- \`REVIEW_CI_BASE_URL\` is a variable, not a secret: confirm the URL with the user and run the printed \`gh variable set\` command.
-- \`REVIEW_CI_API_KEY\` must never enter this conversation: ask the user to run \`gh secret set REVIEW_CI_API_KEY\` in their own terminal, outside this session, and paste the key at its prompt. With Entra auth there is no API key to set.
+- **None:** run \`yoke review-ci $ARGUMENTS\`.
+- **One, not yoke's:** run \`yoke review-ci $ARGUMENTS --print\` with its provider and models, then edit that file in place to run yoke's review. Keep its name, triggers, provider, models, base URL, variable and secret names.
+- **Already yoke's** (calls MakerXStudio/yoke's \`review.yml\`, or \`./.github/workflows/review.yml\` in yoke itself): compare with \`--print\` and add only what is missing.
 
-With Entra auth, show the user the federated credential it printed (issuer, audience, subject) and the \`az ad app federated-credential create\` command, and ask whether to run it or whether they will add the credential in the Azure portal. The app also needs the Cognitive Services User role on the Foundry resource, and the environment, if given, must exist on the repo.
+Never ask whether to overwrite a workflow. If \`review-pr.yml\` exists and differs, edit it in place.
 
-Finish by running \`gh variable list\` and \`gh secret list\` and telling the user to commit and push the workflow file. Show them the printed \`gh api\` ruleset command requiring \`review / gate\`, and tell them to run it only once the workflow is merged to the default branch; don't run it before then.
+The \`review / gate\` merge gate needs the \`synchronize\` trigger and \`actions: read\` permission from \`--print\`; add them to an edited workflow if missing.
 
-If \`yoke\` is not found, run \`npm i -g @makerx/yoke\` and retry.
+If no workflow or setting names the models, ask which model each reviewer runs. For LiteLLM, offer \`yoke models\`. For Foundry, ask for deployment names.
+
+For Foundry with Entra, reuse the client and tenant IDs from the existing workflow; ask only if none is there.
+
+## Variable and secret
+
+Never ask whether they are set for the organisation, and don't query org settings.
+
+- \`REVIEW_CI_BASE_URL\` not in \`gh variable list\`: set it on the repo with the base URL from the workflow or the printed command.
+- \`REVIEW_CI_API_KEY\` not in \`gh secret list\`: tell the user to run \`gh secret set REVIEW_CI_API_KEY\` in their own terminal, and to skip it if the secret is already set for the organisation. Never take the key in this conversation.
+
+With Entra, check \`az ad app federated-credential list --id <client-id>\` and show the printed create command if the credential is missing.
+
+Finish with what changed and what's left: commit and push the workflow, then, only once it is merged to the default branch, run the printed \`gh api\` ruleset command requiring \`review / gate\`. Don't run it before then.
+
+If \`yoke\` is not found, run \`npm i -g @makerx/yoke\`.
 `,
 }
