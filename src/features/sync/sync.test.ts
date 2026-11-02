@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -39,30 +39,30 @@ describe('syncSkills', () => {
   ])('writes the pr skill into the %s .claude/skills', (_, user) => {
     const root = skillsRoot(user, join(target, 'repo'), join(target, 'home'))
     const path = join(root, 'pr', 'SKILL.md')
-    expect(syncSkills(root).written).toContain(path)
+    expect(syncSkills(root, user).written).toContain(path)
     expect(readFileSync(path, 'utf8')).toContain('yoke pr raise')
   })
 
   it('writes skills that yoke owns', () => {
-    for (const file of syncSkills(destination).written.filter((f) => f.endsWith('SKILL.md'))) {
+    for (const file of syncSkills(destination, true).written.filter((f) => f.endsWith('SKILL.md'))) {
       expect(readFileSync(file, 'utf8').split('---')[1]).toContain(ownerMarker)
     }
   })
 
   it('marks every skill description as coming from yoke', () => {
-    for (const file of syncSkills(destination).written) {
+    for (const file of syncSkills(destination, true).written) {
       const frontmatter = parse(readFileSync(file, 'utf8').split('---')[1] ?? '')
       expect(frontmatter.description).toMatch(/^\[yoke\] \S/)
     }
   })
 
   it('lets the model invoke the pr skill', () => {
-    syncSkills(destination)
+    syncSkills(destination, true)
     expect(readFileSync(skillPath, 'utf8')).not.toContain('disable-model-invocation')
   })
 
   it('writes a review skill only the user can invoke', () => {
-    syncSkills(destination)
+    syncSkills(destination, true)
     const skill = readFileSync(join(destination, 'review', 'SKILL.md'), 'utf8')
     expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
     expect(skill).toContain('yoke review $ARGUMENTS')
@@ -70,24 +70,30 @@ describe('syncSkills', () => {
   })
 
   it('writes a review-ci skill only the user can invoke', () => {
-    syncSkills(destination)
+    syncSkills(destination, true)
     const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
     expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
     expect(skill).toContain('yoke review-ci $ARGUMENTS')
     expect(skill).toContain('gh secret set REVIEW_CI_API_KEY')
   })
 
+  it('writes the review-ci skill only with --user', () => {
+    syncSkills(destination, false)
+    expect(existsSync(join(destination, 'review-ci'))).toBe(false)
+    expect(existsSync(join(destination, 'review', 'SKILL.md'))).toBe(true)
+  })
+
   it('overwrites a stale yoke-owned copy of the skill', () => {
-    syncSkills(destination)
+    syncSkills(destination, true)
     writeFileSync(skillPath, `---\nmetadata:\n  ${ownerMarker}\n---\nstale`)
-    syncSkills(destination)
+    syncSkills(destination, true)
     expect(readFileSync(skillPath, 'utf8')).toContain('yoke pr raise')
   })
 
   it('leaves a user-owned skill of the same name alone', () => {
     mkdirSync(join(destination, 'pr'), { recursive: true })
     writeFileSync(skillPath, 'my own pr skill')
-    const result = syncSkills(destination)
+    const result = syncSkills(destination, true)
     expect(result.skipped).toEqual([join(destination, 'pr')])
     expect(result.written).not.toContain(skillPath)
     expect(readFileSync(skillPath, 'utf8')).toBe('my own pr skill')
@@ -98,9 +104,9 @@ describe('syncSkills', () => {
     const extraFile = join(destination, 'pr', 'notes.md')
     mkdirSync(join(destination, 'mine'), { recursive: true })
     writeFileSync(otherSkill, 'mine')
-    syncSkills(destination)
+    syncSkills(destination, true)
     writeFileSync(extraFile, 'notes')
-    syncSkills(destination)
+    syncSkills(destination, true)
     expect(readFileSync(otherSkill, 'utf8')).toBe('mine')
     expect(readFileSync(extraFile, 'utf8')).toBe('notes')
   })

@@ -4,6 +4,7 @@ export const reviewCiSkill: Skill = {
   name: 'review-ci',
   description: "Add yoke's adversarial PR review workflow to this repo and set the secrets it needs.",
   disableModelInvocation: true,
+  userOnly: true,
   body: `
 Run \`yoke review-ci $ARGUMENTS\`. If it reports that a model is required, run \`yoke models\` to list what the provider serves, ask the user which model each reviewer should run, and rerun with \`--reviewer-1-model\` and \`--reviewer-2-model\`. If it reports the workflow already exists and differs, show the user the difference and ask before rerunning with \`--force\`.
 
