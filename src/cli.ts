@@ -137,16 +137,16 @@ addSettingOptions(
     )
     .option('--azure-tenant-id <id>', 'Entra tenant ID of that app')
     .option('--environment <name>', "GitHub environment the review job runs in, matching the app's federated credential subject")
-    .option('--force', `overwrite an existing ${callerWorkflowPath} that differs`),
+    .option('--print', `print the workflow and setup commands without writing ${callerWorkflowPath}`),
   ciKeys,
 )
   .addHelpText('after', settingsHelp)
-  .action((options: { provider?: string; force?: boolean } & EntraFlags & Record<string, unknown>) => {
+  .action((options: { provider?: string; print?: boolean } & EntraFlags & Record<string, unknown>) => {
     try {
       const settings = resolveSettings(flagSettings(options, ciKeys), process.env, readUserConfig(userConfigPath()))
       const workflow = callerWorkflow(settings, options.provider, options)
       const root = repoRoot()
-      const outcome = writeCallerWorkflow(root, renderCallerWorkflow(workflow), options.force ?? false)
+      const outcome = options.print ? 'printed' : writeCallerWorkflow(root, renderCallerWorkflow(workflow))
       console.log(reviewCiReport(outcome, settings, workflow, () => githubRepo(root)))
     } catch (error) {
       if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error

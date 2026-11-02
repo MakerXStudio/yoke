@@ -45,7 +45,10 @@ The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` o
 - Writes the caller below to `.github/workflows/review-pr.yml`, with each slot's harness and model from your settings or its flags.
 - Prints the `gh variable set` command for the `REVIEW_CI_BASE_URL` variable and the `gh secret set` command for the `REVIEW_CI_API_KEY` secret.
 - `--provider foundry` uses Foundry, with an API key or [Entra auth](#foundry-with-entra-auth).
-- `--force` replaces an existing caller.
+- `--print` shows the caller and the setup commands without saving anything.
+- It never replaces a `review-pr.yml` that differs from its version; it stops and says to edit that file in place.
+
+When the repo already has a workflow that reviews PRs with an LLM, whatever tool it uses, `/review-ci` edits that file in place so it runs yoke's review, keeping its provider, models, base URL, variable and secret names and other local changes. If the file already runs yoke's review, it only adds what is missing.
 
 By hand, set the variable and secret, then call it:
 
