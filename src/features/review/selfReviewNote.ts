@@ -14,6 +14,7 @@ This change adds or edits a workflow that calls \`MakerXStudio/yoke/.github/work
 
 - Calling the workflow at \`@main\` rather than a tag or SHA.
 - The trigger types, including \`synchronize\`: pushes run only the \`review / gate\` job, and a review is re-run by marking the PR as draft and then ready for review.
+- No \`concurrency:\` block, with or without \`synchronize\`: the reusable workflow's \`review\` job skips \`synchronize\` events, so a burst of pushes or a force-push starts only gate jobs and can't overlap full reviews.
 - The \`actions: read\` permission: the gate reads earlier runs of the workflow to find the PR's latest review.
 - Draft PRs being reviewed twice: the reusable workflow already skips drafts.
 
