@@ -73,7 +73,8 @@ export function renderCallerWorkflow({ inputs }: CallerWorkflow): string {
     `    uses: ${reviewWorkflowRef}`,
     '    with:',
     ...inputs.map(([name, value]) => `      ${name}: ${yamlValue(value)}`),
-    '    secrets: inherit',
+    '    secrets:',
+    ...ciSecrets.map((secret) => `      ${secret}: \${{ secrets.${secret} }}`),
     '',
   ].join('\n')
 }

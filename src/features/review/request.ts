@@ -1,4 +1,5 @@
 import { formatPriorComments, type PriorComment } from './comments'
+import { selfReviewNote } from './selfReviewNote'
 
 export type PullRequest = {
   number: number
@@ -84,6 +85,7 @@ export function commentableLines(diff: string): Map<string, Set<number>> {
 export function buildRequest(pr: PullRequest, diff: string, prior: PriorComment[] = []): string {
   const files = pr.files.map((f) => `- ${f.path}`).join('\n') || '(none)'
   const priorSection = formatPriorComments(prior)
+  const note = selfReviewNote(diff)
   return `# Code review request
 
 - PR: #${pr.number} ${pr.title}
@@ -101,5 +103,5 @@ Each added or context line is prefixed with a left gutter showing its line numbe
 \`\`\`diff
 ${withNewFileLineNumbers(diff.trimEnd())}
 \`\`\`
-${priorSection && `\n${priorSection}`}`
+${note && `\n${note}`}${priorSection && `\n${priorSection}`}`
 }

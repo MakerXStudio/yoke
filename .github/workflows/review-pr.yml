@@ -15,4 +15,6 @@ jobs:
     with:
       reviewer1-model: bedrock/claude-opus-5-5
       reviewer2-model: azure/gpt-6.1-sol
-    secrets: inherit
+    secrets:
+      REVIEW_CI_BASE_URL: ${{ secrets.REVIEW_CI_BASE_URL }}
+      REVIEW_CI_API_KEY: ${{ secrets.REVIEW_CI_API_KEY }}
