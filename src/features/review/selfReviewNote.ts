@@ -1,7 +1,15 @@
-const addsYokeCaller = /^\+.*\buses:\s*['"]?MakerXStudio\/yoke\/\.github\/workflows\/review\.yml@/im
+import { parseDiff } from './diff'
+
+const addsYokeCaller = /^\+.*\buses:\s*['"]?MakerXStudio\/yoke\/\.github\/workflows\/review\.yml@/i
+
+function editsYokeCaller(diff: string): boolean {
+  return parseDiff(diff).some(
+    ({ text, file, line }) => line !== null && file?.startsWith('.github/workflows/') && addsYokeCaller.test(text),
+  )
+}
 
 export function selfReviewNote(diff: string): string {
-  if (!addsYokeCaller.test(diff)) return ''
+  if (!editsYokeCaller(diff)) return ''
   return `## Yoke's own review workflow
 
 This change adds or edits a workflow that calls \`MakerXStudio/yoke/.github/workflows/review.yml\`, the CI setup for this review. Review it like any other file, but these are yoke's deliberate design: do not raise them as findings, keep them in a consolidated review, or mention them in a summary.

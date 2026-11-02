@@ -59,9 +59,11 @@ describe('buildRequest', () => {
       '+    uses: MakerXStudio/yoke/.github/workflows/review.yml@main',
     ].join('\n')
     const removed = caller.replace('+    uses', '-    uses').replace('@@ -0,0 +1 @@', '@@ -1 +0,0 @@')
+    const readme = caller.replaceAll('.github/workflows/review-pr.yml', 'README.md')
     expect(buildRequest(pr, caller)).toContain("## Yoke's own review workflow")
     expect(buildRequest(pr, diff)).not.toContain("## Yoke's own review workflow")
     expect(buildRequest(pr, removed)).not.toContain("## Yoke's own review workflow")
+    expect(buildRequest(pr, readme)).not.toContain("## Yoke's own review workflow")
   })
 
   it('appends the prior review comments after the diff', () => {
