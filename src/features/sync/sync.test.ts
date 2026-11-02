@@ -101,6 +101,27 @@ describe('syncSkills', () => {
     expect(readFileSync(skillPath, 'utf8')).toBe('my own pr skill')
   })
 
+  it.each([
+    ['repo', 'pr', 'yoke pr raise'],
+    ['user', 'review-ci', 'yoke review-ci $ARGUMENTS'],
+  ])('skips a %s-level skill without the owner marker unless forced', (_, name, content) => {
+    const home = join(target, 'home', '.claude', 'skills')
+    const dir = join(name === 'review-ci' ? home : destination, name)
+    const file = join(dir, 'SKILL.md')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(file, 'another tool’s skill')
+
+    const skipped = syncSkills(destination, home)
+    expect(skipped.skipped).toContain(dir)
+    expect(readFileSync(file, 'utf8')).toBe('another tool’s skill')
+
+    const forced = syncSkills(destination, home, true)
+    expect(forced.skipped).toEqual([])
+    expect(forced.written).toContain(file)
+    expect(readFileSync(file, 'utf8')).toContain(content)
+    expect(readFileSync(file, 'utf8')).toContain(ownerMarker)
+  })
+
   it('leaves other skills and extra files untouched', () => {
     const otherSkill = join(destination, 'mine', 'SKILL.md')
     const extraFile = join(destination, 'pr', 'notes.md')

@@ -39,13 +39,14 @@ program
   .command('sync')
   .description("Write yoke's skills into this repo's .claude/skills, or ~/.claude/skills with --user")
   .option('--user', 'write to ~/.claude/skills instead, for every repo')
-  .action((options: { user?: boolean }) => {
+  .option('--force', "overwrite same-named skills that yoke didn't write")
+  .action((options: { user?: boolean; force?: boolean }) => {
     const user = options.user ?? false
     const cwd = process.cwd()
     const display = (path: string) => (path.startsWith(cwd) ? relative(cwd, path) : path)
-    const { written, skipped } = syncSkills(skillsRoot(user), skillsRoot(true))
+    const { written, skipped } = syncSkills(skillsRoot(user), skillsRoot(true), options.force ?? false)
     for (const file of written) console.log(`wrote ${display(file)}`)
-    for (const dir of skipped) console.log(`skipped ${display(dir)} (your own skill; delete it to take yoke's)`)
+    for (const dir of skipped) console.log(`skipped ${display(dir)} (not yoke's skill; rerun with --force to overwrite it)`)
   })
 
 const pr = program.command('pr').description('Pull request commands')

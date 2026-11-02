@@ -28,10 +28,10 @@ yoke sync --user   # ~/.claude/skills
 ## CLI
 
 ```bash
-yoke sync [--user]      # write yoke's skills
-yoke review [number]    # review a PR (used by /review)
-yoke review-ci          # add the CI review workflow (used by /review-ci)
-yoke models             # list each provider's models
+yoke sync [--user] [--force]  # write yoke's skills
+yoke review [number]          # review a PR (used by /review)
+yoke review-ci                # add the CI review workflow (used by /review-ci)
+yoke models                   # list each provider's models
 ```
 
 ## Configuration
