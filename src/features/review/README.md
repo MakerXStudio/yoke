@@ -86,8 +86,6 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 
 The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push, so require it with the ruleset `yoke review-ci` prints, once the caller is merged.
 
-To add the gate to an existing repo, run `/review-ci` to update the caller in place, merge it, then add the ruleset.
-
 ### Foundry with Entra auth
 
 For a Foundry resource that rejects API keys, sign in as an Entra app with the job's GitHub OIDC token:
