@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import type { Settings } from '../config/settings'
 import { isCi, reportFailure } from './ciRun'
+import { withEntraToken } from './entra'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { runHarness } from './harness'
 import { postFindings } from './post'
@@ -18,6 +19,10 @@ import { type StepUsage, writeJobSummary } from './usage'
 import { modelsFooter, readUsedModels } from './usedModels'
 
 type Log = (line: string) => void
+
+function maskInCi(secret: string): void {
+  if (isCi()) process.stdout.write(`::add-mask::${secret}\n`)
+}
 
 export function reviewRunDir(pr: PullRequest, env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
   const [, owner = '', repo = ''] = new URL(pr.url).pathname.split('/')
@@ -80,7 +85,7 @@ export async function reviewPr(
     io.out(text)
   }
   const { log } = ui
-  const slots = resolveSlots(settings)
+  const slots = resolveSlots(await withEntraToken(settings, { env: process.env, mask: maskInCi }))
   const pr = await timed(ui, number ? `fetching PR #${number}` : "fetching this branch's PR", () => fetchPr(number))
   log(`#${pr.number} ${pr.title}`)
   const [diff, prior] = await timed(ui, 'fetching the diff and earlier review comments', () =>

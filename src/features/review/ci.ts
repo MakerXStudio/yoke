@@ -10,8 +10,8 @@ export const reviewWorkflowRef = 'MakerXStudio/yoke/.github/workflows/review.yml
 
 export const callerWorkflowPath = join('.github', 'workflows', 'review-pr.yml')
 
-const baseUrlSecret = 'REVIEW_CI_BASE_URL'
-const apiKeySecret = 'REVIEW_CI_API_KEY'
+export const baseUrlSecret = 'REVIEW_CI_BASE_URL'
+export const apiKeySecret = 'REVIEW_CI_API_KEY'
 
 type Input = [name: string, value: string]
 

@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ReviewError } from './pr'
 import { resolveSlots } from './slots'
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 const foundry = { 'foundry.baseUrl': 'https://res', 'foundry.apiKey': 'k' }
 
@@ -64,11 +68,22 @@ describe('resolveSlots', () => {
   })
 
   it('names every missing setting of the provider a slot uses, and how to set it', () => {
+    vi.stubEnv('GITHUB_ACTIONS', '')
     const message = errorOf(() => resolveSlots({ 'review.reviewer1.provider': 'litellm', 'review.reviewer1.model': 'sonnet' }))
     expect(message.split('\n')).toEqual([
       'Review settings are incomplete:',
       '- litellm.baseUrl is not set; pass --litellm-base-url, set YOKE_LITELLM_BASE_URL or run `yoke config set --user litellm.baseUrl <url>`',
       '- litellm.apiKey is not set; set YOKE_LITELLM_API_KEY or run `yoke config set --user litellm.apiKey <key>`',
+    ])
+  })
+
+  it('names the unset review secrets in CI', () => {
+    vi.stubEnv('GITHUB_ACTIONS', 'true')
+    const message = errorOf(() => resolveSlots({ 'review.reviewer1.provider': 'litellm', 'review.reviewer1.model': 'sonnet' }))
+    expect(message.split('\n')).toEqual([
+      'Review settings are incomplete:',
+      '- Secret REVIEW_CI_BASE_URL is not set',
+      '- Secret REVIEW_CI_API_KEY is not set',
     ])
   })
 

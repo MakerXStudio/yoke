@@ -89,7 +89,7 @@ A Foundry resource with local auth disabled rejects API keys. Use an Entra app i
 yoke review-ci --provider foundry --azure-client-id <id> --azure-tenant-id <id> [--environment <name>]
 ```
 
-The caller then grants `id-token: write`, passes those as inputs, and passes only `REVIEW_CI_BASE_URL`. The job exchanges its GitHub OIDC token for a masked Entra token, which both harnesses and the preflight probe send to Foundry as a bearer token.
+The caller then grants `id-token: write`, passes those as inputs, and passes only `REVIEW_CI_BASE_URL`. `yoke review` reads them as `foundry.azureClientId` and `foundry.azureTenantId` and exchanges the job's GitHub OIDC token for a masked Entra token, which both harnesses and the preflight probe send to Foundry as a bearer token.
 
 Instead of the `REVIEW_CI_API_KEY` command, `yoke review-ci` prints the federated credential to add to the app, with an `az ad app federated-credential create` command for it:
 

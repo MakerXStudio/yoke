@@ -17,6 +17,8 @@ const settingsSchema = z.object({
   'foundry.baseUrl': setting('https://<resource>.services.ai.azure.com'),
   'foundry.apiKey': secret('Foundry API key. Env or --user config only'),
   'foundry.token': secret('Foundry Entra access token, sent as a bearer token in place of foundry.apiKey. Env or --user config only'),
+  'foundry.azureClientId': setting('Entra app (client) ID. In GitHub Actions, yoke exchanges the job OIDC token for foundry.token'),
+  'foundry.azureTenantId': setting('Entra tenant ID of foundry.azureClientId'),
   'review.reviewer1.harness': setting('claude or codex. Default: claude'),
   'review.reviewer1.provider': setting(providerHelp),
   'review.reviewer1.model': setting(modelHelp),
