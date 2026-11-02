@@ -30,7 +30,11 @@ const workflowSchema = z.object({
   ),
   jobs: z.record(
     z.string(),
-    z.object({ uses: z.string().optional(), with: z.record(z.string(), z.string()).optional(), secrets: z.string().optional() }),
+    z.object({
+      uses: z.string().optional(),
+      with: z.record(z.string(), z.string()).optional(),
+      secrets: z.record(z.string(), z.string()).optional(),
+    }),
   ),
 })
 
@@ -49,11 +53,17 @@ function inputsOf(settings: Settings = models, provider?: string): Record<string
 }
 
 describe('callerWorkflow', () => {
-  it('calls the reusable review workflow on new and ready PRs, passing the secrets on', () => {
+  it('calls the reusable review workflow on new and ready PRs', () => {
     const workflow = generated()
     expect(workflow.on.pull_request?.types).toEqual(['opened', 'reopened', 'ready_for_review'])
     expect(workflow.jobs.review?.uses).toBe(reviewWorkflowRef)
-    expect(workflow.jobs.review?.secrets).toBe('inherit')
+  })
+
+  it('passes only the review secrets, never every repository secret', () => {
+    expect(generated().jobs.review?.secrets).toEqual({
+      REVIEW_CI_BASE_URL: '${{ secrets.REVIEW_CI_BASE_URL }}',
+      REVIEW_CI_API_KEY: '${{ secrets.REVIEW_CI_API_KEY }}',
+    })
   })
 
   it('passes only inputs the reusable workflow declares, including every required one', () => {
@@ -64,8 +74,10 @@ describe('callerWorkflow', () => {
     expect(Object.keys(passed)).toEqual(expect.arrayContaining(required))
   })
 
-  it('names the secrets the reusable workflow reads', () => {
-    expect(Object.keys(reusable.on.workflow_call?.secrets ?? {}).toSorted()).toEqual(['REVIEW_CI_API_KEY', 'REVIEW_CI_BASE_URL'])
+  it('passes exactly the secrets the reusable workflow reads', () => {
+    expect(Object.keys(reusable.on.workflow_call?.secrets ?? {}).toSorted()).toEqual(
+      Object.keys(generated().jobs.review?.secrets ?? {}).toSorted(),
+    )
   })
 
   it('defaults to litellm with claude and codex reviewers', () => {

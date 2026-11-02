@@ -50,6 +50,32 @@ describe('buildRequest', () => {
     expect(request).not.toContain('Prior review comments')
   })
 
+  it("adds the note on yoke's own review workflow only when the diff calls it", () => {
+    const caller = [
+      'diff --git a/.github/workflows/review-pr.yml b/.github/workflows/review-pr.yml',
+      '--- /dev/null',
+      '+++ b/.github/workflows/review-pr.yml',
+      '@@ -0,0 +1 @@',
+      '+    uses: MakerXStudio/yoke/.github/workflows/review.yml@main',
+    ].join('\n')
+    const removed = caller.replace('+    uses', '-    uses').replace('@@ -0,0 +1 @@', '@@ -1 +0,0 @@')
+    const readme = caller.replaceAll('.github/workflows/review-pr.yml', 'README.md')
+    const secretsOnly = [
+      'diff --git a/.github/workflows/review-pr.yml b/.github/workflows/review-pr.yml',
+      '--- a/.github/workflows/review-pr.yml',
+      '+++ b/.github/workflows/review-pr.yml',
+      '@@ -1,2 +1,2 @@',
+      '     uses: MakerXStudio/yoke/.github/workflows/review.yml@main',
+      '-    secrets: inherit',
+      '+    secrets:',
+    ].join('\n')
+    expect(buildRequest(pr, caller)).toContain("## Yoke's own review workflow")
+    expect(buildRequest(pr, secretsOnly)).toContain("## Yoke's own review workflow")
+    expect(buildRequest(pr, diff)).not.toContain("## Yoke's own review workflow")
+    expect(buildRequest(pr, removed)).not.toContain("## Yoke's own review workflow")
+    expect(buildRequest(pr, readme)).not.toContain("## Yoke's own review workflow")
+  })
+
   it('appends the prior review comments after the diff', () => {
     const request = buildRequest(pr, diff, [{ path: 'x.ts', line: 11, author: 'wade', body: 'Guard this.' }])
     expect(request).toMatch(/```\n\n## Prior review comments\n[\s\S]*### x\.ts:11\n\n\*\*wade\*\*: Guard this\.\n$/)

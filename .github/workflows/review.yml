@@ -69,11 +69,11 @@ jobs:
             failed=1
           fi
           if [ -z "$BASE_URL" ]; then
-            echo "::error::Secret REVIEW_CI_BASE_URL is not set. Run: gh secret set REVIEW_CI_BASE_URL, and pass it to the review workflow (secrets: inherit)"
+            echo "::error::Secret REVIEW_CI_BASE_URL is not set. Run: gh secret set REVIEW_CI_BASE_URL, and pass it to the review workflow under secrets:"
             failed=1
           fi
           if [ -z "$API_KEY" ]; then
-            echo "::error::Secret REVIEW_CI_API_KEY is not set. Run: gh secret set REVIEW_CI_API_KEY, and pass it to the review workflow (secrets: inherit)"
+            echo "::error::Secret REVIEW_CI_API_KEY is not set. Run: gh secret set REVIEW_CI_API_KEY, and pass it to the review workflow under secrets:"
             failed=1
           fi
           exit "$failed"
