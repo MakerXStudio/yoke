@@ -217,6 +217,17 @@ describe('review tools lockfile', () => {
     expect(release).toMatch(/git commit -m "chore: /)
   })
 
+  it('exposes the ruleset-bypassing App token only to the step that pushes the lock', () => {
+    const release = z
+      .object({ jobs: z.object({ release: z.object({ steps: z.array(z.record(z.string(), z.unknown())) }) }) })
+      .parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')))
+    const steps = release.jobs.release.steps
+    const usesToken = steps.filter((step) => JSON.stringify(step).includes('steps.app-token.outputs.token'))
+    expect(usesToken.map((step) => step.name)).toEqual(['Lock released yoke for CI review'])
+    const mint = steps.findIndex((step) => step.id === 'app-token')
+    expect(steps[mint + 1]?.name).toBe('Lock released yoke for CI review')
+  })
+
   it('has Dependabot bump Claude Code and Codex but not yoke', () => {
     const dependabot = z
       .object({
