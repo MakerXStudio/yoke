@@ -42,6 +42,20 @@ describe('unapproveReview', () => {
     expect(remove).toHaveBeenCalledOnce()
   })
 
+  it('reports the label as already removed when the delete finds no label', async () => {
+    const remove = vi.fn(async () => {
+      throw new Error('`gh api --method DELETE x` failed: gh: Label does not exist (HTTP 404)')
+    })
+    expect(await unapproveReview(context(), remove)).toBe('#5 no longer has the `review` label; it was already removed.')
+  })
+
+  it('rethrows other delete failures', async () => {
+    const remove = vi.fn(async () => {
+      throw new Error('`gh api --method DELETE x` failed: gh: Forbidden (HTTP 403)')
+    })
+    await expect(unapproveReview(context(), remove)).rejects.toThrow('HTTP 403')
+  })
+
   it.each([
     ['a pull_request push', context({}, 'synchronize', 'pull_request'), 'Only a push to a fork PR'],
     ['another action', context({}, 'labeled'), 'Only a push to a fork PR'],
