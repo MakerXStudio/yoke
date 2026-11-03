@@ -134,10 +134,10 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install yoke from the lockfile
+      - name: Install yoke from the lockfile, skipping the reviewers' platform binaries
         working-directory: yoke/ci/review-tools
         run: |
-          npm ci
+          npm ci --omit=optional
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Require the latest review to have succeeded

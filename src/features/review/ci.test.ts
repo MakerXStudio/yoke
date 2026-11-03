@@ -180,10 +180,23 @@ describe('reusable workflow', () => {
         }),
       )
       expect(
-        job.steps.some((step) => step.run?.split('\n')[0]?.trim() === 'npm ci'),
+        job.steps.some((step) => step.run?.split('\n')[0]?.trim().startsWith('npm ci')),
         name,
       ).toBe(true)
     }
+    expect(
+      jobs.gate?.steps.some((step) => step.run?.split('\n')[0]?.trim() === 'npm ci --omit=optional'),
+      'the gate only runs yoke, so it skips the Claude Code and Codex platform binaries',
+    ).toBe(true)
+  })
+
+  it('locks no optional package for yoke, so omitting optional deps keeps all of it', () => {
+    const lock = z
+      .object({ packages: z.record(z.string(), z.object({ optional: z.boolean().optional() })) })
+      .parse(JSON.parse(readFileSync(join(import.meta.dirname, '../../../ci/review-tools/package-lock.json'), 'utf8')))
+    const optional = Object.entries(lock.packages).flatMap(([path, entry]) => (entry.optional ? [path] : []))
+    expect(optional.length).toBeGreaterThan(0)
+    for (const path of optional) expect(path, path).toMatch(/^node_modules\/(@anthropic-ai\/claude-code|@openai\/codex)-/)
   })
 })
 
