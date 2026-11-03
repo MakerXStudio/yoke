@@ -25,18 +25,29 @@ function fakeDeps(
     { id: 70, name: 'review / review' },
     { id: 71, name: 'review / gate' },
   ],
+  approvals: { context: string; target_url: string | null }[] = [],
+  runNumbers: Record<number, number> = {},
 ) {
   const paths: string[] = []
   const get = async (path: string) => {
     paths.push(path)
     if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
+    if (path === 'repos/o/r/commits/abcdef123/statuses?per_page=100') return approvals
     if (path === 'repos/o/r/actions/workflows/77/runs?event=pull_request&head_sha=abcdef123&per_page=100') return { workflow_runs: runs }
     if (/runs\/\d+\/jobs$/.test(path)) return { jobs }
     const id = Number(/runs\/(\d+)$/.exec(path)?.[1])
-    return { id, run_number: 1, status: statuses.shift() ?? 'completed' }
+    return { id, run_number: runNumbers[id] ?? 1, status: statuses.shift() ?? 'completed' }
   }
   const post = vi.fn<GateDeps['post']>(async () => null)
   return { paths, get, post, sleep: vi.fn(async () => {}), log: () => {} }
+}
+
+function owner(id: number) {
+  return [
+    { context: 'other', target_url: null },
+    { context: 'review / approved review', target_url: `https://github.com/o/r/actions/runs/${id}` },
+    { context: 'review / approved review', target_url: 'https://github.com/o/r/actions/runs/1' },
+  ]
 }
 
 describe('handOffApprovedReview', () => {
@@ -96,6 +107,29 @@ describe('handOffApprovedReview', () => {
       ],
       ['repos/o/r/actions/jobs/71/rerun', {}],
     ])
+  })
+
+  it.each([
+    ['pending', true],
+    ['success', true],
+    ['failure', false],
+  ])('leaves the status alone when a newer approved review owns it, for a %s result', async (result, pass) => {
+    const deps = fakeDeps([{ id: 2, run_number: 4, status: 'completed' }], [], undefined, owner(950), { 950: 11 })
+    expect(await handOffApprovedReview(result, context(), deps)).toEqual({
+      pass,
+      message: `A newer approved review, in https://github.com/o/r/actions/runs/950, owns the result for abcdef1, so this run's ${result} is not recorded.`,
+    })
+    expect(deps.post).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an older run', owner(800), { 800: 9 }],
+    ['this run', owner(900), {}],
+    ['a status without a run', [{ context: 'review / approved review', target_url: null }], {}],
+  ])('records the result over a status from %s', async (_, approvals, runNumbers) => {
+    const deps = fakeDeps([{ id: 2, run_number: 4, status: 'completed' }], [], undefined, approvals, runNumbers)
+    await handOffApprovedReview('success', context(), deps)
+    expect(deps.post).toHaveBeenCalledWith('repos/o/r/statuses/abcdef123', expect.objectContaining({ state: 'success' }))
   })
 
   it('waits for the pull_request run to finish before re-running its gate', async () => {
