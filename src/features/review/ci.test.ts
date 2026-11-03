@@ -193,6 +193,10 @@ describe('gate', () => {
     expect(reusableSource).toContain('${APPROVED_HEAD:+--head "$APPROVED_HEAD"}')
   })
 
+  it('checks out the trusted base on pull_request_target, so npm and npx never read fork config', () => {
+    expect(reusableSource).toContain("ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}")
+  })
+
   it("triggers yoke's own review like the generated caller", () => {
     expect(ownCaller.on.pull_request?.types).toEqual(callerTriggerTypes)
     expect(ownCaller.on.pull_request_target?.types).toEqual(callerTargetTypes)

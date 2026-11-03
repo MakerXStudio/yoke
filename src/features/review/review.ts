@@ -43,13 +43,13 @@ async function reviewAtHead(
   request: string,
   slots: ReviewSlots,
   ui: StatusUi,
-  strict: boolean,
+  { strict, untrusted }: { strict: boolean; untrusted: boolean },
 ): Promise<ReviewResult> {
   const checkoutDir = mkdtempSync(join(tmpdir(), 'yoke-review-'))
   try {
     const checkout = await timed(ui, `checking out ${pr.headRefOid.slice(0, 7)}`, () => checkoutHead(pr, checkoutDir))
     try {
-      return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track, strict })
+      return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track, strict, untrusted })
     } finally {
       await checkout.remove()
     }
@@ -113,7 +113,10 @@ export async function reviewPr(
     }
     await timed(ui, 'checking each reviewer can run', () => assertViable(slots))
     log(`review folder: ${reviewDir}`)
-    const result = await reviewAtHead(pr, reviewDir, buildRequest(pr, diff, prior), slots, ui, ci)
+    const result = await reviewAtHead(pr, reviewDir, buildRequest(pr, diff, prior), slots, ui, {
+      strict: ci,
+      untrusted: head !== undefined,
+    })
     out(result.report)
     saveReview(path, result.markdown)
     if (post && !result.synthesis)

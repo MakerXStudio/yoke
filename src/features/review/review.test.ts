@@ -87,6 +87,11 @@ describe('runReview', () => {
     expect(parsed?.findings.map((f) => f.title)).toEqual(['Crash'])
   })
 
+  it('marks every harness run untrusted when reviewing an approved head', async () => {
+    await runReview('request', { ...context(), untrusted: true })
+    expect(runs.map((r) => r.untrusted)).toEqual([true, true, true])
+  })
+
   it('returns the token usage each slot that ran reported, leaving cached slots out', async () => {
     cache('reviewer1', 'cached review', 'claude: default model')
     const base = context()

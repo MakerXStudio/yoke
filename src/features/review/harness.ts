@@ -14,6 +14,7 @@ export type HarnessRun = {
   reviewDir: string
   outputPath: string
   override?: Override
+  untrusted?: boolean
   onProgress?: (activity: string) => void
 }
 
@@ -23,11 +24,12 @@ export type RunHarness = (run: HarnessRun) => Promise<HarnessResult>
 
 const tailLines = 20
 
-export function harnessArgs({ harness, reviewDir, outputPath, override }: HarnessRun): string[] {
+export function harnessArgs({ harness, reviewDir, outputPath, override, untrusted }: HarnessRun): string[] {
   const extra = override?.args ?? []
   if (harness === 'codex') return ['exec', '--sandbox', 'read-only', '--json', '--output-last-message', outputPath, ...extra, '-']
   return [
     '-p',
+    ...(untrusted ? ['--setting-sources', 'user', '--strict-mcp-config'] : []),
     '--add-dir',
     reviewDir,
     '--disallowedTools',

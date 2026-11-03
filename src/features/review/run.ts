@@ -17,6 +17,7 @@ export type ReviewContext = {
   slots: ReviewSlots
   runHarness: RunHarness
   strict?: boolean
+  untrusted?: boolean
 } & Pick<StatusUi, 'log' | 'track'>
 
 export class ReviewFailure extends ReviewError {
@@ -59,6 +60,7 @@ async function runStep({ name, label, slot, ...step }: Step, context: RunContext
     ...step,
     harness,
     override,
+    untrusted: context.untrusted,
     cwd: context.cwd,
     reviewDir: context.reviewDir,
     onProgress: status.update,
