@@ -149,9 +149,89 @@ describe('callerWorkflow', () => {
 describe('reusable workflow', () => {
   const stepsSchema = z.object({ jobs: z.record(z.string(), z.object({ steps: z.array(z.object({ run: z.string().optional() })) })) })
 
+  const runs = Object.values(stepsSchema.parse(parse(reusableSource)).jobs).flatMap((job) => job.steps.flatMap((step) => step.run ?? []))
+
   it('keeps logic in yoke, not in run scripts', () => {
-    const runs = Object.values(stepsSchema.parse(parse(reusableSource)).jobs).flatMap((job) => job.steps.flatMap((step) => step.run ?? []))
     for (const run of runs) expect(run.trim().split('\n').length, run).toBeLessThanOrEqual(2)
+  })
+
+  it('installs no package by name, only from the lockfile', () => {
+    for (const run of runs) {
+      expect(run, run).not.toMatch(/\bnpx\b|\bnpm\s+(install|i|add|exec|x)\b|\b(yarn|pnpm|bun)x?\b/)
+    }
+    expect(reusableSource).not.toMatch(/CLAUDE_CODE_VERSION|CODEX_VERSION/)
+  })
+
+  it('runs npm ci against yoke checked out at the commit the caller resolved, in every job', () => {
+    const jobSchema = z.object({
+      steps: z.array(
+        z.object({ uses: z.string().optional(), with: z.record(z.string(), z.unknown()).optional(), run: z.string().optional() }),
+      ),
+    })
+    const jobs = z.object({ jobs: z.record(z.string(), jobSchema) }).parse(parse(reusableSource)).jobs
+    for (const [name, job] of Object.entries(jobs)) {
+      expect(job.steps, name).toContainEqual(
+        expect.objectContaining({
+          with: expect.objectContaining({
+            repository: 'MakerXStudio/yoke',
+            ref: '${{ job.workflow_sha }}',
+            'sparse-checkout': 'ci/review-tools',
+          }),
+        }),
+      )
+      expect(
+        job.steps.some((step) => step.run?.split('\n')[0]?.trim() === 'npm ci'),
+        name,
+      ).toBe(true)
+    }
+  })
+})
+
+describe('review tools lockfile', () => {
+  const toolsDir = join(import.meta.dirname, '../../../ci/review-tools')
+  const manifest = z
+    .object({ dependencies: z.record(z.string(), z.string()) })
+    .parse(JSON.parse(readFileSync(join(toolsDir, 'package.json'), 'utf8')))
+  const lock = z
+    .object({ packages: z.record(z.string(), z.object({ version: z.string().optional(), integrity: z.string().optional() })) })
+    .parse(JSON.parse(readFileSync(join(toolsDir, 'package-lock.json'), 'utf8')))
+  const installed = Object.entries(lock.packages).filter(([path]) => path !== '')
+
+  it('pins yoke, Claude Code and Codex to exact versions', () => {
+    expect(Object.keys(manifest.dependencies).toSorted()).toEqual(['@anthropic-ai/claude-code', '@makerx/yoke', '@openai/codex'])
+    for (const [name, version] of Object.entries(manifest.dependencies)) {
+      expect(version, name).toMatch(/^\d+\.\d+\.\d+$/)
+      expect(lock.packages[`node_modules/${name}`]?.version, name).toBe(version)
+    }
+  })
+
+  it('has a sha512 integrity hash for every package', () => {
+    expect(installed.length).toBeGreaterThan(0)
+    for (const [path, entry] of installed) expect(entry.integrity, path).toMatch(/^sha512-/)
+  })
+
+  it('locks each released yoke version exactly after a release', () => {
+    const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
+    expect(release).toContain('working-directory: ci/review-tools')
+    expect(release).toContain('npm install --package-lock-only --save-exact "@makerx/yoke@$version"')
+    expect(release).toMatch(/git commit -m "chore: /)
+  })
+
+  it('has Dependabot bump Claude Code and Codex but not yoke', () => {
+    const dependabot = z
+      .object({
+        updates: z.array(
+          z.object({
+            'package-ecosystem': z.string(),
+            directory: z.string(),
+            ignore: z.array(z.object({ 'dependency-name': z.string() })).optional(),
+          }),
+        ),
+      })
+      .parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/dependabot.yml'), 'utf8')))
+    const tools = dependabot.updates.find((update) => update.directory === '/ci/review-tools')
+    expect(tools?.['package-ecosystem']).toBe('npm')
+    expect(tools?.ignore?.map((rule) => rule['dependency-name'])).toEqual(['@makerx/yoke'])
   })
 })
 

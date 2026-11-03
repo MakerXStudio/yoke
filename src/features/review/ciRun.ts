@@ -19,3 +19,14 @@ export async function reportFailure(pr: PullRequest, reason: string, ui: StatusU
     ui.log(`could not post the failed review: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
+
+export function yokeVersionWarning(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const version = env.YOKE_VERSION_INPUT?.trim()
+  if (!version) return undefined
+  return `::warning::The yoke-version input (${version}) is deprecated and ignored. CI runs the @makerx/yoke version locked in yoke's ci/review-tools. Remove yoke-version from your caller workflow.`
+}
+
+export function warnIgnoredYokeVersion(out: (text: string) => void, env: NodeJS.ProcessEnv = process.env): void {
+  const warning = yokeVersionWarning(env)
+  if (warning) out(warning)
+}

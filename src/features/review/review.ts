@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Settings } from '../config/settings'
-import { isCi, reportFailure } from './ciRun'
+import { isCi, reportFailure, warnIgnoredYokeVersion } from './ciRun'
 import { withEntraToken } from './entra'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { runHarness } from './harness'
@@ -85,6 +85,7 @@ export async function reviewPr(
     io.out(text)
   }
   const { log } = ui
+  warnIgnoredYokeVersion(io.out)
   const slots = resolveSlots(await withEntraToken(settings, { env: process.env, mask: maskInCi }))
   const pr = await timed(ui, number ? `fetching PR #${number}` : "fetching this branch's PR", () => fetchPr(number))
   log(`#${pr.number} ${pr.title}`)
