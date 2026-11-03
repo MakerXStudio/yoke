@@ -76,11 +76,16 @@ jobs:
 | `reviewer1-harness`, `reviewer2-harness` | `claude` or `codex`. Defaults: `claude`, `codex`. |
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
-| `yoke-version` | `@makerx/yoke` version to run. Default: `latest`. |
 | `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
 | `environment` | GitHub environment the review job runs in. |
 
 In CI, `yoke review --post` always posts a review, even with no findings, and a failed reviewer or synthesis posts `## Code review failed`. Locally it posts nothing new and synthesises from one reviewer if the other fails. To re-run a CI review, mark the PR as draft, then ready for review.
+
+### Verified installs
+
+CI installs yoke, Claude Code and Codex with `npm ci` from `ci/review-tools/package-lock.json`, checked out from yoke at `job.workflow_sha` (the commit the caller's `uses:` resolved to). npm verifies every package's `sha512` hash.
+
+Each release pushes a `chore:` bump of the locked yoke to `main` as the `yoke-release` GitHub App, which bypasses the `main` ruleset. Its client ID and private key live in the `release` environment, which only `main` can use. Dependabot bumps Claude Code and Codex weekly.
 
 ### Merge gate
 
