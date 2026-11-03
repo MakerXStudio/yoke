@@ -52,7 +52,7 @@ const rerunHint = 'Mark the PR as draft, then ready for review, to run the revie
 const firstRunHint = 'Mark the PR as ready for review (from draft if it is not one) to run it.'
 
 const forkHint =
-  'The review does not run automatically on PRs from forks. A maintainer must read the diff, then add the `review` label to run it.'
+  'The review does not run automatically on PRs from forks. A maintainer must read the diff, then add the `review` label to run it. If adding the label runs nothing, the caller workflow needs the `pull_request_target` `labeled` and `synchronize` triggers and the `actions: write` and `statuses: write` permissions; run `yoke review-ci` to update it.'
 
 const forkRerunHint = 'A maintainer must read the diff, then remove and add the `review` label again to re-run it.'
 
