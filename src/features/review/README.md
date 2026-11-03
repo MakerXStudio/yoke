@@ -76,7 +76,6 @@ jobs:
 | `reviewer1-harness`, `reviewer2-harness` | `claude` or `codex`. Defaults: `claude`, `codex`. |
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
-| `yoke-version` | Deprecated and ignored; CI runs the locked yoke (see [Verified installs](#verified-installs)). Setting it prints a warning. |
 | `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
 | `environment` | GitHub environment the review job runs in. |
 

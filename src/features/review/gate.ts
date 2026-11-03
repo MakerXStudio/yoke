@@ -3,7 +3,6 @@ import { setTimeout } from 'node:timers/promises'
 
 import { z } from 'zod'
 
-import { warnIgnoredYokeVersion } from './ciRun'
 import { githubGet, ReviewError } from './pr'
 
 const eventSchema = z.object({
@@ -100,7 +99,6 @@ export async function reviewGate(reviewResult: string, context: GateContext, dep
 }
 
 export async function runReviewGate(reviewResult: string, out: (message: string) => void, env = process.env): Promise<boolean> {
-  warnIgnoredYokeVersion(out, env)
   const deps = { get: (path: string) => githubGet(path), sleep: (ms: number) => setTimeout(ms), log: out }
   const { pass, message } = await reviewGate(reviewResult, gateContext(env), deps)
   out(pass ? message : `::error::${message}`)

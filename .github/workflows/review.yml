@@ -31,10 +31,6 @@ on:
         description: 'Model the synthesis runs. Default: reviewer1-model'
         type: string
         default: ''
-      yoke-version:
-        description: "Deprecated and ignored: CI runs the @makerx/yoke version locked in yoke's ci/review-tools"
-        type: string
-        default: ''
       azure-client-id:
         description: Entra app (client) ID to reach Foundry with a GitHub OIDC token instead of REVIEW_CI_API_KEY. The caller must grant id-token write
         type: string
@@ -100,7 +96,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          YOKE_VERSION_INPUT: ${{ inputs.yoke-version }}
           YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
           YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
           YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
@@ -148,6 +143,5 @@ jobs:
       - name: Require the latest review to have succeeded
         env:
           GH_TOKEN: ${{ github.token }}
-          YOKE_VERSION_INPUT: ${{ inputs.yoke-version }}
           REVIEW_RESULT: ${{ needs.review.result }}
         run: yoke review-gate "$REVIEW_RESULT"

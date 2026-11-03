@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { ciRunUrl, isCi, reportFailure, warnIgnoredYokeVersion, yokeVersionWarning } from './ciRun'
+import { ciRunUrl, isCi, reportFailure } from './ciRun'
 import type { PostDeps } from './post'
 import type { PullRequest } from './request'
 import { lineUi } from './status'
@@ -57,27 +57,5 @@ describe('reportFailure', () => {
     })
     await expect(reportFailure(pr, 'reviewer 2 failed', lineUi(log, { activity: false }), { api, log })).resolves.toBeUndefined()
     expect(logs).toContain('could not post the failed review: forbidden')
-  })
-})
-
-describe('yokeVersionWarning', () => {
-  it('warns that a set yoke-version is ignored', () => {
-    const warning = yokeVersionWarning({ YOKE_VERSION_INPUT: '0.12.0' })
-    expect(warning).toMatch(/^::warning::/)
-    expect(warning).toContain('yoke-version input (0.12.0) is deprecated and ignored')
-  })
-
-  it.each([undefined, '', '  '])('stays quiet when yoke-version is %j', (value) => {
-    expect(yokeVersionWarning({ YOKE_VERSION_INPUT: value })).toBeUndefined()
-  })
-})
-
-describe('warnIgnoredYokeVersion', () => {
-  it('prints the warning only when yoke-version is set', () => {
-    const out = vi.fn()
-    warnIgnoredYokeVersion(out, {})
-    expect(out).not.toHaveBeenCalled()
-    warnIgnoredYokeVersion(out, { YOKE_VERSION_INPUT: 'latest' })
-    expect(out).toHaveBeenCalledWith(expect.stringMatching(/^::warning::The yoke-version input \(latest\)/))
   })
 })
