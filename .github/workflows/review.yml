@@ -83,6 +83,13 @@ jobs:
         with:
           node-version: 24
 
+      - name: Mark the approved review as running, so an earlier approval stops passing the gate
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YOKE_VERSION: ${{ inputs.yoke-version }}
+        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review-gate pending
+
       - name: Install Claude Code and Codex
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION"
 

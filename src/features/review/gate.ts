@@ -107,6 +107,7 @@ async function forkVerdict({ repo, event }: GateContext, deps: GateDeps): Promis
   if (!approved) return { pass: false, message: forkHint }
   const where = approved.target_url ? `, in ${approved.target_url},` : ''
   const message = `The review a maintainer approved for ${sha.slice(0, 7)}${where} ${approved.description ?? `finished with ${approved.state}`}.`
+  if (approved.state === 'pending') return { pass: false, message: `${message} The gate re-runs when it finishes.` }
   return approved.state === 'success' ? { pass: true, message } : { pass: false, message: `${message} ${forkRerunHint}` }
 }
 

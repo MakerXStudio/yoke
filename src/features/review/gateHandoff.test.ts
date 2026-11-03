@@ -78,6 +78,26 @@ describe('handOffApprovedReview', () => {
     ])
   })
 
+  it('marks the approved review as running on the PR head and re-runs its gate when it starts', async () => {
+    const deps = fakeDeps([{ id: 2, run_number: 4, status: 'completed' }])
+    expect(await handOffApprovedReview('pending', context(), deps)).toEqual({
+      pass: true,
+      message: 'Marked the review a maintainer approved as running. Re-ran the gate for abcdef1 in https://github.com/o/r/actions/runs/2.',
+    })
+    expect(deps.post.mock.calls).toEqual([
+      [
+        'repos/o/r/statuses/abcdef123',
+        {
+          state: 'pending',
+          context: 'review / approved review',
+          description: 'is running',
+          target_url: 'https://github.com/o/r/actions/runs/900',
+        },
+      ],
+      ['repos/o/r/actions/jobs/71/rerun', {}],
+    ])
+  })
+
   it('waits for the pull_request run to finish before re-running its gate', async () => {
     const deps = fakeDeps([{ id: 2, run_number: 4, status: 'in_progress' }], ['in_progress', 'completed'])
     await handOffApprovedReview('success', context(), deps)

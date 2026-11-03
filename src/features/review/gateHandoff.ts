@@ -14,11 +14,17 @@ const runsSchema = z.object({ workflow_runs: z.array(runSchema) })
 
 const jobsSchema = z.object({ jobs: z.array(z.object({ id: z.number(), name: z.string() })) })
 
+const pendingResult = 'pending'
+
+function approvalState(reviewResult: string): { state: string; description: string } {
+  if (reviewResult === pendingResult) return { state: 'pending', description: 'is running' }
+  return { state: reviewResult === 'success' ? 'success' : 'failure', description: `finished with ${reviewResult}` }
+}
+
 async function postApproval(reviewResult: string, { repo, runId, serverUrl, event }: GateContext, deps: GateDeps): Promise<void> {
   await deps.post(`repos/${repo}/statuses/${event.pull_request.head.sha}`, {
-    state: reviewResult === 'success' ? 'success' : 'failure',
+    ...approvalState(reviewResult),
     context: approvedReviewContext,
-    description: `finished with ${reviewResult}`,
     target_url: `${serverUrl}/${repo}/actions/runs/${runId}`,
   })
 }
@@ -58,6 +64,7 @@ export async function handOffApprovedReview(reviewResult: string, context: GateC
     return { pass: true, message: 'No approved review ran on this event.' }
   await postApproval(reviewResult, context, deps)
   const rerun = await rerunHeadGate(context, deps)
+  if (reviewResult === pendingResult) return { pass: true, message: `Marked the review a maintainer approved as running. ${rerun}` }
   const pass = reviewResult === 'success'
   return { pass, message: `The review a maintainer approved finished with ${reviewResult}. ${rerun}` }
 }

@@ -114,6 +114,16 @@ describe('reviewGate', () => {
     expect(deps.paths).toEqual(['repos/o/r/commits/fedcba987/statuses?per_page=100'])
   })
 
+  it('fails a fork PR while its approved review is running, even after an earlier one succeeded', async () => {
+    const running = { ...approved('pending'), description: 'is running' }
+    const deps = fakeDeps([], {}, [running, approved('success')])
+    expect(await reviewGate('skipped', context('synchronize', { head: fork }), deps)).toEqual({
+      pass: false,
+      message:
+        'The review a maintainer approved for abcdef1, in https://github.com/o/r/actions/runs/31, is running. The gate re-runs when it finishes.',
+    })
+  })
+
   it('fails a fork PR while its latest approved review failed', async () => {
     const deps = fakeDeps([], {}, [approved('failure'), approved('success')])
     const verdict = await reviewGate('skipped', context('synchronize', { head: fork }), deps)

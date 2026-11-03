@@ -44,6 +44,7 @@ const workflowSchema = z.object({
       uses: z.string().optional(),
       with: z.record(z.string(), z.string()).optional(),
       secrets: z.record(z.string(), z.string()).optional(),
+      steps: z.array(z.object({ name: z.string().optional(), if: z.string().optional(), run: z.string().optional() })).optional(),
     }),
   ),
 })
@@ -191,6 +192,13 @@ describe('gate', () => {
       "APPROVED_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}",
     )
     expect(reusableSource).toContain('${APPROVED_HEAD:+--head "$APPROVED_HEAD"}')
+  })
+
+  it('marks an approved review as running before it starts', () => {
+    const steps = reusable.jobs.review?.steps ?? []
+    const pending = steps.findIndex((step) => step.run?.includes('review-gate pending'))
+    expect(steps[pending]?.if).toBe("github.event_name == 'pull_request_target'")
+    expect(pending).toBeLessThan(steps.findIndex((step) => step.name === 'Review PR'))
   })
 
   it('checks out the trusted base on pull_request_target, so npm and npx never read fork config', () => {

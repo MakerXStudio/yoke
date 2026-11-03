@@ -73,7 +73,10 @@ export function addReviewCiCommands(program: Command): void {
     .description(
       "Block merging until the latest review that ran for the PR succeeds, or for a fork PR, a review a maintainer approved with the `review` label; bot PRs pass. On pull_request_target, records the approved review on the PR head and re-runs its gate. Used by review.yml's gate job",
     )
-    .argument('<result>', 'result of the review job on this event: success, failure, cancelled or skipped')
+    .argument(
+      '<result>',
+      'result of the review job on this event: success, failure, cancelled or skipped; pending marks an approved review as running',
+    )
     .action(async (result: string) => {
       try {
         if (!(await runReviewGate(result, console.log))) process.exitCode = 1
