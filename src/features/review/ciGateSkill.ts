@@ -6,7 +6,7 @@ export const reviewCiGateSkill: Skill = {
   disableModelInvocation: true,
   userLevel: true,
   body: `
-Run \`yoke review-ci-gate\` and relay its output.
+Run \`yoke review ci-gate\` and relay its output.
 
 If it fails, say what is missing and how to fix it, as it reports. Don't create the ruleset any other way.
 

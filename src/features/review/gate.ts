@@ -9,6 +9,7 @@ import { githubGet, githubPost, ReviewError } from './pr'
 const eventSchema = z.object({
   action: z.string(),
   label: z.object({ name: z.string() }).optional(),
+  sender: z.object({ login: z.string() }).optional(),
   pull_request: z.object({
     number: z.number(),
     head: z.object({ ref: z.string(), sha: z.string(), repo: z.object({ full_name: z.string() }).nullable() }),
@@ -52,7 +53,7 @@ const rerunHint = 'Mark the PR as draft, then ready for review, to run the revie
 const firstRunHint = 'Mark the PR as ready for review (from draft if it is not one) to run it.'
 
 const forkHint =
-  'The review does not run automatically on PRs from forks. A maintainer must read the diff, then add the `review` label to run it. If adding the label runs nothing, the caller workflow needs the `pull_request_target` `labeled` and `synchronize` triggers and the `actions: write` and `statuses: write` permissions; run `yoke review-ci` to update it.'
+  'The review does not run automatically on PRs from forks. A maintainer must read the diff, then add the `review` label to run it. If adding the label runs nothing, the caller workflow needs the `pull_request_target` `labeled` and `synchronize` triggers and the `actions: write` and `statuses: write` permissions; run `yoke review ci` to update it.'
 
 const forkRerunHint = 'A maintainer must read the diff, then remove and add the `review` label again to re-run it.'
 
@@ -61,7 +62,7 @@ function verdict(conclusion: string, message: string): Verdict {
   return { pass, message: pass ? message : `${message} ${rerunHint}` }
 }
 
-export function gateContext(env: NodeJS.ProcessEnv = process.env, command = 'yoke review-gate'): GateContext {
+export function gateContext(env: NodeJS.ProcessEnv = process.env, command = 'yoke review gate'): GateContext {
   const { GITHUB_REPOSITORY, GITHUB_RUN_ID, GITHUB_RUN_NUMBER, GITHUB_SERVER_URL, GITHUB_EVENT_PATH, GITHUB_EVENT_NAME } = env
   if (!GITHUB_REPOSITORY || !GITHUB_RUN_ID || !GITHUB_RUN_NUMBER || !GITHUB_SERVER_URL || !GITHUB_EVENT_PATH || !GITHUB_EVENT_NAME) {
     throw new ReviewError(`${command} runs only in a GitHub Actions pull_request workflow`)

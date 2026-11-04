@@ -73,7 +73,7 @@ describe('syncSkills', () => {
     syncSkills(destination, destination)
     const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
     expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
-    expect(skill).toContain('yoke review-ci $ARGUMENTS')
+    expect(skill).toContain('yoke review ci $ARGUMENTS')
     expect(skill).toContain('gh secret set REVIEW_CI_API_KEY')
   })
 
@@ -85,19 +85,19 @@ describe('syncSkills', () => {
     expect(skill).not.toContain('ruleset')
   })
 
-  it('writes a user-level review-ci-gate skill, only the user can invoke, that runs yoke review-ci-gate', () => {
+  it('writes a user-level review-ci-gate skill, only the user can invoke, that runs yoke review ci-gate', () => {
     const home = join(target, 'home', '.claude', 'skills')
     syncSkills(destination, home)
     const skill = readFileSync(join(home, 'review-ci-gate', 'SKILL.md'), 'utf8')
     expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
-    expect(skill).toContain('Run `yoke review-ci-gate` and relay its output.')
+    expect(skill).toContain('Run `yoke review ci-gate` and relay its output.')
     expect(skill).toContain('say what is missing and how to fix it')
   })
 
   it('has the review-ci skill edit an existing review workflow in place instead of overwriting it', () => {
     syncSkills(destination, destination)
     const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
-    expect(skill).toContain('yoke review-ci $ARGUMENTS --print')
+    expect(skill).toContain('yoke review ci $ARGUMENTS --print')
     expect(skill).toContain('Never ask whether to overwrite a workflow')
     expect(skill).not.toContain('--force')
   })
@@ -135,7 +135,7 @@ describe('syncSkills', () => {
 
   it.each([
     ['repo', 'pr', 'yoke pr raise'],
-    ['user', 'review-ci', 'yoke review-ci $ARGUMENTS'],
+    ['user', 'review-ci', 'yoke review ci $ARGUMENTS'],
   ])('skips a %s-level skill without the owner marker unless forced', (_, name, content) => {
     const home = join(target, 'home', '.claude', 'skills')
     const dir = join(name === 'review-ci' ? home : destination, name)

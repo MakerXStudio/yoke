@@ -27,10 +27,10 @@ function fail(error: unknown, ...expected: (typeof ReviewError | typeof ConfigEr
   process.exitCode = 1
 }
 
-export function addReviewCiCommands(program: Command): void {
+export function addReviewCiCommands(review: Command): void {
   addSettingOptions(
-    program
-      .command('review-ci')
+    review
+      .command('ci')
       .description(
         `Write ${callerWorkflowPath} so each PR in this repo is reviewed in CI, then print the secrets, or Entra federated credential, it needs`,
       )
@@ -57,8 +57,8 @@ export function addReviewCiCommands(program: Command): void {
       }
     })
 
-  program
-    .command('review-ci-gate')
+  review
+    .command('ci-gate')
     .description(`Require the ${gateCheck} check on the default branch with a ruleset, once the CI review workflow is merged`)
     .action(async () => {
       try {
@@ -68,10 +68,10 @@ export function addReviewCiCommands(program: Command): void {
       }
     })
 
-  program
-    .command('review-gate')
+  review
+    .command('gate')
     .description(
-      "Block merging until the latest review that ran for the PR succeeds, or for a fork PR, a review a maintainer approved with the `review` label; bot PRs pass. On pull_request_target, records the approved review on the PR head and re-runs its gate. Used by review.yml's gate job",
+      "Block merging until the latest review that ran for the PR succeeds, or for a fork PR, a review approved by a user with write access adding the `review` label; bot PRs pass. On pull_request_target, records the approved review on the PR head and re-runs its gate. Used by review.yml's review and gate jobs",
     )
     .argument(
       '<result>',
@@ -85,8 +85,8 @@ export function addReviewCiCommands(program: Command): void {
       }
     })
 
-  program
-    .command('review-unapprove')
+  review
+    .command('unapprove')
     .description(
       "Remove the `review` label from a fork PR after a push, so a maintainer reads the new commits before they are reviewed. Used by review.yml's unapprove job on pull_request_target",
     )

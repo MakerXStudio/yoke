@@ -83,12 +83,12 @@ jobs:
         with:
           node-version: 24
 
-      - name: Mark the approved review as running, so an earlier approval stops passing the gate
+      - name: Mark the approved review as running, unless the label came from a user without write access
         if: github.event_name == 'pull_request_target'
         env:
           GH_TOKEN: ${{ github.token }}
           YOKE_VERSION: ${{ inputs.yoke-version }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review-gate pending
+        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review gate pending
 
       - name: Install Claude Code and Codex
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION"
@@ -136,7 +136,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           YOKE_VERSION: ${{ inputs.yoke-version }}
           REVIEW_RESULT: ${{ needs.review.result }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review-gate "$REVIEW_RESULT"
+        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review gate "$REVIEW_RESULT"
 
   unapprove:
     if: >-
@@ -154,4 +154,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           YOKE_VERSION: ${{ inputs.yoke-version }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review-unapprove
+        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review unapprove

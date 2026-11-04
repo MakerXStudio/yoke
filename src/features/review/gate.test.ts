@@ -93,7 +93,7 @@ describe('reviewGate', () => {
     const verdict = await reviewGate('skipped', context('synchronize', pr), deps)
     expect(verdict.pass).toBe(false)
     expect(verdict.message).toMatch(/A maintainer must read the diff, then add the `review` label/)
-    expect(verdict.message).toMatch(/needs the `pull_request_target` `labeled` and `synchronize` triggers.*run `yoke review-ci`/)
+    expect(verdict.message).toMatch(/needs the `pull_request_target` `labeled` and `synchronize` triggers.*run `yoke review ci`/)
     expect(deps.paths).toEqual(['repos/o/r/commits/abcdef123/statuses?per_page=100'])
   })
 

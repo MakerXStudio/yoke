@@ -22,5 +22,5 @@ export async function unapproveReview({ repo, eventName, event }: GateContext, r
 }
 
 export async function runUnapproveReview(out: (message: string) => void, env = process.env): Promise<void> {
-  out(await unapproveReview(gateContext(env, 'yoke review-unapprove'), (path) => githubDelete(path)))
+  out(await unapproveReview(gateContext(env, 'yoke review unapprove'), (path) => githubDelete(path)))
 }

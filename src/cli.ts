@@ -20,7 +20,7 @@ import { addReviewCiCommands } from './reviewCiCommands'
 
 const { version } = packageJson
 
-const program = new Command('yoke').description('Lean Claude Code skills and the CLI they call.').version(version)
+const program = new Command('yoke').description('Lean Claude Code skills and the CLI they call.').version(version).enablePositionalOptions()
 
 program
   .command('sync')
@@ -71,7 +71,7 @@ pr.command('raise')
 
 const providerKeys = settingKeys.filter((key) => !key.startsWith('review.'))
 
-addSettingOptions(
+const review = addSettingOptions(
   program
     .command('review')
     .description("Review the current branch's PR, or PR <number>, with Claude and Codex in parallel, then combine their findings")
@@ -104,7 +104,7 @@ addSettingOptions(
     },
   )
 
-addReviewCiCommands(program)
+addReviewCiCommands(review)
 
 addSettingOptions(
   program.command('models').description('List the models each configured provider serves, for review.*.provider and review.*.model'),

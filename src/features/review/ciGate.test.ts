@@ -127,7 +127,7 @@ describe('enforceReviewGate', () => {
   it.each([403, 404])('names the fix when GitHub refuses to create the ruleset with HTTP %i', async (status) => {
     const api = fakeApi({ postStatus: status })
     await expect(enforceReviewGate(api)).rejects.toThrow(
-      'GitHub refused to add the "yoke review" ruleset to o/r: your gh user can\'t edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run `yoke review-ci-gate`.',
+      'GitHub refused to add the "yoke review" ruleset to o/r: your gh user can\'t edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run `yoke review ci-gate`.',
     )
   })
 

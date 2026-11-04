@@ -13,8 +13,8 @@ Read \`.github/workflows/\`, recent review runs (\`gh run list\`, \`gh run view 
 
 A workflow is an LLM review if it has a model review PRs, whatever tool it uses.
 
-- **None:** run \`yoke review-ci $ARGUMENTS\`.
-- **One, not yoke's:** run \`yoke review-ci $ARGUMENTS --print\` with its provider and models, then edit that file in place to run yoke's review. Keep its name, triggers, provider, models, base URL, variable and secret names.
+- **None:** run \`yoke review ci $ARGUMENTS\`.
+- **One, not yoke's:** run \`yoke review ci $ARGUMENTS --print\` with its provider and models, then edit that file in place to run yoke's review. Keep its name, triggers, provider, models, base URL, variable and secret names.
 - **Already yoke's** (calls MakerXStudio/yoke's \`review.yml\`, or \`./.github/workflows/review.yml\` in yoke itself): compare with \`--print\` and add only what is missing.
 
 Never ask whether to overwrite a workflow. If \`review-pr.yml\` exists and differs, edit it in place.

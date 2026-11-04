@@ -12,7 +12,7 @@ function context(action = 'labeled', label = 'review'): GateContext {
     runNumber: 10,
     serverUrl: 'https://github.com',
     eventName: 'pull_request_target',
-    event: { action, label: { name: label }, pull_request: pullRequest },
+    event: { action, label: { name: label }, sender: { login: 'alice' }, pull_request: pullRequest },
   }
 }
 
@@ -27,10 +27,12 @@ function fakeDeps(
   ],
   approvals: { context: string; target_url: string | null }[] = [],
   runNumbers: Record<number, number> = {},
+  permission = { permission: 'write', role_name: 'maintain' },
 ) {
   const paths: string[] = []
   const get = async (path: string) => {
     paths.push(path)
+    if (path === 'repos/o/r/collaborators/alice/permission') return permission
     if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
     if (path === 'repos/o/r/commits/abcdef123/statuses?per_page=100') return approvals
     if (path === 'repos/o/r/actions/workflows/77/runs?event=pull_request&head_sha=abcdef123&per_page=100') return { workflow_runs: runs }
@@ -131,6 +133,37 @@ describe('handOffApprovedReview', () => {
     await handOffApprovedReview('success', context(), deps)
     expect(deps.post).toHaveBeenCalledWith('repos/o/r/statuses/abcdef123', expect.objectContaining({ state: 'success' }))
   })
+
+  it.each(['pending', 'failure'])(
+    'records why the review was not run, instead of a %s result, when the label came from a user without write access',
+    async (result) => {
+      const deps = fakeDeps(
+        [{ id: 2, run_number: 4, status: 'completed' }],
+        [],
+        undefined,
+        [],
+        {},
+        { permission: 'read', role_name: 'triage' },
+      )
+      const reason = 'was not run: alice added the label with triage access; approving needs write, maintain or admin'
+      expect(await handOffApprovedReview(result, context(), deps)).toEqual({
+        pass: false,
+        message: `The review ${reason}. Re-ran the gate for abcdef1 in https://github.com/o/r/actions/runs/2.`,
+      })
+      expect(deps.post.mock.calls).toEqual([
+        [
+          'repos/o/r/statuses/abcdef123',
+          {
+            state: 'failure',
+            context: 'review / approved review',
+            description: reason,
+            target_url: 'https://github.com/o/r/actions/runs/900',
+          },
+        ],
+        ['repos/o/r/actions/jobs/71/rerun', {}],
+      ])
+    },
+  )
 
   it('waits for the pull_request run to finish before re-running its gate', async () => {
     const deps = fakeDeps([{ id: 2, run_number: 4, status: 'in_progress' }], ['in_progress', 'completed'])

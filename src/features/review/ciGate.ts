@@ -108,7 +108,7 @@ async function createRuleset(api: GateApi, repo: Repo): Promise<unknown> {
   } catch (error) {
     if (error instanceof ReviewError && /\(HTTP 40[34]\)/.test(error.message))
       throw new ReviewError(
-        `GitHub refused to add the "${gateRuleset.name}" ruleset to ${repo.full_name}: your gh user can't edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run \`yoke review-ci-gate\`.`,
+        `GitHub refused to add the "${gateRuleset.name}" ruleset to ${repo.full_name}: your gh user can't edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run \`yoke review ci-gate\`.`,
       )
     throw error
   }

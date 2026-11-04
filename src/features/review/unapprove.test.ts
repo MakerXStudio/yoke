@@ -71,7 +71,7 @@ describe('unapproveReview', () => {
 
 describe('runUnapproveReview', () => {
   it('names itself when run outside GitHub Actions', async () => {
-    await expect(runUnapproveReview(() => {}, {})).rejects.toThrow('yoke review-unapprove runs only in a GitHub Actions')
+    await expect(runUnapproveReview(() => {}, {})).rejects.toThrow('yoke review unapprove runs only in a GitHub Actions')
   })
 
   it('reports what it did on a push to a PR from the repo itself', async () => {

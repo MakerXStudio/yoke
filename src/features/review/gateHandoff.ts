@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { approverRejection } from './approver'
 import type { GateContext, GateDeps, Verdict } from './gate'
 
 export const approvedReviewContext = 'review / approved review'
@@ -18,14 +19,16 @@ const statusesSchema = z.array(z.object({ context: z.string(), target_url: z.str
 
 const pendingResult = 'pending'
 
-function approvalState(reviewResult: string): { state: string; description: string } {
+type ApprovalState = { state: string; description: string }
+
+function approvalState(reviewResult: string): ApprovalState {
   if (reviewResult === pendingResult) return { state: 'pending', description: 'is running' }
   return { state: reviewResult === 'success' ? 'success' : 'failure', description: `finished with ${reviewResult}` }
 }
 
-async function postApproval(reviewResult: string, { repo, runId, serverUrl, event }: GateContext, deps: GateDeps): Promise<void> {
+async function postApproval(approval: ApprovalState, { repo, runId, serverUrl, event }: GateContext, deps: GateDeps): Promise<void> {
   await deps.post(`repos/${repo}/statuses/${event.pull_request.head.sha}`, {
-    ...approvalState(reviewResult),
+    ...approval,
     context: approvedReviewContext,
     target_url: `${serverUrl}/${repo}/actions/runs/${runId}`,
   })
@@ -79,7 +82,12 @@ export async function handOffApprovedReview(reviewResult: string, context: GateC
       pass: reviewResult === pendingResult || reviewResult === 'success',
       message: `A newer approved review, in ${newer}, owns the result for ${context.event.pull_request.head.sha.slice(0, 7)}, so this run's ${reviewResult} is not recorded.`,
     }
-  await postApproval(reviewResult, context, deps)
+  const rejection = await approverRejection(context, deps.get)
+  if (rejection) {
+    await postApproval({ state: 'failure', description: rejection }, context, deps)
+    return { pass: false, message: `The review ${rejection}. ${await rerunHeadGate(context, deps)}` }
+  }
+  await postApproval(approvalState(reviewResult), context, deps)
   const rerun = await rerunHeadGate(context, deps)
   if (reviewResult === pendingResult) return { pass: true, message: `Marked the review a maintainer approved as running. ${rerun}` }
   const pass = reviewResult === 'success'

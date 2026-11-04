@@ -148,7 +148,7 @@ export function repoRoot(cwd = process.cwd()): string {
   try {
     return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   } catch {
-    throw new ReviewError('Not in a git repository; run `yoke review-ci` from the repo to review.')
+    throw new ReviewError('Not in a git repository; run `yoke review ci` from the repo to review.')
   }
 }
 
@@ -156,7 +156,7 @@ export type WriteOutcome = 'wrote' | 'unchanged'
 
 export const editInPlaceMessage = [
   `${callerWorkflowPath} already exists and differs from yoke's version, so it was left as it is.`,
-  "Edit it in place to run yoke's review, keeping its provider, models and names. `yoke review-ci --print` shows yoke's version without saving it.",
+  "Edit it in place to run yoke's review, keeping its provider, models and names. `yoke review ci --print` shows yoke's version without saving it.",
 ].join('\n')
 
 export function writeCallerWorkflow(root: string, content: string): WriteOutcome {
