@@ -77,6 +77,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "chore: lock yoke $version for the CI review" -- package.json package-lock.json
+          git tag "review-$TAG"
+          git -c http.https://github.com/.extraheader= push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}" "refs/tags/review-$TAG"
           git pull --rebase --autostash origin main
           git -c http.https://github.com/.extraheader= push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:main
 

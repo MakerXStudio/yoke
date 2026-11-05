@@ -64,7 +64,7 @@ permissions:
 
 jobs:
   review:
-    uses: MakerXStudio/yoke/.github/workflows/review.yml@main
+    uses: MakerXStudio/yoke/.github/workflows/review.yml@review-v<version>
     with:
       reviewer1-model: bedrock/claude-opus-5-5
       reviewer2-model: azure/gpt-6.1-sol
@@ -89,7 +89,9 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 
 CI installs yoke, Claude Code and Codex with `npm ci` from `ci/review-tools/package-lock.json`, checked out from yoke at `job.workflow_sha` (the commit the caller's `uses:` resolved to). npm verifies every package's `sha512` hash.
 
-Each release pushes a `chore:` bump of the locked yoke to `main` as the `yoke-release` GitHub App, which bypasses the `main` ruleset. Its client ID and private key live in the `release` environment, which only `main` can use. Dependabot bumps Claude Code and Codex weekly.
+Pin `uses:` to a `review-v<version>` tag to run that yoke version; `/review-ci` writes the tag of the yoke that runs it. Releases before this tag existed have none. A release tag `vN` locks the previous yoke, because the lock can only be written once `vN` is published, and `@main` runs whatever yoke `main` locks, which can lag the workflow on it.
+
+Each release commits the newly published yoke to the lockfile, tags that commit `review-vN` and pushes the tag, then pushes the commit to `main`, as the `yoke-release` GitHub App, which bypasses the `main` ruleset. Its client ID and private key live in the `release` environment, which only `main` can use. Dependabot bumps Claude Code and Codex weekly.
 
 ### Merge gate
 
