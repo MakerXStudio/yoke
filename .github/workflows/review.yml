@@ -31,10 +31,6 @@ on:
         description: 'Model the synthesis runs. Default: reviewer1-model'
         type: string
         default: ''
-      yoke-version:
-        description: '@makerx/yoke version to run'
-        type: string
-        default: latest
       azure-client-id:
         description: Entra app (client) ID to reach Foundry with a GitHub OIDC token instead of REVIEW_CI_API_KEY. The caller must grant id-token write
         type: string
@@ -69,39 +65,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
-    env:
-      CLAUDE_CODE_VERSION: 2.1.316
-      CODEX_VERSION: 0.166.0
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          path: pr
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out yoke's locked review tools
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke
+          sparse-checkout: ci/review-tools
           persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
+      - name: Install yoke, Claude Code and Codex from the lockfile
+        working-directory: yoke/ci/review-tools
+        run: |
+          npm ci
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Mark the approved review as running, unless the label came from a user without write access
         if: github.event_name == 'pull_request_target'
         env:
           GH_TOKEN: ${{ github.token }}
-          YOKE_VERSION: ${{ inputs.yoke-version }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review gate pending
-
-      - name: Install Claude Code and Codex
-        run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" "@openai/codex@$CODEX_VERSION"
+        run: yoke review gate pending
 
       - name: Allow unprivileged user namespaces for the Codex sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Review PR
+        working-directory: pr
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           APPROVED_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
-          YOKE_VERSION: ${{ inputs.yoke-version }}
           YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
           YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
           YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
@@ -119,7 +124,7 @@ jobs:
           YOKE_REVIEW_SYNTHESIS_MODEL: ${{ inputs.synthesis-model || (!inputs.synthesis-harness && inputs.reviewer1-model) || '' }}
         run: |
           gh auth setup-git
-          npx --yes "@makerx/yoke@$YOKE_VERSION" review "$PR_NUMBER" --post --verbose ${APPROVED_HEAD:+--head "$APPROVED_HEAD"}
+          yoke review "$PR_NUMBER" --post --verbose ${APPROVED_HEAD:+--head "$APPROVED_HEAD"}
 
   gate:
     needs: review
@@ -127,16 +132,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Check out yoke's locked review tools
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke
+          sparse-checkout: ci/review-tools
+          persist-credentials: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
+      - name: Install yoke from the lockfile, skipping the reviewers' platform binaries
+        working-directory: yoke/ci/review-tools
+        run: |
+          npm ci --omit=optional
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Require the latest review, or a fork's approved review, to have succeeded
         env:
           GH_TOKEN: ${{ github.token }}
-          YOKE_VERSION: ${{ inputs.yoke-version }}
           REVIEW_RESULT: ${{ needs.review.result }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review gate "$REVIEW_RESULT"
+        run: yoke review gate "$REVIEW_RESULT"
 
   unapprove:
     if: >-
@@ -146,12 +165,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check out yoke's locked review tools
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke
+          sparse-checkout: ci/review-tools
+          persist-credentials: false
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
+      - name: Install yoke from the lockfile, skipping the reviewers' platform binaries
+        working-directory: yoke/ci/review-tools
+        run: |
+          npm ci --omit=optional
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
       - name: Remove the review label so a maintainer reads the new commits before they are reviewed
         env:
           GH_TOKEN: ${{ github.token }}
-          YOKE_VERSION: ${{ inputs.yoke-version }}
-        run: npx --yes "@makerx/yoke@$YOKE_VERSION" review unapprove
+        run: yoke review unapprove
