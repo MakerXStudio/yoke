@@ -34,18 +34,24 @@ function listIncludes(value: unknown, item: string): boolean {
   return value === item || (Array.isArray(value) && value.includes(item))
 }
 
-function pullRequestTrigger(on: unknown): Record<string, unknown> | undefined {
-  if (typeof on !== 'object' || on === null || Array.isArray(on) || !('pull_request' in on)) return undefined
-  const trigger: unknown = on.pull_request
+type Event = 'pull_request' | 'pull_request_target'
+
+function property(value: unknown, key: string): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  return new Map<string, unknown>(Object.entries(value)).get(key)
+}
+
+function eventTrigger(on: unknown, event: Event): Record<string, unknown> | undefined {
+  const trigger = property(on, event)
   return typeof trigger === 'object' && trigger !== null && !Array.isArray(trigger) ? { ...trigger } : undefined
 }
 
-function runsOnSynchronize(on: unknown): boolean {
-  if (typeof on === 'string' || Array.isArray(on)) return listIncludes(on, 'pull_request')
-  if (typeof on !== 'object' || on === null || !('pull_request' in on)) return false
-  const trigger = pullRequestTrigger(on)
-  if (!trigger || !('types' in trigger)) return true
-  return listIncludes(trigger.types, 'synchronize')
+function runsOn(on: unknown, event: Event, type: string, byDefault: boolean): boolean {
+  if (typeof on === 'string' || Array.isArray(on)) return byDefault && listIncludes(on, event)
+  if (typeof on !== 'object' || on === null || !(event in on)) return false
+  const trigger = eventTrigger(on, event)
+  if (!trigger || !('types' in trigger)) return byDefault
+  return listIncludes(trigger.types, type)
 }
 
 function globMatches(pattern: string, branch: string): boolean {
@@ -69,8 +75,8 @@ function branchesInclude(value: unknown, branch: string): boolean {
   )
 }
 
-function skipFilters(on: unknown, branch: string): string[] {
-  const trigger = pullRequestTrigger(on)
+function skipFilters(on: unknown, event: Event, branch: string): string[] {
+  const trigger = eventTrigger(on, event)
   if (!trigger) return []
   const filters = ['paths', 'paths-ignore'].filter((key) => key in trigger)
   if ('branches' in trigger && !branchesInclude(trigger.branches, branch)) filters.push('branches')
@@ -79,26 +85,38 @@ function skipFilters(on: unknown, branch: string): string[] {
   return filters
 }
 
-function canReadActions(permissions: unknown): boolean {
-  if (permissions === 'read-all' || permissions === 'write-all') return true
-  if (typeof permissions !== 'object' || permissions === null || !('actions' in permissions)) return false
-  return permissions.actions === 'read' || permissions.actions === 'write'
+function canWrite(permissions: unknown, scope: string): boolean {
+  if (permissions === 'write-all') return true
+  return property(permissions, scope) === 'write'
 }
 
+const writeScopes = ['actions', 'statuses']
+
 export type CallerCheck = { path: string; problems: string[] }
+
+function filterProblem(on: unknown, event: Event, branch: string): string[] {
+  const filters = skipFilters(on, event, branch)
+  if (filters.length === 0) return []
+  const named = filters.map((filter) => `\`${filter}\``).join(', ')
+  return [
+    `skips some PRs to ${branch} through its \`${event}\` ${named} filter${filters.length > 1 ? 's' : ''}, so those PRs could never merge`,
+  ]
+}
 
 function checkWorkflow(path: string, workflow: Workflow, repo: string, branch: string): CallerCheck | undefined {
   const jobs = Object.values(workflow.jobs ?? {}).filter((job) => job && callsReview(job.uses, repo))
   if (jobs.length === 0) return undefined
   const problems: string[] = []
-  if (!runsOnSynchronize(workflow.on)) problems.push('lacks the `synchronize` type in its `pull_request` trigger')
-  if (!jobs.some((job) => canReadActions(job?.permissions ?? workflow.permissions)))
-    problems.push('lacks `actions: read` in its permissions')
-  const filters = skipFilters(workflow.on, branch)
-  if (filters.length > 0)
+  if (!runsOn(workflow.on, 'pull_request', 'synchronize', true)) problems.push('lacks the `synchronize` type in its `pull_request` trigger')
+  if (!runsOn(workflow.on, 'pull_request_target', 'labeled', false))
+    problems.push('lacks a `pull_request_target` trigger with the `labeled` type, so fork PRs can never pass the gate')
+  else if (!runsOn(workflow.on, 'pull_request_target', 'synchronize', true))
     problems.push(
-      `skips some PRs to ${branch} through its \`pull_request\` ${filters.map((filter) => `\`${filter}\``).join(', ')} filter${filters.length > 1 ? 's' : ''}, so those PRs could never merge`,
+      "lacks the `synchronize` type in its `pull_request_target` trigger, so a push to an approved fork PR keeps the `review` label and a maintainer can't re-approve it",
     )
+  const missing = writeScopes.filter((scope) => !jobs.some((job) => canWrite(job?.permissions ?? workflow.permissions, scope)))
+  if (missing.length > 0) problems.push(`lacks ${missing.map((scope) => `\`${scope}: write\``).join(' and ')} in its permissions`)
+  problems.push(...filterProblem(workflow.on, 'pull_request', branch), ...filterProblem(workflow.on, 'pull_request_target', branch))
   return { path, problems }
 }
 

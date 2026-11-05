@@ -11,7 +11,7 @@ import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFailure, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { reviewRunDir, saveReview } from './review'
+import { assertHead, reviewRunDir, saveReview } from './review'
 import { type ReviewContext, ReviewFailure, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
@@ -85,6 +85,11 @@ describe('runReview', () => {
     expect(output.startsWith(`${reviewersLine}\n\n`)).toBe(true)
     expect(output).toContain('[major] src/a.ts:3 — Crash')
     expect(parsed?.findings.map((f) => f.title)).toEqual(['Crash'])
+  })
+
+  it('marks every harness run untrusted when reviewing an approved head', async () => {
+    await runReview('request', { ...context(), untrusted: true })
+    expect(runs.map((r) => r.untrusted)).toEqual([true, true, true])
   })
 
   it('returns the token usage each slot that ran reported, leaving cached slots out', async () => {
@@ -404,6 +409,29 @@ describe('reviewRunDir', () => {
 
   it('defaults to ~/.cache', () => {
     expect(reviewRunDir(pr, {}, '/home/me')).toBe(join('/home/me', '.cache', 'yoke', 'reviews', 'o', 'r', '4-b-abc'))
+  })
+})
+
+describe('assertHead', () => {
+  const pr: PullRequest = {
+    number: 4,
+    url: 'https://github.com/o/r/pull/4',
+    title: 't',
+    baseRefName: 'main',
+    baseRefOid: 'b',
+    headRefName: 'f',
+    headRefOid: 'abcdef123',
+    files: [],
+  }
+
+  it.each([undefined, '', 'abcdef123'])('accepts the PR when the expected head is %j', (head) => {
+    expect(() => assertHead(pr, head)).not.toThrow()
+  })
+
+  it('refuses a PR whose head moved past the approved commit', () => {
+    expect(() => assertHead(pr, '1234567aa')).toThrow(
+      new ReviewError('#4 moved from 1234567 to abcdef1, so its new commits were not approved; not reviewing it'),
+    )
   })
 })
 

@@ -27,6 +27,15 @@ describe('harnessArgs', () => {
       'sonnet',
     ])
   })
+
+  it("keeps claude from loading an untrusted checkout's settings, hooks and MCP servers", () => {
+    expect(harnessArgs({ ...run, harness: 'claude', untrusted: true }).slice(0, 4)).toEqual([
+      '-p',
+      '--setting-sources',
+      'user',
+      '--strict-mcp-config',
+    ])
+  })
 })
 
 describe('windowsQuote', () => {

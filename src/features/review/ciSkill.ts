@@ -13,13 +13,13 @@ Read \`.github/workflows/\`, recent review runs (\`gh run list\`, \`gh run view 
 
 A workflow is an LLM review if it has a model review PRs, whatever tool it uses.
 
-- **None:** run \`yoke review-ci $ARGUMENTS\`.
-- **One, not yoke's:** run \`yoke review-ci $ARGUMENTS --print\` with its provider and models, then edit that file in place to run yoke's review. Keep its name, triggers, provider, models, base URL, variable and secret names.
+- **None:** run \`yoke review ci $ARGUMENTS\`.
+- **One, not yoke's:** run \`yoke review ci $ARGUMENTS --print\` with its provider and models, then edit that file in place to run yoke's review. Keep its name, triggers, provider, models, base URL, variable and secret names.
 - **Already yoke's** (calls MakerXStudio/yoke's \`review.yml\`, or \`./.github/workflows/review.yml\` in yoke itself): compare with \`--print\` and add only what is missing.
 
 Never ask whether to overwrite a workflow. If \`review-pr.yml\` exists and differs, edit it in place.
 
-The \`review / gate\` merge gate needs the \`synchronize\` trigger and \`actions: read\` permission from \`--print\`; add them to an edited workflow if missing.
+The \`review / gate\` merge gate needs the \`synchronize\` trigger, the \`pull_request_target\` \`labeled\` and \`synchronize\` triggers, and the \`actions: write\` and \`statuses: write\` permissions from \`--print\`; add them to an edited workflow if missing.
 
 If no workflow or setting names the models, ask which model each reviewer runs. For LiteLLM, offer \`yoke models\`. For Foundry, ask for deployment names.
 

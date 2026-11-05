@@ -57,14 +57,18 @@ on:
 
 jobs:
   review:
-    if: github.event.action != 'synchronize' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.type != 'Bot' && !github.event.pull_request.draft
+    if: >-
+      github.event.action != 'synchronize' && github.event.pull_request.user.type != 'Bot' && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) ||
+        (github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'review' && github.event.pull_request.head.repo.full_name != github.repository)
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           path: pr
           fetch-depth: 0
           persist-credentials: false
@@ -88,6 +92,12 @@ jobs:
           npm ci
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: Mark the approved review as running, unless the label came from a user without write access
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: yoke review-gate pending
+
       - name: Allow unprivileged user namespaces for the Codex sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
@@ -96,6 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          APPROVED_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
           YOKE_LITELLM_BASE_URL: ${{ inputs.provider == 'litellm' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
           YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}
           YOKE_FOUNDRY_BASE_URL: ${{ inputs.provider == 'foundry' && (inputs.base-url || secrets.REVIEW_CI_BASE_URL) || '' }}
@@ -113,11 +124,11 @@ jobs:
           YOKE_REVIEW_SYNTHESIS_MODEL: ${{ inputs.synthesis-model || (!inputs.synthesis-harness && inputs.reviewer1-model) || '' }}
         run: |
           gh auth setup-git
-          yoke review "$PR_NUMBER" --post --verbose
+          yoke review "$PR_NUMBER" --post --verbose ${APPROVED_HEAD:+--head "$APPROVED_HEAD"}
 
   gate:
     needs: review
-    if: always()
+    if: always() && (github.event_name == 'pull_request' || needs.review.result != 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -140,8 +151,40 @@ jobs:
           npm ci --omit=optional
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: Require the latest review to have succeeded
+      - name: Require the latest review, or a fork's approved review, to have succeeded
         env:
           GH_TOKEN: ${{ github.token }}
           REVIEW_RESULT: ${{ needs.review.result }}
         run: yoke review-gate "$REVIEW_RESULT"
+
+  unapprove:
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.action == 'synchronize' &&
+      github.event.pull_request.head.repo.full_name != github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out yoke's locked review tools
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke
+          sparse-checkout: ci/review-tools
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install yoke from the lockfile, skipping the reviewers' platform binaries
+        working-directory: yoke/ci/review-tools
+        run: |
+          npm ci --omit=optional
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Remove the review label so a maintainer reads the new commits before they are reviewed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: yoke review-unapprove

@@ -8,19 +8,6 @@ import { listSettings, resolveSettings, settingKeys } from './features/config/se
 import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
 import { PrValidationError, raisePr } from './features/pr/raise'
-import {
-  callerWorkflow,
-  callerWorkflowPath,
-  type EntraFlags,
-  gateCheck,
-  githubRepo,
-  renderCallerWorkflow,
-  repoRoot,
-  reviewCiReport,
-  writeCallerWorkflow,
-} from './features/review/ci'
-import { enforceReviewGate } from './features/review/ciGate'
-import { runReviewGate } from './features/review/gate'
 import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
@@ -29,10 +16,11 @@ import { skillsRoot, syncSkills } from './features/sync/sync'
 import { detectInstall, installDir } from './features/update/install'
 import { syncTargets } from './features/update/targets'
 import { updateYoke } from './features/update/update'
+import { addLockedWorkflowAliases, addReviewCiCommands } from './reviewCiCommands'
 
 const { version } = packageJson
 
-const program = new Command('yoke').description('Lean Claude Code skills and the CLI they call.').version(version)
+const program = new Command('yoke').description('Lean Claude Code skills and the CLI they call.').version(version).enablePositionalOptions()
 
 program
   .command('sync')
@@ -83,92 +71,41 @@ pr.command('raise')
 
 const providerKeys = settingKeys.filter((key) => !key.startsWith('review.'))
 
-addSettingOptions(
+const review = addSettingOptions(
   program
     .command('review')
     .description("Review the current branch's PR, or PR <number>, with Claude and Codex in parallel, then combine their findings")
     .argument('[number]', 'PR number; reviewed without checking it out')
     .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one')
     .option('--force', "discard this PR head's cached reviews and run every pass again")
-    .option('--verbose', "print every step and each reviewer's tool calls as log lines instead of live spinners"),
+    .option('--verbose', "print every step and each reviewer's tool calls as log lines instead of live spinners")
+    .option('--head <sha>', "refuse to review unless the PR's head is this commit; empty skips the check"),
   settingKeys,
 )
   .addHelpText('after', settingsHelp)
-  .action(async (number: string | undefined, options: { post?: boolean; force?: boolean; verbose?: boolean } & Record<string, unknown>) => {
-    const verbose = options.verbose ?? false
-    const ui = process.stderr.isTTY && !verbose ? spinnerUi(process.stderr) : lineUi(console.error, { activity: verbose })
-    try {
-      const settings = resolveSettings(flagSettings(options, settingKeys), process.env, readUserConfig(userConfigPath()))
-      const run = { post: options.post ?? false, force: options.force ?? false }
-      await reviewPr(number, settings, run, { out: console.log, ui })
-    } catch (error) {
-      if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
-      console.error(error.message)
-      process.exitCode = 1
-    } finally {
-      ui.stop()
-    }
-  })
+  .action(
+    async (
+      number: string | undefined,
+      options: { post?: boolean; force?: boolean; verbose?: boolean; head?: string } & Record<string, unknown>,
+    ) => {
+      const verbose = options.verbose ?? false
+      const ui = process.stderr.isTTY && !verbose ? spinnerUi(process.stderr) : lineUi(console.error, { activity: verbose })
+      try {
+        const settings = resolveSettings(flagSettings(options, settingKeys), process.env, readUserConfig(userConfigPath()))
+        const run = { post: options.post ?? false, force: options.force ?? false, head: options.head }
+        await reviewPr(number, settings, run, { out: console.log, ui })
+      } catch (error) {
+        if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
+        console.error(error.message)
+        process.exitCode = 1
+      } finally {
+        ui.stop()
+      }
+    },
+  )
 
-const ciKeys = settingKeys.filter((key) => /^review\.\w+\.(harness|model)$/.test(key))
-
-addSettingOptions(
-  program
-    .command('review-ci')
-    .description(
-      `Write ${callerWorkflowPath} so each PR in this repo is reviewed in CI, then print the secrets, or Entra federated credential, it needs`,
-    )
-    .option('--provider <provider>', 'litellm or foundry; every slot uses it in CI. Default: review.reviewer1.provider, else litellm')
-    .option(
-      '--azure-client-id <id>',
-      'Entra app (client) ID to sign in to Foundry with GitHub OIDC instead of an API key; needs --provider foundry',
-    )
-    .option('--azure-tenant-id <id>', 'Entra tenant ID of that app')
-    .option('--environment <name>', "GitHub environment the review job runs in, matching the app's federated credential subject")
-    .option('--print', `print the workflow and setup commands without writing ${callerWorkflowPath}`),
-  ciKeys,
-)
-  .addHelpText('after', settingsHelp)
-  .action((options: { provider?: string; print?: boolean } & EntraFlags & Record<string, unknown>) => {
-    try {
-      const settings = resolveSettings(flagSettings(options, ciKeys), process.env, readUserConfig(userConfigPath()))
-      const workflow = callerWorkflow(settings, options.provider, options)
-      const root = repoRoot()
-      const outcome = options.print ? 'printed' : writeCallerWorkflow(root, renderCallerWorkflow(workflow))
-      console.log(reviewCiReport(outcome, settings, workflow, () => githubRepo(root)))
-    } catch (error) {
-      if (!(error instanceof ReviewError || error instanceof ConfigError)) throw error
-      console.error(error.message)
-      process.exitCode = 1
-    }
-  })
-
-program
-  .command('review-ci-gate')
-  .description(`Require the ${gateCheck} check on the default branch with a ruleset, once the CI review workflow is merged`)
-  .action(async () => {
-    try {
-      console.log((await enforceReviewGate()).message)
-    } catch (error) {
-      if (!(error instanceof ReviewError)) throw error
-      console.error(error.message)
-      process.exitCode = 1
-    }
-  })
-
-program
-  .command('review-gate')
-  .description("Block merging until the latest review that ran for the PR succeeds; fork and bot PRs pass. Used by review.yml's gate job")
-  .argument('<result>', 'result of the review job on this event: success, failure, cancelled or skipped')
-  .action(async (result: string) => {
-    try {
-      if (!(await runReviewGate(result, console.log))) process.exitCode = 1
-    } catch (error) {
-      if (!(error instanceof ReviewError)) throw error
-      console.error(error.message)
-      process.exitCode = 1
-    }
-  })
+addReviewCiCommands(review)
+addLockedWorkflowAliases(program)
 
 addSettingOptions(
   program.command('models').description('List the models each configured provider serves, for review.*.provider and review.*.model'),

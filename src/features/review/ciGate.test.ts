@@ -15,10 +15,13 @@ const callerYaml = `name: Review PR
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [labeled, synchronize]
 permissions:
-  actions: read
+  actions: write
   contents: read
   pull-requests: write
+  statuses: write
 jobs:
   review:
     uses: MakerXStudio/yoke/.github/workflows/review.yml@main
@@ -124,7 +127,7 @@ describe('enforceReviewGate', () => {
   it.each([403, 404])('names the fix when GitHub refuses to create the ruleset with HTTP %i', async (status) => {
     const api = fakeApi({ postStatus: status })
     await expect(enforceReviewGate(api)).rejects.toThrow(
-      'GitHub refused to add the "yoke review" ruleset to o/r: your gh user can\'t edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run `yoke review-ci-gate`.',
+      'GitHub refused to add the "yoke review" ruleset to o/r: your gh user can\'t edit its repository rules. Ask a repo admin, or someone whose role can edit repository rules, to run `yoke review ci-gate`.',
     )
   })
 
@@ -158,10 +161,17 @@ describe('enforceReviewGate', () => {
     )
   })
 
-  it('creates nothing when the caller lacks actions: read', async () => {
+  it('creates nothing when the caller lacks actions: write', async () => {
     await expectRefused(
-      fakeApi({ workflows: { 'review-pr.yml': callerYaml.replace('  actions: read\n', '') } }),
-      'lacks `actions: read` in its permissions. Fix it and merge the change to main.',
+      fakeApi({ workflows: { 'review-pr.yml': callerYaml.replace('  actions: write\n', '  actions: read\n') } }),
+      'lacks `actions: write` in its permissions. Fix it and merge the change to main.',
+    )
+  })
+
+  it('creates nothing when the caller lacks the labeled trigger', async () => {
+    await expectRefused(
+      fakeApi({ workflows: { 'review-pr.yml': callerYaml.replace('  pull_request_target:\n    types: [labeled, synchronize]\n', '') } }),
+      "calls yoke's review.yml but lacks a `pull_request_target` trigger with the `labeled` type, so fork PRs can never pass the gate.",
     )
   })
 
