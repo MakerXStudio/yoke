@@ -76,17 +76,18 @@ export async function handOffApprovedReview(reviewResult: string, context: GateC
   const { action, label } = context.event
   if (action !== 'labeled' || label?.name !== reviewLabel || reviewResult === 'skipped')
     return { pass: true, message: 'No approved review ran on this event.' }
+  const rejection = await approverRejection(context, deps.get)
   const newer = await newerApprovalRun(context, deps)
+  if (rejection) {
+    if (newer) return { pass: false, message: `The review ${rejection}. A newer approved review, in ${newer}, owns the result.` }
+    await postApproval({ state: 'failure', description: rejection }, context, deps)
+    return { pass: false, message: `The review ${rejection}. ${await rerunHeadGate(context, deps)}` }
+  }
   if (newer)
     return {
       pass: reviewResult === pendingResult || reviewResult === 'success',
       message: `A newer approved review, in ${newer}, owns the result for ${context.event.pull_request.head.sha.slice(0, 7)}, so this run's ${reviewResult} is not recorded.`,
     }
-  const rejection = await approverRejection(context, deps.get)
-  if (rejection) {
-    await postApproval({ state: 'failure', description: rejection }, context, deps)
-    return { pass: false, message: `The review ${rejection}. ${await rerunHeadGate(context, deps)}` }
-  }
   await postApproval(approvalState(reviewResult), context, deps)
   const rerun = await rerunHeadGate(context, deps)
   if (reviewResult === pendingResult) return { pass: true, message: `Marked the review a maintainer approved as running. ${rerun}` }

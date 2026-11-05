@@ -165,6 +165,17 @@ describe('handOffApprovedReview', () => {
     },
   )
 
+  it('fails a pending review from a user without write access even when a newer approved review owns the status', async () => {
+    const triage = { permission: 'read', role_name: 'triage' }
+    const deps = fakeDeps([{ id: 2, run_number: 4, status: 'completed' }], [], undefined, owner(950), { 950: 11 }, triage)
+    expect(await handOffApprovedReview('pending', context(), deps)).toEqual({
+      pass: false,
+      message:
+        'The review was not run: alice added the label with triage access; approving needs write, maintain or admin. A newer approved review, in https://github.com/o/r/actions/runs/950, owns the result.',
+    })
+    expect(deps.post).not.toHaveBeenCalled()
+  })
+
   it('waits for the pull_request run to finish before re-running its gate', async () => {
     const deps = fakeDeps([{ id: 2, run_number: 4, status: 'in_progress' }], ['in_progress', 'completed'])
     await handOffApprovedReview('success', context(), deps)
