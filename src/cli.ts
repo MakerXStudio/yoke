@@ -16,7 +16,7 @@ import { skillsRoot, syncSkills } from './features/sync/sync'
 import { detectInstall, installDir } from './features/update/install'
 import { syncTargets } from './features/update/targets'
 import { updateYoke } from './features/update/update'
-import { addReviewCiCommands } from './reviewCiCommands'
+import { addLockedWorkflowAliases, addReviewCiCommands } from './reviewCiCommands'
 
 const { version } = packageJson
 
@@ -105,6 +105,7 @@ const review = addSettingOptions(
   )
 
 addReviewCiCommands(review)
+addLockedWorkflowAliases(program)
 
 addSettingOptions(
   program.command('models').description('List the models each configured provider serves, for review.*.provider and review.*.model'),

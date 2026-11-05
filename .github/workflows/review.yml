@@ -96,7 +96,7 @@ jobs:
         if: github.event_name == 'pull_request_target'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: yoke review gate pending
+        run: yoke review-gate pending
 
       - name: Allow unprivileged user namespaces for the Codex sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -155,7 +155,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REVIEW_RESULT: ${{ needs.review.result }}
-        run: yoke review gate "$REVIEW_RESULT"
+        run: yoke review-gate "$REVIEW_RESULT"
 
   unapprove:
     if: >-
@@ -187,4 +187,4 @@ jobs:
       - name: Remove the review label so a maintainer reads the new commits before they are reviewed
         env:
           GH_TOKEN: ${{ github.token }}
-        run: yoke review unapprove
+        run: yoke review-unapprove

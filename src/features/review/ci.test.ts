@@ -288,7 +288,7 @@ describe('gate', () => {
       "github.event_name == 'pull_request_target' && github.event.action == 'synchronize' && github.event.pull_request.head.repo.full_name != github.repository && contains(github.event.pull_request.labels.*.name, 'review')",
     )
     expect(unapprove?.needs).toBeUndefined()
-    expect(reusableSource).toContain('run: yoke review unapprove')
+    expect(reusableSource).toContain('run: yoke review-unapprove')
   })
 
   it('reviews only the approved head on pull_request_target', () => {
@@ -300,7 +300,7 @@ describe('gate', () => {
 
   it('marks an approved review as running before it starts', () => {
     const steps = reusable.jobs.review?.steps ?? []
-    const pending = steps.findIndex((step) => step.run?.includes('review gate pending'))
+    const pending = steps.findIndex((step) => step.run?.includes('review-gate pending'))
     expect(steps[pending]?.if).toBe("github.event_name == 'pull_request_target'")
     expect(pending).toBeLessThan(steps.findIndex((step) => step.name === 'Review PR'))
   })

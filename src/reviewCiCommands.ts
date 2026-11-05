@@ -27,6 +27,25 @@ function fail(error: unknown, ...expected: (typeof ReviewError | typeof ConfigEr
   process.exitCode = 1
 }
 
+const resultHelp =
+  'result of the review job on this event: success, failure, cancelled or skipped; pending marks an approved review as running'
+
+async function gate(result: string): Promise<void> {
+  try {
+    if (!(await runReviewGate(result, console.log))) process.exitCode = 1
+  } catch (error) {
+    fail(error, ReviewError)
+  }
+}
+
+async function unapprove(): Promise<void> {
+  try {
+    await runUnapproveReview(console.log)
+  } catch (error) {
+    fail(error, ReviewError)
+  }
+}
+
 export function addReviewCiCommands(review: Command): void {
   addSettingOptions(
     review
@@ -73,28 +92,18 @@ export function addReviewCiCommands(review: Command): void {
     .description(
       "Block merging until the latest review that ran for the PR succeeds, or for a fork PR, a review approved by a user with write access adding the `review` label; bot PRs pass. On pull_request_target, records the approved review on the PR head and re-runs its gate. Used by review.yml's review and gate jobs",
     )
-    .argument(
-      '<result>',
-      'result of the review job on this event: success, failure, cancelled or skipped; pending marks an approved review as running',
-    )
-    .action(async (result: string) => {
-      try {
-        if (!(await runReviewGate(result, console.log))) process.exitCode = 1
-      } catch (error) {
-        fail(error, ReviewError)
-      }
-    })
+    .argument('<result>', resultHelp)
+    .action(gate)
 
   review
     .command('unapprove')
     .description(
       "Remove the `review` label from a fork PR after a push, so a maintainer reads the new commits before they are reviewed. Used by review.yml's unapprove job on pull_request_target",
     )
-    .action(async () => {
-      try {
-        await runUnapproveReview(console.log)
-      } catch (error) {
-        fail(error, ReviewError)
-      }
-    })
+    .action(unapprove)
+}
+
+export function addLockedWorkflowAliases(program: Command): void {
+  program.command('review-gate', { hidden: true }).argument('<result>', resultHelp).action(gate)
+  program.command('review-unapprove', { hidden: true }).action(unapprove)
 }
