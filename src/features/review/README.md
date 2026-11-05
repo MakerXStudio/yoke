@@ -87,6 +87,8 @@ CI installs yoke, Claude Code and Codex with `npm ci` from `ci/review-tools/pack
 
 Each release pushes a `chore:` bump of the locked yoke to `main` as the `yoke-release` GitHub App, which bypasses the `main` ruleset. Its client ID and private key live in the `release` environment, which only `main` can use. Dependabot bumps Claude Code and Codex weekly.
 
+yoke's own PRs run their branch's `review.yml` with the locked yoke, so a branch that makes `review.yml` call a new yoke command or flag fails its review until that yoke is released.
+
 ### Merge gate
 
 The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for forks and bots, which never get one. It runs on every push.
