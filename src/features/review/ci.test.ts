@@ -246,8 +246,12 @@ describe('review tools lockfile', () => {
     expect(pushTag).toBeLessThan(release.indexOf('git pull --rebase'))
   })
 
-  it('has CI callers pin the review-vN tag of the yoke that wrote them', () => {
-    expect(reviewWorkflowRef).toBe(`MakerXStudio/yoke/.github/workflows/review.yml@review-v${packageJson.version}`)
+  it('has CI callers pin the review-vN tag that the release of the yoke writing them creates', () => {
+    const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
+    const [, version] = /^MakerXStudio\/yoke\/\.github\/workflows\/review\.yml@review-v(\d+\.\d+\.\d+)$/.exec(reviewWorkflowRef) ?? []
+    expect(version).toBe(packageJson.version)
+    expect(release).toContain("git tag --list 'v*'")
+    expect(release).toContain('git tag "review-$TAG"')
   })
 
   it('exposes the ruleset-bypassing App token only to the step that pushes the lock', () => {
