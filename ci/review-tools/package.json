@@ -4,7 +4,7 @@
   "description": "Tools the CI review installs with npm ci, so every package is checked against this lockfile",
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.316",
-    "@makerx/yoke": "0.17.0",
+    "@makerx/yoke": "0.17.1",
     "@openai/codex": "0.166.0"
   }
 }
