@@ -241,6 +241,7 @@ describe('review tools lockfile', () => {
     const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
     const tag = release.indexOf('git tag "review-$TAG"')
     const pushTag = release.indexOf('"refs/tags/review-$TAG"')
+    expect(release.indexOf('git checkout -B lock "$TAG"')).toBeLessThan(release.indexOf('npm install --package-lock-only'))
     expect(release.indexOf('git commit -m')).toBeLessThan(tag)
     expect(tag).toBeLessThan(pushTag)
     expect(pushTag).toBeLessThan(release.indexOf('git pull --rebase'))
