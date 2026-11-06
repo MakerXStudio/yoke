@@ -20,7 +20,9 @@ const callerDiff = `diff --git a/.github/workflows/review-ci.yml b/.github/workf
 
 describe('selfReviewNote', () => {
   it('tells the reviewer an OIDC caller needs no API key secret, as the reusable workflow ignores it there', () => {
-    expect(selfReviewNote(callerDiff)).toContain('Not passing `REVIEW_CI_API_KEY` from a caller that passes `azure-client-id`')
+    expect(selfReviewNote(callerDiff)).toContain(
+      'Not passing `REVIEW_CI_API_KEY` from a caller that passes `azure-client-id` and `provider: foundry`',
+    )
     expect(reviewYml).toContain(
       "YOKE_FOUNDRY_API_KEY: ${{ inputs.provider == 'foundry' && inputs.azure-client-id == '' && secrets.REVIEW_CI_API_KEY || '' }}",
     )
