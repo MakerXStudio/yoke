@@ -18,7 +18,7 @@ This change adds or edits a workflow that calls \`MakerXStudio/yoke/.github/work
 - The \`pull_request_target\` \`labeled\` trigger: a maintainer reads a fork PR's diff, then adds the \`review\` label to run its review with secrets. The reusable workflow runs the review on it only for that label on fork PRs, and refuses to review any commit pushed after the label. Its \`synchronize\` type removes the label when the fork pushes again.
 - The \`actions: write\` and \`statuses: write\` permissions (or \`actions: read\` in older callers): the gate reads earlier runs to find the PR's latest review, records a fork's approved review as a commit status, and re-runs the PR head's gate.
 - Draft PRs being reviewed twice: the reusable workflow already skips drafts.
-- No \`secrets:\` block in a caller that passes \`azure-client-id\`, or dropping a \`REVIEW_CI_API_KEY\` an older workflow passed: \`azure-client-id\` is for Foundry, where the review signs in with the job's GitHub OIDC token and ignores \`REVIEW_CI_API_KEY\`.
+- Not passing \`REVIEW_CI_API_KEY\` from a caller that passes \`azure-client-id\`, even when an older workflow passed it: \`azure-client-id\` is for Foundry, where the review signs in with the job's GitHub OIDC token and ignores \`REVIEW_CI_API_KEY\`.
 
 Real defects in it are still findings, such as:
 
