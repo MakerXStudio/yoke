@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 import { z } from 'zod'
 
+import packageJson from '../../../package.json' with { type: 'json' }
 import type { Settings } from '../config/settings'
 import {
   callerTargetTypes,
@@ -234,6 +235,24 @@ describe('review tools lockfile', () => {
     expect(release).toContain('working-directory: ci/review-tools')
     expect(release).toContain('npm install --package-lock-only --save-exact "@makerx/yoke@$version"')
     expect(release).toMatch(/git commit -m "chore: /)
+  })
+
+  it('tags the lock commit review-vN before rebasing it onto main, so the tag runs the yoke it names', () => {
+    const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
+    const tag = release.indexOf('git tag "review-$TAG"')
+    const pushTag = release.indexOf('"refs/tags/review-$TAG"')
+    expect(release.indexOf('git checkout -B lock "$TAG"')).toBeLessThan(release.indexOf('npm install --package-lock-only'))
+    expect(release.indexOf('git commit -m')).toBeLessThan(tag)
+    expect(tag).toBeLessThan(pushTag)
+    expect(pushTag).toBeLessThan(release.indexOf('git pull --rebase'))
+  })
+
+  it('has CI callers pin the review-vN tag that the release of the yoke writing them creates', () => {
+    const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
+    const [, version] = /^MakerXStudio\/yoke\/\.github\/workflows\/review\.yml@review-v(\d+\.\d+\.\d+)$/.exec(reviewWorkflowRef) ?? []
+    expect(version).toBe(packageJson.version)
+    expect(release).toContain("git tag --list 'v*'")
+    expect(release).toContain('git tag "review-$TAG"')
   })
 
   it('exposes the ruleset-bypassing App token only to the step that pushes the lock', () => {

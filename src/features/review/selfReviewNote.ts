@@ -12,7 +12,7 @@ export function selfReviewNote(diff: string): string {
 
 This change adds or edits a workflow that calls \`MakerXStudio/yoke/.github/workflows/review.yml\`, the CI setup for this review. Review it like any other file, but these are yoke's deliberate design: do not raise them as findings, keep them in a consolidated review, or mention them in a summary.
 
-- Calling the workflow at \`@main\` rather than a tag or SHA.
+- Calling the workflow at a \`review-vN\` tag rather than a SHA, or at \`@main\` in older callers.
 - The trigger types, including \`synchronize\`: pushes run only the \`review / gate\` job, and a review is re-run by marking the PR as draft and then ready for review.
 - No \`concurrency:\` block, with or without \`synchronize\`: the reusable workflow's \`review\` job skips \`synchronize\` events, so pushes and force-pushes start only gate jobs and don't overlap full reviews.
 - The \`pull_request_target\` \`labeled\` trigger: a maintainer reads a fork PR's diff, then adds the \`review\` label to run its review with secrets. The reusable workflow runs the review on it only for that label on fork PRs, and refuses to review any commit pushed after the label. Its \`synchronize\` type removes the label when the fork pushes again.

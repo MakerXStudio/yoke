@@ -2,13 +2,14 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import packageJson from '../../../package.json' with { type: 'json' }
 import { howToSet, type SettingKey, type Settings } from '../config/settings'
 import { type EntraAuth, entraSetup } from './ciEntra'
 import { ReviewError } from './pr'
 import { isHarness, isProviderKind, type ProviderKind, providerKinds } from './provider'
 import { shellQuote } from './shellQuote'
 
-export const reviewWorkflowRef = 'MakerXStudio/yoke/.github/workflows/review.yml@main'
+export const reviewWorkflowRef = `MakerXStudio/yoke/.github/workflows/review.yml@review-v${packageJson.version}`
 
 export const callerWorkflowPath = join('.github', 'workflows', 'review-pr.yml')
 

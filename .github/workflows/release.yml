@@ -51,10 +51,16 @@ jobs:
 
       - name: Find new tag
         id: release
-        run: echo "tag=$(git tag --list 'v*' | grep -vxFf "$RUNNER_TEMP/tags-before" | head -n1 || true)" >> "$GITHUB_OUTPUT"
+        run: |
+          tag=$(git tag --list 'v*' | grep -vxFf "$RUNNER_TEMP/tags-before" | head -n1 || true)
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          lock=$tag
+          if [ -z "$lock" ] && [ -n "$latest" ] && ! git rev-parse -q --verify "refs/tags/review-$latest" > /dev/null; then lock=$latest; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "lock=$lock" >> "$GITHUB_OUTPUT"
 
       - name: Get release app token
-        if: steps.release.outputs.tag != ''
+        if: steps.release.outputs.lock != ''
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -62,13 +68,14 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       - name: Lock released yoke for CI review
-        if: steps.release.outputs.tag != ''
+        if: steps.release.outputs.lock != ''
         working-directory: ci/review-tools
         env:
-          TAG: ${{ steps.release.outputs.tag }}
+          TAG: ${{ steps.release.outputs.lock }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           version=${TAG#v}
+          git checkout -B lock "$TAG"
           for _ in $(seq 1 30); do
             [ "$(npm view "@makerx/yoke@$version" version 2>/dev/null)" = "$version" ] && break
             sleep 10
@@ -77,6 +84,8 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m "chore: lock yoke $version for the CI review" -- package.json package-lock.json
+          git tag "review-$TAG"
+          git -c http.https://github.com/.extraheader= push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}" "refs/tags/review-$TAG"
           git pull --rebase --autostash origin main
           git -c http.https://github.com/.extraheader= push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}" HEAD:main
 
