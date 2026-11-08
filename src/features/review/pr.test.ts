@@ -75,7 +75,7 @@ function fakeDiff(current: PullRequest, fetch: Run = async () => '') {
   return vi.fn<Run>(async (command, args, cwd, input) => {
     if (command === 'gh') return JSON.stringify(current)
     if (args[0] === 'fetch') return fetch(command, args, cwd, input)
-    if (args[0] === 'diff') return 'the diff'
+    if (args.includes('diff')) return 'the diff'
     return git(command, args, cwd, input)
   })
 }
@@ -91,8 +91,9 @@ describe('fetchDiff', () => {
     const exec = fakeDiff(pr)
     await fetchDiff(pr, exec)
     expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'upstream', 'pull/9/head', 'base'], '/repo')
-    const diff = exec.mock.calls.find(([, args]) => args[0] === 'diff')
+    const diff = exec.mock.calls.find(([, args]) => args.includes('diff'))
     expect(diff?.[1].at(-1)).toBe('base...head')
+    expect(diff?.[1].slice(0, 3)).toEqual(['-c', 'diff.suppressBlankEmpty=false', 'diff'])
     expect(diff?.[1]).toEqual(
       expect.arrayContaining(['--no-color', '--no-ext-diff', '--no-textconv', '--submodule=short', '--find-renames', '--dst-prefix=b/']),
     )
@@ -110,7 +111,7 @@ describe('fetchDiff', () => {
       throw new ReviewError('`git fetch` failed')
     })
     await expect(fetchDiff(pr, exec)).rejects.toThrow('`git fetch` failed')
-    expect(exec.mock.calls.some(([, args]) => args[0] === 'diff')).toBe(false)
+    expect(exec.mock.calls.some(([, args]) => args.includes('diff'))).toBe(false)
   })
 
   it('rejects when the PR head moved while the diff was fetched', async () => {

@@ -41,6 +41,8 @@ export async function fetchPr(number: string | undefined, exec: Run = run): Prom
 }
 
 const diffArgsIgnoringGitConfig = [
+  '-c',
+  'diff.suppressBlankEmpty=false',
   'diff',
   '--no-color',
   '--no-ext-diff',
