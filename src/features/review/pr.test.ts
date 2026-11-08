@@ -114,6 +114,16 @@ describe('fetchDiff', () => {
     expect(exec.mock.calls.some(([, args]) => args.includes('diff'))).toBe(false)
   })
 
+  it('rejects with a clear error when a shallow checkout has no merge base', async () => {
+    const diff = fakeDiff(pr)
+    const exec = vi.fn<Run>(async (command, args, cwd, input) => {
+      if (args[0] === 'merge-base') throw new ReviewError('`git merge-base` failed')
+      return diff(command, args, cwd, input)
+    })
+    await expect(fetchDiff(pr, exec)).rejects.toThrow(/no merge base.*shallow clone/)
+    expect(exec.mock.calls.some(([, args]) => args.includes('diff'))).toBe(false)
+  })
+
   it('rejects when the PR head moved while the diff was fetched', async () => {
     await expect(fetchDiff(pr, fakeDiff({ ...pr, headRefOid: 'newer' }))).rejects.toThrow(changed)
   })

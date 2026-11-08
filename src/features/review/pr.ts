@@ -56,12 +56,23 @@ const diffArgsIgnoringGitConfig = [
   '--dst-prefix=b/',
 ]
 
+async function requireMergeBase(pr: PullRequest, root: string, exec: Run): Promise<void> {
+  try {
+    await exec('git', ['merge-base', pr.baseRefOid, pr.headRefOid], root)
+  } catch {
+    throw new ReviewError(
+      `#${pr.number} has no merge base in this checkout, which is likely a shallow clone; fetch full history (e.g. \`git fetch --unshallow\` or \`fetch-depth: 0\`) and run the review again`,
+    )
+  }
+}
+
 export async function fetchDiff(pr: PullRequest, exec: Run = run): Promise<string> {
   const root = (await exec('git', ['rev-parse', '--show-toplevel'])).trim()
   await exec('git', ['fetch', '--quiet', await prRemote(pr, root, exec), `pull/${pr.number}/head`, pr.baseRefOid], root)
   const current = await fetchPr(String(pr.number), exec)
   if (current.headRefOid !== pr.headRefOid || current.baseRefOid !== pr.baseRefOid)
     throw new ReviewError(`#${pr.number} changed while its diff was being fetched; run the review again`)
+  await requireMergeBase(pr, root, exec)
   return exec('git', [...diffArgsIgnoringGitConfig, `${pr.baseRefOid}...${pr.headRefOid}`], root)
 }
 
