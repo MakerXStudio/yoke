@@ -93,7 +93,9 @@ describe('fetchDiff', () => {
     expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'upstream', 'pull/9/head', 'base'], '/repo')
     const diff = exec.mock.calls.find(([, args]) => args[0] === 'diff')
     expect(diff?.[1].at(-1)).toBe('base...head')
-    expect(diff?.[1]).toEqual(expect.arrayContaining(['--no-color', '--no-ext-diff', '--find-renames', '--dst-prefix=b/']))
+    expect(diff?.[1]).toEqual(
+      expect.arrayContaining(['--no-color', '--no-ext-diff', '--no-textconv', '--submodule=short', '--find-renames', '--dst-prefix=b/']),
+    )
     expect(diff?.[2]).toBe('/repo')
   })
 

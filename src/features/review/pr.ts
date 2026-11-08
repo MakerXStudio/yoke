@@ -44,6 +44,8 @@ const diffArgsIgnoringGitConfig = [
   'diff',
   '--no-color',
   '--no-ext-diff',
+  '--no-textconv',
+  '--submodule=short',
   '--no-relative',
   '--find-renames',
   '--unified=3',
