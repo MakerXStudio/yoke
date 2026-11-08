@@ -70,21 +70,66 @@ describe('fetchPr', () => {
   })
 })
 
-function fakeGh(current: PullRequest) {
-  return vi.fn<Run>(async (_, args) => (args[1] === 'diff' ? 'the diff' : JSON.stringify(current)))
+function fakeDiff(current: PullRequest, fetch: Run = async () => '') {
+  const git = fakeGit('other')
+  return vi.fn<Run>(async (command, args, cwd, input) => {
+    if (command === 'gh') return JSON.stringify(current)
+    if (args[0] === 'fetch') return fetch(command, args, cwd, input)
+    if (args.includes('diff')) return 'the diff'
+    return git(command, args, cwd, input)
+  })
 }
 
+const changed = /changed while its diff was being fetched/
+
 describe('fetchDiff', () => {
-  it('returns the diff when the PR revisions are unchanged', async () => {
-    expect(await fetchDiff(pr, fakeGh(pr))).toBe('the diff')
+  it('returns the local diff when the PR revisions are unchanged', async () => {
+    expect(await fetchDiff(pr, fakeDiff(pr))).toBe('the diff')
+  })
+
+  it("fetches the PR head and base from the PR's repo, then diffs from their merge base at the repo root", async () => {
+    const exec = fakeDiff(pr)
+    await fetchDiff(pr, exec)
+    expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'upstream', 'pull/9/head', 'base'], '/repo')
+    const diff = exec.mock.calls.find(([, args]) => args.includes('diff'))
+    expect(diff?.[1].at(-1)).toBe('base...head')
+    expect(diff?.[1].slice(0, 3)).toEqual(['-c', 'diff.suppressBlankEmpty=false', 'diff'])
+    expect(diff?.[1]).toEqual(
+      expect.arrayContaining(['--no-color', '--no-ext-diff', '--no-textconv', '--submodule=short', '--find-renames', '--dst-prefix=b/']),
+    )
+    expect(diff?.[2]).toBe('/repo')
+  })
+
+  it('never asks GitHub for the diff', async () => {
+    const exec = fakeDiff(pr)
+    await fetchDiff(pr, exec)
+    expect(exec.mock.calls.filter(([command]) => command === 'gh').map(([, args]) => args.slice(0, 2))).toEqual([['pr', 'view']])
+  })
+
+  it('rejects without diffing when the fetch fails', async () => {
+    const exec = fakeDiff(pr, async () => {
+      throw new ReviewError('`git fetch` failed')
+    })
+    await expect(fetchDiff(pr, exec)).rejects.toThrow('`git fetch` failed')
+    expect(exec.mock.calls.some(([, args]) => args.includes('diff'))).toBe(false)
+  })
+
+  it('rejects with a clear error when a shallow checkout has no merge base', async () => {
+    const diff = fakeDiff(pr)
+    const exec = vi.fn<Run>(async (command, args, cwd, input) => {
+      if (args[0] === 'merge-base') throw new ReviewError('`git merge-base` failed')
+      return diff(command, args, cwd, input)
+    })
+    await expect(fetchDiff(pr, exec)).rejects.toThrow(/no merge base.*shallow clone/)
+    expect(exec.mock.calls.some(([, args]) => args.includes('diff'))).toBe(false)
   })
 
   it('rejects when the PR head moved while the diff was fetched', async () => {
-    await expect(fetchDiff(pr, fakeGh({ ...pr, headRefOid: 'newer' }))).rejects.toThrow(ReviewError)
+    await expect(fetchDiff(pr, fakeDiff({ ...pr, headRefOid: 'newer' }))).rejects.toThrow(changed)
   })
 
   it('rejects when the PR base moved while the diff was fetched', async () => {
-    await expect(fetchDiff(pr, fakeGh({ ...pr, baseRefOid: 'newer' }))).rejects.toThrow(ReviewError)
+    await expect(fetchDiff(pr, fakeDiff({ ...pr, baseRefOid: 'newer' }))).rejects.toThrow(changed)
   })
 })
 
