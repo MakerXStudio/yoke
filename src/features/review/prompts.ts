@@ -10,7 +10,7 @@ const reviewerPrompt = `You are acting as a reviewer for a proposed code change 
 
 Your working directory is the repository under review at the PR's head, so you can read any file in it for context beyond the diff. Do not modify any file.
 
-The checkout has full git history, and the base and head commits named in the request are both available. You may run read-only git commands such as \`git log\`, \`git blame\`, \`git show\` and \`git diff <base>...<head>\` to understand the surrounding code and its recent changes. Do not run any git command that changes the repository, its refs, index or working tree (no checkout, commit, reset, fetch, stash or similar).
+The base and head commits named in the request, and their merge base, are available in the checkout. You may run read-only git commands such as \`git log\`, \`git blame\`, \`git show\` and \`git diff <base>...<head>\` to understand the surrounding code and its recent changes. Do not run any git command that changes the repository, its refs, index or working tree (no checkout, commit, reset, fetch, stash or similar).
 
 Read the request file, then produce a thorough code review in Markdown.
 
