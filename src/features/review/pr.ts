@@ -40,12 +40,25 @@ export async function fetchPr(number: string | undefined, exec: Run = run): Prom
   return pr
 }
 
+const diffArgsIgnoringGitConfig = [
+  'diff',
+  '--no-color',
+  '--no-ext-diff',
+  '--no-relative',
+  '--find-renames',
+  '--unified=3',
+  '--diff-algorithm=myers',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+]
+
 export async function fetchDiff(pr: PullRequest, exec: Run = run): Promise<string> {
-  const diff = await exec('gh', ['pr', 'diff', String(pr.number)])
+  const root = (await exec('git', ['rev-parse', '--show-toplevel'])).trim()
+  await exec('git', ['fetch', '--quiet', await prRemote(pr, root, exec), `pull/${pr.number}/head`, pr.baseRefOid], root)
   const current = await fetchPr(String(pr.number), exec)
   if (current.headRefOid !== pr.headRefOid || current.baseRefOid !== pr.baseRefOid)
     throw new ReviewError(`#${pr.number} changed while its diff was being fetched; run the review again`)
-  return diff
+  return exec('git', [...diffArgsIgnoringGitConfig, `${pr.baseRefOid}...${pr.headRefOid}`], root)
 }
 
 const commentFields = '{path, line: (.line // .original_line), author: (.user.login // "ghost"), body}'
