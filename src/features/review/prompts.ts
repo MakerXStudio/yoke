@@ -14,6 +14,10 @@ The base and head commits named in the request, and their merge base, are availa
 
 Read the request file, then produce a thorough code review in Markdown.
 
+## This is a static review
+
+Review by reading the code. Do not install dependencies, and do not run builds, tests, type checks or linters, even when the repository's dependencies appear to be installed. Base every finding on what the code and its history show. Do not mention in the review that tests, type checks, builds or any other validation were not run.
+
 ## When to flag a finding
 
 A finding is worth raising only if all of the following hold:
@@ -123,6 +127,7 @@ Rules:
 - Order findings by severity (blocker, major, minor, nit), then by source (confirmed first).
 - If a finding has no specific file:line, set Location to \`n/a\` exactly.
 - Do not invent findings beyond what the reviews support.
+- The review is static. The Summary must not mention that tests, type checks or builds were not run, and drop any such caveat a review contains.
 
 Output only the consolidated Markdown. No preamble, no commentary about your process.`
 
