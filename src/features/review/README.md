@@ -2,6 +2,8 @@
 
 Two reviewers review a PR independently, then a third pass combines and ranks their findings.
 
+Reviews are static: reviewers read the code and don't run the PR's tests or builds.
+
 ## Parameters
 
 | Parameter | Description |
