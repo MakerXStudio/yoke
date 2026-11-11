@@ -41,7 +41,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR when it is opened, reopened or marked ready for review, with every slot on one LiteLLM or Foundry provider. A push runs it only when no earlier run of the workflow has started a review for the PR, such as when GitHub skipped the ready-for-review run because the PR had merge conflicts; re-running all jobs in that push's run also runs it (re-running only the failed gate does not). It skips drafts and bots, and runs on a fork PR only once a maintainer [approves it](#fork-prs).
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR when it is opened, reopened or marked ready for review, with every slot on one LiteLLM or Foundry provider. A push runs it only when no earlier run of the workflow has started a review for the PR or is still deciding whether to, such as when GitHub skipped the ready-for-review run because the PR had merge conflicts; re-running all jobs in that push's run also runs it (re-running only the failed gate does not). It skips drafts and bots, and runs on a fork PR only once a maintainer [approves it](#fork-prs).
 
 `yoke review ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml` and prints the commands to set its variable and secret, then points to `/review-ci-gate` for the [merge gate](#merge-gate). `--print` shows them without saving anything. It never replaces a `review-pr.yml` that differs from its version; it stops and says to edit that file in place.
 

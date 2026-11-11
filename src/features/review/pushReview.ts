@@ -1,6 +1,6 @@
 import { appendFileSync } from 'node:fs'
 
-import { earlierRuns, gateContext, type GateContext, type GateDeps, reviewJob } from './gate'
+import { earlierRuns, gateContext, type GateContext, type GateDeps, runJobs } from './gate'
 import { githubGet } from './pr'
 
 export type PushDecision = { review: boolean; message: string }
@@ -9,9 +9,12 @@ export async function pushReview(context: GateContext, deps: Pick<GateDeps, 'get
   if (context.eventName !== 'pull_request' || context.event.action !== 'synchronize')
     return { review: false, message: 'Only a push to a PR decides here whether to run the review.' }
   for (const run of await earlierRuns(context, deps)) {
-    const review = await reviewJob(context.repo, run, deps)
+    const jobs = await runJobs(context.repo, run, deps)
+    const url = `${context.serverUrl}/${context.repo}/actions/runs/${run}`
+    if (jobs.some((job) => job.name.endsWith(' / push') && job.status !== 'completed'))
+      return { review: false, message: `An earlier run, ${url}, is still deciding whether to review this PR, so this push skips it.` }
+    const review = jobs.find((job) => job.name.endsWith(' / review'))
     if (review && review.conclusion !== 'skipped') {
-      const url = `${context.serverUrl}/${context.repo}/actions/runs/${run}`
       return { review: false, message: `A review already started for this PR, in run ${url}, so this push skips it.` }
     }
   }

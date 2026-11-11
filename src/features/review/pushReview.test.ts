@@ -90,6 +90,20 @@ describe('pushReview', () => {
     })
   })
 
+  it.each(['queued', 'in_progress'])('skips the review while an earlier run is still deciding (%s)', async (status) => {
+    const deps = fakeGet([run(1, 7), run(2, 9)], {
+      1: review('completed', 'skipped'),
+      2: [
+        { name: 'review / push', status, conclusion: null },
+        { name: 'review / review', status: 'queued', conclusion: null },
+      ],
+    })
+    expect(await pushReview(context(), deps)).toEqual({
+      review: false,
+      message: 'An earlier run, https://github.com/o/r/actions/runs/2, is still deciding whether to review this PR, so this push skips it.',
+    })
+  })
+
   it('looks past skipped reviews to an earlier one that ran', async () => {
     const deps = fakeGet([run(1, 7), run(2, 9)], { 1: review('completed', 'failure'), 2: review('completed', 'skipped') })
     expect((await pushReview(context(), deps)).message).toContain('runs/1,')

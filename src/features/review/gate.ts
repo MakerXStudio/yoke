@@ -90,9 +90,12 @@ export async function earlierRuns({ repo, runId, runNumber, event }: GateContext
     .map((run) => run.id)
 }
 
-export async function reviewJob(repo: string, run: number, deps: Pick<GateDeps, 'get'>) {
-  const { jobs } = jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run}/jobs`))
-  return jobs.find((job) => job.name.endsWith(' / review'))
+export async function runJobs(repo: string, run: number, deps: Pick<GateDeps, 'get'>) {
+  return jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run}/jobs`)).jobs
+}
+
+async function reviewJob(repo: string, run: number, deps: Pick<GateDeps, 'get'>) {
+  return (await runJobs(repo, run, deps)).find((job) => job.name.endsWith(' / review'))
 }
 
 async function settledReview(repo: string, run: number, deps: GateDeps): Promise<string | undefined> {
