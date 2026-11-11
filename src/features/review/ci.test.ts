@@ -197,6 +197,60 @@ describe('reusable workflow', () => {
     ).toBe(true)
   })
 
+  describe("yoke's own pull_request runs", () => {
+    const fromSource = "github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'"
+    const jobSchema = z.object({
+      if: z.string().optional(),
+      steps: z.array(
+        z.object({
+          if: z.string().optional(),
+          uses: z.string().optional(),
+          with: z.record(z.string(), z.unknown()).optional(),
+          'working-directory': z.string().optional(),
+          run: z.string().optional(),
+        }),
+      ),
+    })
+    const jobs = z.object({ jobs: z.record(z.string(), jobSchema) }).parse(parse(reusableSource)).jobs
+    const buildsFromSource = (step: z.infer<typeof jobSchema>['steps'][number]) =>
+      step.with?.path === 'yoke-source' || step['working-directory'] === 'yoke-source'
+    const runsOnPullRequest = Object.entries(jobs).filter(([, job]) => !job.if?.startsWith("github.event_name == 'pull_request_target'"))
+
+    it('builds yoke from the checked-out workflow commit, after the lockfile install, in every job that runs on pull_request', () => {
+      expect(runsOnPullRequest.map(([name]) => name)).toEqual(expect.arrayContaining(['review', 'gate']))
+      for (const [name, job] of runsOnPullRequest) {
+        const checkout = job.steps.findIndex((step) => step.with?.path === 'yoke-source')
+        const build = job.steps.findIndex((step) => step['working-directory'] === 'yoke-source')
+        const lockfile = job.steps.findIndex(
+          (step) => step.run?.trim().startsWith('npm ci') && step['working-directory'] === 'yoke/ci/review-tools',
+        )
+        expect(job.steps[checkout]?.with, name).toEqual({
+          repository: 'MakerXStudio/yoke',
+          ref: '${{ job.workflow_sha }}',
+          path: 'yoke-source',
+          'persist-credentials': false,
+        })
+        expect(job.steps[build]?.run, name).toContain('echo "$PWD/bin" >> "$GITHUB_PATH"')
+        expect(lockfile, name).toBeGreaterThanOrEqual(0)
+        expect(lockfile, `${name}: PATH entries added later win`).toBeLessThan(checkout)
+        expect(checkout, name).toBeLessThan(build)
+      }
+    })
+
+    it('builds from source only in the yoke repo on pull_request, never on pull_request_target or in another repo', () => {
+      const steps = Object.values(jobs).flatMap((job) => job.steps.filter(buildsFromSource))
+      expect(steps.length).toBeGreaterThan(0)
+      for (const step of steps) expect(step.if).toBe(fromSource)
+    })
+
+    it('runs no build-from-source step in a job that only runs on pull_request_target', () => {
+      for (const [name, job] of Object.entries(jobs)) {
+        if (runsOnPullRequest.some(([other]) => other === name)) continue
+        expect(job.steps.filter(buildsFromSource), name).toEqual([])
+      }
+    })
+  })
+
   it('locks no optional package for yoke, so omitting optional deps keeps all of it', () => {
     const lock = z
       .object({ packages: z.record(z.string(), z.object({ optional: z.boolean().optional() })) })

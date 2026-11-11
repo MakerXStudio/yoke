@@ -92,6 +92,22 @@ jobs:
           npm ci
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: Check out yoke's own PR source, so its workflow runs the commands it adds
+        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke-source
+          persist-credentials: false
+
+      - name: Build that yoke and put it ahead of the locked yoke on PATH
+        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        working-directory: yoke-source
+        run: |
+          npm ci && npm run build
+          mkdir bin && ln -s "$PWD/dist/cli.js" bin/yoke && echo "$PWD/bin" >> "$GITHUB_PATH"
+
       - name: Mark the approved review as running, unless the label came from a user without write access
         if: github.event_name == 'pull_request_target'
         env:
@@ -150,6 +166,22 @@ jobs:
         run: |
           npm ci --omit=optional
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Check out yoke's own PR source, so its workflow runs the commands it adds
+        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke-source
+          persist-credentials: false
+
+      - name: Build that yoke and put it ahead of the locked yoke on PATH
+        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        working-directory: yoke-source
+        run: |
+          npm ci && npm run build
+          mkdir bin && ln -s "$PWD/dist/cli.js" bin/yoke && echo "$PWD/bin" >> "$GITHUB_PATH"
 
       - name: Require the latest review, or a fork's approved review, to have succeeded
         env:
