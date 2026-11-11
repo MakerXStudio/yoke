@@ -2,7 +2,7 @@ name: Review PR
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, scratch/a1590-base]
     types: [opened, synchronize, reopened, ready_for_review]
   pull_request_target:
     branches: [main]
