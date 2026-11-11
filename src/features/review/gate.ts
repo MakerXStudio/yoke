@@ -48,6 +48,8 @@ export type Verdict = { pass: boolean; message: string }
 
 export const pollInterval = 30_000
 
+const runsPerPage = 100
+
 const rerunHint = 'Mark the PR as draft, then ready for review, to run the review again.'
 
 const firstRunHint = 'Mark the PR as ready for review (from draft if it is not one) to run it.'
@@ -82,9 +84,19 @@ export function gateContext(env: NodeJS.ProcessEnv = process.env, command = 'yok
 
 export async function earlierRuns({ repo, runId, runNumber, event }: GateContext, deps: Pick<GateDeps, 'get'>): Promise<number[]> {
   const { workflow_id } = z.object({ workflow_id: z.number() }).parse(await deps.get(`repos/${repo}/actions/runs/${runId}`))
-  const query = new URLSearchParams({ event: 'pull_request', branch: event.pull_request.head.ref, per_page: '100' })
-  const { workflow_runs } = runsSchema.parse(await deps.get(`repos/${repo}/actions/workflows/${workflow_id}/runs?${query.toString()}`))
-  return workflow_runs
+  const workflowRuns: z.infer<typeof runsSchema>['workflow_runs'] = []
+  for (let page = 1; ; page++) {
+    const query = new URLSearchParams({
+      event: 'pull_request',
+      branch: event.pull_request.head.ref,
+      per_page: String(runsPerPage),
+      page: String(page),
+    })
+    const { workflow_runs } = runsSchema.parse(await deps.get(`repos/${repo}/actions/workflows/${workflow_id}/runs?${query.toString()}`))
+    workflowRuns.push(...workflow_runs)
+    if (workflow_runs.length < runsPerPage) break
+  }
+  return workflowRuns
     .filter((run) => run.run_number < runNumber && run.pull_requests.some((pr) => pr.number === event.pull_request.number))
     .toSorted((a, b) => b.run_number - a.run_number)
     .map((run) => run.id)

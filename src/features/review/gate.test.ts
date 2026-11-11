@@ -169,7 +169,7 @@ describe('reviewGate', () => {
       3: [review('completed', 'failure')],
     })
     expect((await reviewGate('skipped', context(), deps)).pass).toBe(true)
-    expect(deps.paths[1]).toBe('repos/o/r/actions/workflows/77/runs?event=pull_request&branch=feature&per_page=100')
+    expect(deps.paths[1]).toBe('repos/o/r/actions/workflows/77/runs?event=pull_request&branch=feature&per_page=100&page=1')
   })
 
   it('waits for a review still running', async () => {

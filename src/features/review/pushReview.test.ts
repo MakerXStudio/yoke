@@ -51,6 +51,21 @@ function fakeGet(runs: ReturnType<typeof run>[], jobs: Record<number, Job[]>) {
 }
 
 describe('pushReview', () => {
+  it('pages past a full page of runs to find an earlier review', async () => {
+    const skipped = Array.from({ length: 100 }, (_, i) => run(1000 + i, 9))
+    const pages: Record<string, ReturnType<typeof run>[]> = { '1': skipped, '2': [run(1, 2)] }
+    const paths: string[] = []
+    const get = async (path: string) => {
+      paths.push(path)
+      if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
+      const page = /[?&]page=(\d+)/.exec(path)?.[1]
+      if (page) return { workflow_runs: pages[page] ?? [] }
+      return { jobs: path.includes('/runs/1/') ? review('completed', 'success') : review('completed', 'skipped') }
+    }
+    expect((await pushReview(context(), { get })).message).toContain('runs/1,')
+    expect(paths.filter((path) => path.includes('/workflows/77/runs?'))).toHaveLength(2)
+  })
+
   it('runs the review on a push to a PR with no earlier runs', async () => {
     expect(await pushReview(context(), fakeGet([], {}))).toEqual({
       review: true,
