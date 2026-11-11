@@ -42,6 +42,7 @@ const workflowSchema = z.object({
     z.object({
       if: z.string().optional(),
       needs: z.string().optional(),
+      outputs: z.record(z.string(), z.string()).optional(),
       uses: z.string().optional(),
       with: z.record(z.string(), z.string()).optional(),
       secrets: z.record(z.string(), z.string()).optional(),
@@ -346,10 +347,22 @@ describe('gate', () => {
     })
   })
 
-  it('skips the review on pushes, and runs it on pull_request_target only for a fork labelled review', () => {
-    const condition = reusable.jobs.review?.if ?? ''
-    expect(condition).toMatch(/^github\.event\.action != 'synchronize' && /)
-    expect(condition).toContain("github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository")
+  it('decides on a push to a ready, same-repo, non-bot PR whether to review it', () => {
+    const { push } = reusable.jobs
+    expect(push?.if?.replace(/\s+/g, ' ')).toBe(
+      "github.event_name == 'pull_request' && github.event.action == 'synchronize' && github.event.pull_request.user.type != 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft",
+    )
+    expect(push?.steps?.at(-1)?.run).toBe('yoke review-push')
+    expect(push?.outputs).toEqual({ review: '${{ steps.decide.outputs.review }}' })
+  })
+
+  it('reviews a push only when no review has started, and runs it on pull_request_target only for a fork labelled review', () => {
+    const condition = (reusable.jobs.review?.if ?? '').replace(/\s+/g, ' ')
+    expect(reusable.jobs.review?.needs).toBe('push')
+    expect(condition).toMatch(/^!cancelled\(\) && github\.event\.pull_request\.user\.type != 'Bot' && /)
+    expect(condition).toContain(
+      "github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft && (github.event.action != 'synchronize' || needs.push.outputs.review == 'true')",
+    )
     expect(condition).toContain(
       "github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'review' && github.event.pull_request.head.repo.full_name != github.repository",
     )

@@ -29,10 +29,13 @@ describe('selfReviewNote', () => {
     expect(reviewYml).toContain("YOKE_LITELLM_API_KEY: ${{ inputs.provider == 'litellm' && secrets.REVIEW_CI_API_KEY || '' }}")
   })
 
-  it('rests the deliberate missing concurrency block on the reusable review job skipping synchronize events', () => {
-    let topLevel = reusable.jobs.review.if
-    while (/\([^()]*\)/.test(topLevel)) topLevel = topLevel.replace(/\([^()]*\)/g, 'group')
-    expect(topLevel).not.toContain('||')
-    expect(topLevel.split('&&').map((clause) => clause.trim())).toContain("github.event.action != 'synchronize'")
+  it('rests the deliberate missing concurrency block on the reusable review job running on a push only when no review has started', () => {
+    const condition = reusable.jobs.review.if.replace(/\s+/g, ' ')
+    expect(condition).toContain("(github.event.action != 'synchronize' || needs.push.outputs.review == 'true')")
+    expect(condition).toContain("github.event_name == 'pull_request_target' && github.event.action == 'labeled'")
+    expect(condition.match(/github\.event_name == '\w+'/g)).toEqual([
+      "github.event_name == 'pull_request'",
+      "github.event_name == 'pull_request_target'",
+    ])
   })
 })

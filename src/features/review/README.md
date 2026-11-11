@@ -41,7 +41,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 ## CI
 
-The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR, with every slot on one LiteLLM or Foundry provider. It skips drafts and bots, and runs on a fork PR only once a maintainer [approves it](#fork-prs).
+The reusable workflow `.github/workflows/review.yml` runs `yoke review --post` on each PR when it is opened, reopened or marked ready for review, with every slot on one LiteLLM or Foundry provider. A push runs it only when no earlier run of the workflow has started a review for the PR, such as when GitHub skipped the ready-for-review run because the PR had merge conflicts; re-running all jobs in that push's run also runs it (re-running only the failed gate does not). It skips drafts and bots, and runs on a fork PR only once a maintainer [approves it](#fork-prs).
 
 `yoke review ci` (or `/review-ci`) writes the caller below to `.github/workflows/review-pr.yml` and prints the commands to set its variable and secret, then points to `/review-ci-gate` for the [merge gate](#merge-gate). `--print` shows them without saving anything. It never replaces a `review-pr.yml` that differs from its version; it stops and says to edit that file in place.
 
@@ -99,7 +99,7 @@ Each release commits the newly published yoke to the lockfile, tags that commit 
 
 ### Merge gate
 
-The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for bots, which never get one. It runs on every push.
+The `review / gate` check blocks merging until the PR's latest review succeeds, whatever it found. It fails while that review errored or none has completed, and passes for bots, which never get one. It runs on every push, waiting for a review still running in an earlier run; a push to a PR with no review started runs one, and the gate reads its result.
 
 For a PR from a fork, the gate fails until a review a maintainer approved succeeds for the PR's head commit. See [Fork PRs](#fork-prs).
 

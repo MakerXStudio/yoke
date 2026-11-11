@@ -17,6 +17,7 @@ import {
 import { enforceReviewGate } from './features/review/ciGate'
 import { runReviewGate } from './features/review/gate'
 import { ReviewError } from './features/review/pr'
+import { runPushReview } from './features/review/pushReview'
 import { runUnapproveReview } from './features/review/unapprove'
 
 const ciKeys = settingKeys.filter((key) => /^review\.\w+\.(harness|model)$/.test(key))
@@ -33,6 +34,14 @@ const resultHelp =
 async function gate(result: string): Promise<void> {
   try {
     if (!(await runReviewGate(result, console.log))) process.exitCode = 1
+  } catch (error) {
+    fail(error, ReviewError)
+  }
+}
+
+async function pushReview(): Promise<void> {
+  try {
+    await runPushReview(console.log)
   } catch (error) {
     fail(error, ReviewError)
   }
@@ -106,4 +115,5 @@ export function addReviewCiCommands(review: Command): void {
 export function addLockedWorkflowAliases(program: Command): void {
   program.command('review-gate', { hidden: true }).argument('<result>', resultHelp).action(gate)
   program.command('review-unapprove', { hidden: true }).action(unapprove)
+  program.command('review-push', { hidden: true }).action(pushReview)
 }

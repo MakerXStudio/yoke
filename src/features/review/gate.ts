@@ -80,7 +80,7 @@ export function gateContext(env: NodeJS.ProcessEnv = process.env, command = 'yok
   }
 }
 
-async function earlierRuns({ repo, runId, runNumber, event }: GateContext, deps: GateDeps): Promise<number[]> {
+export async function earlierRuns({ repo, runId, runNumber, event }: GateContext, deps: Pick<GateDeps, 'get'>): Promise<number[]> {
   const { workflow_id } = z.object({ workflow_id: z.number() }).parse(await deps.get(`repos/${repo}/actions/runs/${runId}`))
   const query = new URLSearchParams({ event: 'pull_request', branch: event.pull_request.head.ref, per_page: '100' })
   const { workflow_runs } = runsSchema.parse(await deps.get(`repos/${repo}/actions/workflows/${workflow_id}/runs?${query.toString()}`))
@@ -90,10 +90,14 @@ async function earlierRuns({ repo, runId, runNumber, event }: GateContext, deps:
     .map((run) => run.id)
 }
 
+export async function reviewJob(repo: string, run: number, deps: Pick<GateDeps, 'get'>) {
+  const { jobs } = jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run}/jobs`))
+  return jobs.find((job) => job.name.endsWith(' / review'))
+}
+
 async function settledReview(repo: string, run: number, deps: GateDeps): Promise<string | undefined> {
   for (;;) {
-    const { jobs } = jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run}/jobs`))
-    const review = jobs.find((job) => job.name.endsWith(' / review'))
+    const review = await reviewJob(repo, run, deps)
     if (!review || review.conclusion === 'skipped') return undefined
     if (review.status === 'completed') return review.conclusion ?? 'unknown'
     deps.log(`Waiting for the review in run ${run} to finish (${review.status})`)

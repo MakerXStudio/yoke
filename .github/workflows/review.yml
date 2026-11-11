@@ -56,10 +56,46 @@ on:
         required: false
 
 jobs:
-  review:
+  push:
     if: >-
-      github.event.action != 'synchronize' && github.event.pull_request.user.type != 'Bot' && (
-        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) ||
+      github.event_name == 'pull_request' && github.event.action == 'synchronize' && github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      review: ${{ steps.decide.outputs.review }}
+    steps:
+      - name: Check out yoke's locked review tools
+        uses: actions/checkout@v4
+        with:
+          repository: MakerXStudio/yoke
+          ref: ${{ job.workflow_sha }}
+          path: yoke
+          sparse-checkout: ci/review-tools
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install yoke from the lockfile, skipping the reviewers' platform binaries
+        working-directory: yoke/ci/review-tools
+        run: |
+          npm ci --omit=optional
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Run the review on this push only if no earlier run has started one for the PR
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: yoke review-push
+
+  review:
+    needs: push
+    if: >-
+      !cancelled() && github.event.pull_request.user.type != 'Bot' && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft &&
+          (github.event.action != 'synchronize' || needs.push.outputs.review == 'true')) ||
         (github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'review' && github.event.pull_request.head.repo.full_name != github.repository)
       )
     runs-on: ubuntu-latest
