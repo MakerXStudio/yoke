@@ -5,6 +5,6 @@
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.316",
     "@makerx/yoke": "0.17.6",
-    "@openai/codex": "0.166.0"
+    "@openai/codex": "0.167.0"
   }
 }
