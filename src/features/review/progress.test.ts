@@ -83,3 +83,60 @@ describe('parseHarnessEvent', () => {
     expect(parseHarnessEvent(harness, input)).toEqual({ kind: 'ignore' })
   })
 })
+
+describe('parseHarnessEvent for pi', () => {
+  it('reads text, stop reason, usage and model from one assistant message_end', () => {
+    const message = {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'hmm' },
+        { type: 'text', text: '## Findings' },
+      ],
+      provider: 'yoke',
+      model: 'kimi',
+      stopReason: 'stop',
+      usage: { input: 10, output: 20, cacheRead: 30, cacheWrite: 0, totalTokens: 60 },
+    }
+    expect(parseHarnessEvent('pi', line({ type: 'message_end', message }))).toEqual({
+      kind: 'message',
+      text: '## Findings',
+      stopReason: 'stop',
+      usage: { input: 10, output: 20, cacheRead: 30, cacheWrite: 0 },
+      model: 'kimi',
+    })
+  })
+
+  it('keeps the error message of a failed assistant message', () => {
+    const message = { role: 'assistant', content: [], stopReason: 'error', errorMessage: '401: bad key' }
+    expect(parseHarnessEvent('pi', line({ type: 'message_end', message }))).toEqual({
+      kind: 'message',
+      text: '',
+      stopReason: 'error',
+      errorMessage: '401: bad key',
+    })
+  })
+
+  it('reports each pi tool call with what it touched', () => {
+    expect(
+      parseHarnessEvent('pi', line({ type: 'tool_execution_start', toolName: 'grep', args: { pattern: 'TODO', path: 'src' } })),
+    ).toEqual({
+      kind: 'activity',
+      text: 'grep TODO in src',
+    })
+  })
+
+  it('reads the usage of a successful compaction', () => {
+    const event = { type: 'compaction_end', result: { summary: 's', usage: { input: 5, output: 6 } }, aborted: false }
+    expect(parseHarnessEvent('pi', line(event))).toEqual({ kind: 'usage', usage: { input: 5, output: 6 } })
+  })
+
+  it.each([
+    line({ type: 'message_end', message: { role: 'user', content: 'review' } }),
+    line({ type: 'turn_end', message: { role: 'assistant', content: [], stopReason: 'stop' } }),
+    line({ type: 'agent_end', messages: [] }),
+    line({ type: 'compaction_end', aborted: true }),
+    line({ type: 'turn.completed', usage: { input_tokens: 1 } }),
+  ])('ignores pi %s', (input) => {
+    expect(parseHarnessEvent('pi', input)).toEqual({ kind: 'ignore' })
+  })
+})

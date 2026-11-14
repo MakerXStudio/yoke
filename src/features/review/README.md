@@ -35,9 +35,18 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 
 | Setting | Description |
 |---|---|
-| `review.<slot>.harness` | `claude` or `codex`. Defaults: `claude`, `codex`, reviewer1's harness. |
+| `review.<slot>.harness` | `claude`, `codex` or `pi`. Defaults: `claude`, `codex`, reviewer1's harness. |
 | `review.<slot>.provider` | `litellm` or `foundry`. Unset: your own CLI login. |
 | `review.<slot>.model` | Model to run; required with a provider. See `yoke models`. |
+
+### Pi
+
+A `pi` slot runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) from your `PATH` with read, ls and bash tools, plus grep when `rg` is installed and find when `fd` is. It loads no sessions, extensions, skills, MCP servers, `AGENTS.md` or the repo's `.pi/` settings, and always reviews in a separate worktree.
+
+- **Own login:** Pi uses your `~/.pi` sign-in and models (sign in by running `pi`, then `/login`). Providers that Pi extensions add aren't available. With no `review.<slot>.model`, Pi runs its default model; set one in Pi, or set the slot's model (`<provider>/<model>`, see `pi --list-models`).
+- **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`), so Foundry deployments of GPT-5.6 and later, which refuse tools with reasoning there, are unsupported.
+
+With no synthesis slot set, the synthesis runs on the harness of reviewer 1 (or reviewer 2 when reviewer 1 fails); when that is `pi`, it uses that reviewer's whole slot, provider and model included.
 
 ## CI
 
@@ -79,7 +88,7 @@ jobs:
 |---|---|
 | `provider` | `litellm` or `foundry`. Default: `litellm`. |
 | `base-url` | LiteLLM proxy URL, or `https://<resource>.services.ai.azure.com` for Foundry. |
-| `reviewer1-harness`, `reviewer2-harness` | `claude` or `codex`. Defaults: `claude`, `codex`. |
+| `reviewer1-harness`, `reviewer2-harness` | `claude`, `codex` or `pi`. Defaults: `claude`, `codex`. |
 | `reviewer1-model`, `reviewer2-model` | Required. See `yoke models`. |
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
 | `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
@@ -110,7 +119,7 @@ For a PR from a fork, the gate fails until a review a maintainer approved succee
 The review doesn't run automatically on a PR from a fork: it needs the repo's secrets, and its reviewers run on the fork's code. The gate fails for the PR, telling a maintainer to read the diff and add the `review` label.
 
 > [!WARNING]
-> Adding the `review` label runs Claude and Codex, with `REVIEW_CI_API_KEY` (or the Entra app's token) and a GitHub token that can write to the repo's PRs, statuses and Actions runs, on the fork's code. Read the whole diff first, including workflows, scripts, `.npmrc`, `.claude/` settings and hooks, `.mcp.json`, `.codex/` config and any instructions aimed at an AI agent, and add the label only when nothing in it could leak a secret or misuse that token.
+> Adding the `review` label runs Claude and Codex, with `REVIEW_CI_API_KEY` (or the Entra app's token) and a GitHub token that can write to the repo's PRs, statuses and Actions runs, on the fork's code. Read the whole diff first, including workflows, scripts, `.npmrc`, `.claude/` settings and hooks, `.mcp.json`, `.codex/` config and any instructions aimed at an AI agent, and add the label only when nothing in it could leak a secret or misuse that token. A Pi reviewer can also run shell commands, with `GH_TOKEN`, the provider key and the `ACTIONS_ID_TOKEN_REQUEST_*` variables in their environment, so instructions in the diff could make it send them out or mint Entra tokens.
 
 Adding the label runs the review on `pull_request_target`, which takes the workflow from the PR's base branch. Only a label from a user with write, maintain or admin access approves the review; triage access can add labels, but then the review doesn't run and the `review / approved review` status says who added the label and the access it needs. The job checks out the base branch, so `npm` and `npx` never read the fork's config, and yoke reviews the labelled commit in a separate worktree, running Claude with `--setting-sources user --strict-mcp-config` so the fork's settings, hooks and MCP servers don't load. It reviews only that commit: if the fork pushed after the label was added, the review fails without running. It posts its findings like any other review.
 

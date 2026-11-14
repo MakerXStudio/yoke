@@ -13,7 +13,7 @@ import { assertViable } from './preflight'
 import { buildRequest, type PullRequest } from './request'
 import { logged, reviewLog } from './reviewLog'
 import { type ReviewResult, ReviewFailure, runReview } from './run'
-import { type ReviewSlots, resolveSlots } from './slots'
+import { type ReviewSlots, resolveSlots, usesPi } from './slots'
 import { type StatusUi, timed } from './status'
 import { type StepUsage, writeJobSummary } from './usage'
 import { modelsFooter, readUsedModels } from './usedModels'
@@ -47,7 +47,7 @@ async function reviewAtHead(
 ): Promise<ReviewResult> {
   const checkoutDir = mkdtempSync(join(tmpdir(), 'yoke-review-'))
   try {
-    const checkout = await timed(ui, `checking out ${pr.headRefOid.slice(0, 7)}`, () => checkoutHead(pr, checkoutDir))
+    const checkout = await timed(ui, `checking out ${pr.headRefOid.slice(0, 7)}`, () => checkoutHead(pr, checkoutDir, usesPi(slots)))
     try {
       return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track, strict, untrusted })
     } finally {

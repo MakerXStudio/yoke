@@ -1,30 +1,38 @@
 import { execFile } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-import type { Harness } from './harness'
+import { type Harness, piAgentDir } from './harness'
 import type { ProbeRequest } from './provider'
 import { ReviewFailure } from './run'
-import type { ReviewSlots, Slot } from './slots'
+import { implicitSynthesis, type ReviewSlots, type Slot } from './slots'
+
+export type SignIn = 'signedIn' | 'signedOut' | 'unresolvedModel' | 'noModel'
 
 export type Checks = {
   onPath: (harness: Harness) => Promise<boolean>
-  signedIn: (harness: Harness) => Promise<boolean>
+  signedIn: (slot: Slot) => Promise<SignIn>
   reach: (probe: ProbeRequest) => Promise<string | undefined>
 }
+
+export type PiAuth = { check: (args: string[]) => Promise<number>; defaultProvider: () => string | undefined }
 
 const commandTimeout = 30_000
 const probeTimeout = 60_000
 const maxBodyChars = 300
 
-function exec(harness: Harness, args: string[]): Promise<{ ok: boolean; stdout: string }> {
+function exec(harness: Harness, args: string[]): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve) => {
     const options = { encoding: 'utf8' as const, timeout: commandTimeout, shell: process.platform === 'win32' }
-    execFile(harness, args, options, (error, stdout) => resolve({ ok: !error, stdout }))
+    execFile(harness, args, options, (error, stdout) =>
+      resolve({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, stdout }),
+    )
   })
 }
 
 async function claudeSignedIn(): Promise<boolean> {
-  const { ok, stdout } = await exec('claude', ['auth', 'status', '--json'])
-  if (!ok) return false
+  const { code, stdout } = await exec('claude', ['auth', 'status', '--json'])
+  if (code !== 0) return false
   try {
     const parsed: unknown = JSON.parse(stdout)
     return typeof parsed === 'object' && parsed !== null && 'loggedIn' in parsed && parsed.loggedIn === true
@@ -32,6 +40,32 @@ async function claudeSignedIn(): Promise<boolean> {
     return false
   }
 }
+
+export function piDefaultProvider(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  try {
+    const settings: unknown = JSON.parse(readFileSync(join(piAgentDir(env), 'settings.json'), 'utf8'))
+    if (typeof settings !== 'object' || settings === null || !('defaultProvider' in settings)) return undefined
+    return typeof settings.defaultProvider === 'string' && settings.defaultProvider ? settings.defaultProvider : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const piAuth: PiAuth = {
+  check: async (args) => (await exec('pi', ['auth', 'check', ...args])).code,
+  defaultProvider: () => piDefaultProvider(),
+}
+
+export async function piSignIn(model: string | undefined, auth: PiAuth = piAuth): Promise<SignIn> {
+  const provider = model ? undefined : auth.defaultProvider()
+  if (!model && !provider) return 'noModel'
+  const code = await auth.check(model ? ['--model', model] : ['--provider', provider ?? ''])
+  if (code === 0) return 'signedIn'
+  if (code !== 2) return 'signedOut'
+  return model ? 'unresolvedModel' : 'noModel'
+}
+
+const signIn = (signedIn: boolean): SignIn => (signedIn ? 'signedIn' : 'signedOut')
 
 async function reach({ url, headers, body }: ProbeRequest): Promise<string | undefined> {
   try {
@@ -51,13 +85,19 @@ async function reach({ url, headers, body }: ProbeRequest): Promise<string | und
   }
 }
 
+const signedInChecks: Record<Harness, (slot: Slot) => Promise<SignIn>> = {
+  claude: async () => signIn(await claudeSignedIn()),
+  codex: async () => signIn((await exec('codex', ['login', 'status'])).code === 0),
+  pi: ({ model }) => piSignIn(model),
+}
+
 const checks: Checks = {
-  onPath: async (harness) => (await exec(harness, ['--version'])).ok,
-  signedIn: async (harness) => (harness === 'claude' ? claudeSignedIn() : (await exec('codex', ['login', 'status'])).ok),
+  onPath: async (harness) => (await exec(harness, ['--version'])).code === 0,
+  signedIn: (slot) => signedInChecks[slot.harness](slot),
   reach,
 }
 
-const loginCommand: Record<Harness, string> = { claude: 'claude auth login', codex: 'codex login' }
+const loginHint: Record<Harness, string> = { claude: 'run `claude auth login`', codex: 'run `codex login`', pi: 'run `pi`, then `/login`' }
 
 type SlotPrefix = 'review.reviewer1' | 'review.reviewer2' | 'review.synthesis'
 
@@ -65,13 +105,22 @@ type SlotUse = { slot: Slot; keys: SlotPrefix[] }
 
 function signedOut({ slot: { harness }, keys }: SlotUse): string {
   const settings = keys.map((key) => `${key}.provider and ${key}.model`).join(', and ')
-  return `${harness} is not signed in (${keys.join(', ')}); run \`${loginCommand[harness]}\`, or run it through LiteLLM or Foundry by setting ${settings} (see \`yoke models\`)`
+  return `${harness} is not signed in (${keys.join(', ')}); ${loginHint[harness]}, or run it through LiteLLM or Foundry by setting ${settings} (see \`yoke models\`)`
+}
+
+const signInProblem: Record<Exclude<SignIn, 'signedIn'>, (use: SlotUse) => string> = {
+  signedOut,
+  unresolvedModel: ({ slot }) => `pi can't resolve model "${slot.model}"; use <provider>/<model> (see pi --list-models)`,
+  noModel: ({ keys }) => `pi has no model: set ${keys.map((key) => `${key}.model`).join(' and ')}, or pick a default model in pi`,
 }
 
 async function slotProblem(use: SlotUse, check: Checks): Promise<string | undefined> {
   const { harness, model, probe } = use.slot
   if (!(await check.onPath(harness))) return `${harness} CLI not found on PATH; install it`
-  if (!probe) return (await check.signedIn(harness)) ? undefined : signedOut(use)
+  if (!probe) {
+    const state = await check.signedIn(use.slot)
+    return state === 'signedIn' ? undefined : signInProblem[state](use)
+  }
   const error = await check.reach(probe)
   return error && `${harness} model "${model}" at ${probe.url}: ${error}`
 }
@@ -80,7 +129,7 @@ function slotsToRun(slots: ReviewSlots): SlotUse[] {
   const uses: [SlotPrefix, Slot][] = [
     ['review.reviewer1', slots.reviewer1],
     ['review.reviewer2', slots.reviewer2],
-    ['review.synthesis', slots.synthesis ?? { harness: slots.reviewer1.harness }],
+    ['review.synthesis', slots.synthesis ?? implicitSynthesis(slots.reviewer1)],
   ]
   const distinct = new Map<string, SlotUse>()
   for (const [key, slot] of uses) {

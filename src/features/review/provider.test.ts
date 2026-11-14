@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildOverride, buildProbe, deriveEndpoints } from './provider'
+import { buildOverride, buildProbe, deriveEndpoints, ownAuthOverride, piModels } from './provider'
 
 describe('buildProbe', () => {
   it('pings the Codex responses endpoint with a bearer key', () => {
@@ -103,5 +103,51 @@ describe('buildOverride', () => {
     expect(args).toContain('model_providers.yoke.base_url=https://res/openai/v1')
     expect(args).toContain('model_providers.yoke.env_key=YOKE_FOUNDRY_TOKEN')
     expect(env).toEqual({ YOKE_FOUNDRY_TOKEN: 't' })
+  })
+})
+
+describe('pi', () => {
+  it('passes the model to pi on its own login', () => {
+    expect(ownAuthOverride({ harness: 'pi', model: 'openai/gpt-5' })).toEqual({ args: ['--model', 'openai/gpt-5'], env: {} })
+  })
+
+  it.each([
+    ['litellm', { kind: 'litellm', baseUrl: 'https://llm', apiKey: 'k' }, 'https://llm/v1', 'k'],
+    ['foundry', { kind: 'foundry', baseUrl: 'https://res', apiKey: 'k' }, 'https://res/openai/v1', 'k'],
+    ['foundry with Entra', { kind: 'foundry', baseUrl: 'https://res', token: 't' }, 'https://res/openai/v1', 't'],
+  ] as const)('points pi at the %s chat completions base with the credential in YOKE_PI_API_KEY', (_, provider, baseUrl, credential) => {
+    expect(buildOverride({ harness: 'pi', model: 'kimi' }, provider)).toEqual({
+      args: ['--model', 'yoke/kimi'],
+      env: { YOKE_PI_API_KEY: credential },
+      pi: { baseUrl, model: 'kimi' },
+    })
+    expect(buildProbe({ harness: 'pi', model: 'kimi' }, provider)).toEqual({
+      url: `${baseUrl}/chat/completions`,
+      headers: { Authorization: `Bearer ${credential}` },
+      body: { model: 'kimi', messages: [{ role: 'user', content: 'ping' }], max_completion_tokens: 16 },
+    })
+  })
+
+  it('writes one yoke provider whose key pi reads from the environment', () => {
+    expect(piModels({ baseUrl: 'https://llm/v1', model: 'kimi' })).toEqual({
+      providers: {
+        yoke: {
+          baseUrl: 'https://llm/v1',
+          api: 'openai-completions',
+          apiKey: '$YOKE_PI_API_KEY',
+          models: [
+            {
+              id: 'kimi',
+              name: 'kimi',
+              reasoning: true,
+              input: ['text'],
+              contextWindow: 200000,
+              maxTokens: 32000,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+        },
+      },
+    })
   })
 })

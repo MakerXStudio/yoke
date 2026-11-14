@@ -58,7 +58,7 @@ function readSpec(settings: Settings, slot: SlotName, errors: string[]): SlotSpe
   const model = settings[keys.model]
   if (!harness && !provider && !model) return undefined
   if (harness && !isHarness(harness))
-    errors.push(`${keys.harness} "${harness}" must be claude or codex; ${howToSet(keys.harness, '<claude|codex>')}`)
+    errors.push(`${keys.harness} "${harness}" must be claude, codex or pi; ${howToSet(keys.harness, '<claude|codex|pi>')}`)
   if (provider && !isProviderKind(provider))
     errors.push(
       `${keys.provider} "${provider}" must be ${providerKinds.join(' or ')}; ${howToSet(keys.provider, `<${providerKinds.join('|')}>`)}`,
@@ -81,6 +81,14 @@ function toSlot({ harness: chosen, model, provider: kind }: SlotSpec, fallback: 
   const provider = kind && providers[kind]
   if (provider) return { ...slot, provider: kind, override: buildOverride(slot, provider), probe: buildProbe(slot, provider) }
   return { ...slot, override: ownAuthOverride(slot) }
+}
+
+export function implicitSynthesis(reviewer: Slot): Slot {
+  return reviewer.harness === 'pi' ? reviewer : { harness: reviewer.harness }
+}
+
+export function usesPi(slots: ReviewSlots): boolean {
+  return [slots.reviewer1, slots.reviewer2, slots.synthesis].some((slot) => slot?.harness === 'pi')
 }
 
 export function resolveSlots(settings: Settings): ReviewSlots {

@@ -136,19 +136,26 @@ describe('fetchDiff', () => {
 describe('checkoutHead', () => {
   it('reviews in the repo when it is already at the PR head', async () => {
     const exec = fakeGit('head')
-    expect((await checkoutHead(pr, '/tmp/r', exec)).cwd).toBe('/repo')
+    expect((await checkoutHead(pr, '/tmp/r', false, exec)).cwd).toBe('/repo')
     expect(exec.mock.calls.map((c) => c[1][0])).toEqual(['rev-parse', 'rev-parse', 'status'])
+  })
+
+  it('uses a worktree at a clean PR head when forced to, so pi never touches the checkout', async () => {
+    const exec = fakeGit('head')
+    const tree = join('/tmp/r', 'head')
+    expect((await checkoutHead(pr, '/tmp/r', true, exec)).cwd).toBe(tree)
+    expect(exec).toHaveBeenCalledWith('git', ['worktree', 'add', '--quiet', '--detach', tree, 'head'], '/repo')
   })
 
   it('uses a worktree when the repo is at the PR head but has local edits', async () => {
     const exec = fakeGit('head', ' M src/a.ts\n')
-    expect((await checkoutHead(pr, '/tmp/r', exec)).cwd).toBe(join('/tmp/r', 'head'))
+    expect((await checkoutHead(pr, '/tmp/r', false, exec)).cwd).toBe(join('/tmp/r', 'head'))
   })
 
   it('checks the PR head out into a detached worktree otherwise, and removes it after', async () => {
     const exec = fakeGit('other')
     const tree = join('/tmp/r', 'head')
-    const checkout = await checkoutHead(pr, '/tmp/r', exec)
+    const checkout = await checkoutHead(pr, '/tmp/r', false, exec)
     expect(checkout.cwd).toBe(tree)
     expect(exec).toHaveBeenCalledWith('git', ['worktree', 'add', '--quiet', '--detach', tree, 'head'], '/repo')
     await checkout.remove()
@@ -157,13 +164,13 @@ describe('checkoutHead', () => {
 
   it("fetches the PR head from the remote that serves the PR's repo", async () => {
     const exec = fakeGit('other')
-    await checkoutHead(pr, '/tmp/r', exec)
+    await checkoutHead(pr, '/tmp/r', false, exec)
     expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'upstream', 'pull/9/head'], '/repo')
   })
 
   it("fetches from the PR's repo URL when no remote serves it", async () => {
     const exec = fakeGit('other', '', 'origin\tgit@github.com:me/r.git (fetch)')
-    await checkoutHead(pr, '/tmp/r', exec)
+    await checkoutHead(pr, '/tmp/r', false, exec)
     expect(exec).toHaveBeenCalledWith('git', ['fetch', '--quiet', 'https://github.com/o/r.git', 'pull/9/head'], '/repo')
   })
 })

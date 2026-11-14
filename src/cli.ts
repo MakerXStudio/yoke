@@ -74,7 +74,9 @@ const providerKeys = settingKeys.filter((key) => !key.startsWith('review.'))
 const review = addSettingOptions(
   program
     .command('review')
-    .description("Review the current branch's PR, or PR <number>, with Claude and Codex in parallel, then combine their findings")
+    .description(
+      "Review the current branch's PR, or PR <number>, with two reviewers in parallel (Claude and Codex by default, or Pi), then combine their findings",
+    )
     .argument('[number]', 'PR number; reviewed without checking it out')
     .option('--post', 'post the findings to the PR as one review, reusing the saved review of the PR head when there is one')
     .option('--force', "discard this PR head's cached reviews and run every pass again")

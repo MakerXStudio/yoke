@@ -6,7 +6,7 @@ import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import type { HarnessRun, RunHarness } from './harness'
 import { ReviewError } from './pr'
 import { buildReviewerPrompt, buildSynthesisPrompt } from './prompts'
-import type { Reviewer, ReviewSlots, Slot } from './slots'
+import { implicitSynthesis, type Reviewer, type ReviewSlots, type Slot } from './slots'
 import type { StatusUi } from './status'
 import type { StepUsage } from './usage'
 import { forgetUsedModel, recordUsedModel, type StepName } from './usedModels'
@@ -117,7 +117,7 @@ function rawReviews(succeeded: Reviewer[], context: ReviewContext): Outcome {
 
 function synthesisSlot(succeeded: Reviewer[], context: ReviewContext): Slot {
   const [first = 'reviewer1'] = succeeded
-  return context.slots.synthesis ?? { harness: context.slots[first].harness }
+  return context.slots.synthesis ?? implicitSynthesis(context.slots[first])
 }
 
 async function synthesise(requestPath: string, succeeded: Reviewer[], reviewersRan: boolean, context: RunContext): Promise<Outcome> {

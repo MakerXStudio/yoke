@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ReviewError } from './pr'
-import { resolveSlots } from './slots'
+import { type ReviewSlots, resolveSlots, usesPi } from './slots'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -96,7 +96,32 @@ describe('resolveSlots', () => {
 
   it('names an unknown harness and provider', () => {
     const message = errorOf(() => resolveSlots({ 'review.synthesis.harness': 'gemini', 'review.synthesis.provider': 'openrouter' }))
-    expect(message).toContain('- review.synthesis.harness "gemini" must be claude or codex; pass --synthesis-harness')
+    expect(message).toContain('- review.synthesis.harness "gemini" must be claude, codex or pi; pass --synthesis-harness')
     expect(message).toContain('- review.synthesis.provider "openrouter" must be litellm or foundry; pass --synthesis-provider')
+  })
+})
+
+describe('pi slots', () => {
+  it('runs a pi slot through the provider with a chat completions probe', () => {
+    const slots = resolveSlots({
+      ...foundry,
+      'review.reviewer1.harness': 'pi',
+      'review.reviewer1.provider': 'foundry',
+      'review.reviewer1.model': 'kimi',
+    })
+    expect(slots.reviewer1).toMatchObject({
+      harness: 'pi',
+      provider: 'foundry',
+      override: { args: ['--model', 'yoke/kimi'], pi: { baseUrl: 'https://res/openai/v1', model: 'kimi' } },
+      probe: { url: 'https://res/openai/v1/chat/completions' },
+    })
+  })
+
+  it('forces a review worktree only when a slot uses pi', () => {
+    const own: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
+    expect(usesPi(own)).toBe(false)
+    expect(usesPi({ ...own, reviewer1: { harness: 'pi' } })).toBe(true)
+    expect(usesPi({ ...own, reviewer2: { harness: 'pi' } })).toBe(true)
+    expect(usesPi({ ...own, synthesis: { harness: 'pi' } })).toBe(true)
   })
 })

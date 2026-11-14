@@ -60,7 +60,7 @@ function slotInputs(settings: Settings, errors: string[]): Input[] {
     const harness = settings[harnessKey] ?? defaultHarness
     const model = settings[modelKey]
     if (harness && !isHarness(harness))
-      errors.push(`${harnessKey} "${harness}" must be claude or codex; ${howToSet(harnessKey, '<claude|codex>')}`)
+      errors.push(`${harnessKey} "${harness}" must be claude, codex or pi; ${howToSet(harnessKey, '<claude|codex|pi>')}`)
     if (required && !model) errors.push(`${modelKey} is required; ${howToSet(modelKey, '<model>')} (see \`yoke models\`)`)
     if (!required && harness && !model)
       errors.push(`${modelKey} is required when ${harnessKey} is set; ${howToSet(modelKey, '<model>')} (see \`yoke models\`)`)

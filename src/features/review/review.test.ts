@@ -165,6 +165,21 @@ describe('runReview', () => {
     expect(runs.at(-1)).toMatchObject({ harness: 'codex', override: undefined })
   })
 
+  const piOverride = { args: ['--model', 'yoke/kimi'], env: { YOKE_PI_API_KEY: 'k' }, pi: { baseUrl: 'https://llm/v1', model: 'kimi' } }
+  const piSlot = { harness: 'pi', model: 'kimi', provider: 'litellm', override: piOverride } as const
+
+  it("runs an unset synthesis slot on reviewer 1's whole pi slot, provider and model included", async () => {
+    await runReview('request', context({}, { reviewer1: piSlot, reviewer2: { harness: 'codex' } }))
+    expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+    expect(logs).toContain('synthesis (pi: litellm/kimi)…')
+  })
+
+  it('copies a pi reviewer 2 whole for the synthesis when reviewer 1 fails', async () => {
+    const slots: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: piSlot }
+    await runReview('request', context({ reviews: { claude: new Error('down') } }, slots))
+    expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+  })
+
   it('fails when every reviewer fails', async () => {
     const review = runReview('request', context({ reviews: { claude: new Error('down'), codex: new Error('down') } }))
     await expect(review).rejects.toThrow(ReviewError)
