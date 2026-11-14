@@ -54,6 +54,7 @@ export const searchToolPins: Pin[] = [
 export type SearchToolAsset = { url: string; file: string; member: string; sha256: string }
 
 const downloadTimeoutMs = 60_000
+const extractTimeoutMs = 60_000
 
 const failure = (message: string) => new ReviewFailure('fd and rg could not be installed', message)
 
@@ -91,16 +92,18 @@ async function download(asset: SearchToolAsset, fetch: InstallDeps['fetch']): Pr
 
 function extract(tar: string, archive: string, member: string, dir: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile(tar, ['-xf', archive, '-C', dir, '--strip-components=1', member], (error, _stdout, stderr) => {
-      if (error) reject(failure(`Could not extract ${member}: ${stderr.trim() || error.message}`))
+    const args = ['-xf', archive, '-C', dir, '--strip-components=1', member]
+    execFile(tar, args, { timeout: extractTimeoutMs }, (error, _stdout, stderr) => {
+      if (error) reject(failure(`Could not extract ${member}: ${error.killed ? 'timed out' : stderr.trim() || error.message}`))
       else resolve()
     })
   })
 }
 
 export async function installAssets(assets: SearchToolAsset[], { fetch, tar }: InstallDeps): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), 'yoke-search-tools-'))
+  let dir: string | undefined
   try {
+    dir = mkdtempSync(join(tmpdir(), 'yoke-search-tools-'))
     for (const asset of assets) {
       const bytes = await download(asset, fetch)
       const actual = createHash('sha256').update(bytes).digest('hex')
@@ -113,7 +116,8 @@ export async function installAssets(assets: SearchToolAsset[], { fetch, tar }: I
     return dir
   } catch (error) {
     removeDir(dir)
-    throw error
+    if (error instanceof ReviewFailure) throw error
+    throw failure(error instanceof Error ? error.message : String(error))
   }
 }
 

@@ -265,7 +265,17 @@ describe.skipIf(process.platform === 'win32')('runHarness on a recorded pi strea
     expect(agentDir).not.toBe(process.env.PI_CODING_AGENT_DIR)
     expect(existsSync(agentDir ?? '')).toBe(false)
     expect(JSON.parse(readFileSync(`${seen}.json`, 'utf8'))).toMatchObject({ providers: { yoke: { baseUrl: 'https://llm/v1' } } })
-    expect(readFileSync(`${seen}.path`, 'utf8').split(delimiter)[0]).toBe(join(dir, 'user-agent', 'bin'))
+    expect(readFileSync(`${seen}.path`, 'utf8').trim().split(delimiter).at(-1)).toBe(join(dir, 'user-agent', 'bin'))
+  })
+
+  it("resolves rg from the CI tools dir ahead of a stale one in the user's agent bin", async () => {
+    const seen = join(dir, 'seen')
+    fakePi(stream(reviewTurn), `command -v rg > '${seen}'`)
+    binDir(join('user-agent', 'bin'), ['rg'])
+    const tools = binDir('ci-tools', ['rg'])
+    const env = { ...providerOverride.env, PATH: `${tools}${delimiter}${process.env.PATH ?? ''}` }
+    expect(await runHarness({ ...piRun(), override: { ...providerOverride, env } })).toMatchObject({ ok: true })
+    expect(readFileSync(seen, 'utf8').trim()).toBe(join(tools, 'rg'))
   })
 
   it('redacts the credential and key shapes when pi exits nonzero', async () => {

@@ -28,6 +28,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -154,6 +155,25 @@ describe('installAssets', () => {
     const error = await installAssets([archive('fd-v1', 'fd', 'tar.gz').asset], { fetch, tar: 'tar' }).catch((e) => e)
     expect(error).toBeInstanceOf(ReviewFailure)
     expect(error.message).toBe('Could not download https://example.test/fd-v1.tar.gz: HTTP 404')
+  })
+
+  it('fails, and removes its dir, when the archive cannot be written', async () => {
+    const fd = archive('fd-v1', 'fd', 'tar.gz')
+    const before = new Set(readdirSync(tmpdir()))
+    const asset = { ...fd.asset, file: join('missing', fd.asset.file) }
+    const error = await installAssets([asset], { fetch: serve(fd.bytes), tar: 'tar' }).catch((e) => e)
+    expect(error).toBeInstanceOf(ReviewFailure)
+    expect(error.message).toContain('ENOENT')
+    expect(readdirSync(tmpdir()).filter((name) => name.startsWith('yoke-search-tools-') && !before.has(name))).toEqual([])
+  })
+
+  it('fails when its dir cannot be made', async () => {
+    vi.stubEnv('TMPDIR', join(dir, 'missing'))
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    const error = await installAssets([archive('fd-v1', 'fd', 'tar.gz').asset], { fetch, tar: 'tar' }).catch((e) => e)
+    expect(error).toBeInstanceOf(ReviewFailure)
+    expect(error.message).toContain('ENOENT')
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('fails closed on a runner with no pinned target', async () => {
