@@ -23,7 +23,7 @@ export function piAgentDir(env: NodeJS.ProcessEnv, home = homedir()): string {
   return dir === '~' ? home : dir.replace(/^~(?=[/\\])/, home)
 }
 
-function pathKey(env: NodeJS.ProcessEnv): string {
+export function pathKey(env: NodeJS.ProcessEnv): string {
   if ('PATH' in env) return 'PATH'
   return Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
 }
