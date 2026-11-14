@@ -117,7 +117,7 @@ describe('pi slots', () => {
     })
   })
 
-  it('forces a review worktree only when a slot uses pi', () => {
+  it('says whether any slot uses pi', () => {
     const own: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
     expect(usesPi(own)).toBe(false)
     expect(usesPi({ ...own, reviewer1: { harness: 'pi' } })).toBe(true)

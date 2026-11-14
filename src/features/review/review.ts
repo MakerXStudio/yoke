@@ -15,7 +15,7 @@ import { logged, reviewLog } from './reviewLog'
 import { type ReviewResult, ReviewFailure, runReview } from './run'
 import { prepareRunDir, reviewRunDir } from './runDir'
 import { installSearchTools, type SearchToolDeps, withSearchTools } from './searchTools'
-import { type ReviewSlots, resolveSlots, usesPi } from './slots'
+import { type ReviewSlots, resolveSlots } from './slots'
 import { type StatusUi, timed } from './status'
 import { type StepUsage, writeJobSummary } from './usage'
 import { modelsFooter, readUsedModels } from './usedModels'
@@ -26,7 +26,7 @@ function maskInCi(secret: string): void {
   if (isCi()) process.stdout.write(`::add-mask::${secret}\n`)
 }
 
-export async function reviewAtHead(
+async function reviewAtHead(
   pr: PullRequest,
   reviewDir: string,
   request: string,
@@ -36,7 +36,7 @@ export async function reviewAtHead(
 ): Promise<ReviewResult> {
   const checkoutDir = mkdtempSync(join(tmpdir(), 'yoke-review-'))
   try {
-    const checkout = await timed(ui, `checking out ${pr.headRefOid.slice(0, 7)}`, () => checkoutHead(pr, checkoutDir, usesPi(slots)))
+    const checkout = await timed(ui, `checking out ${pr.headRefOid.slice(0, 7)}`, () => checkoutHead(pr, checkoutDir))
     try {
       return await runReview(request, { cwd: checkout.cwd, reviewDir, slots, runHarness, log: ui.log, track: ui.track, strict, untrusted })
     } finally {

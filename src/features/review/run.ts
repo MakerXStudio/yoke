@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { cachedSlot, recordSlot } from './cachedSlots'
@@ -6,7 +6,7 @@ import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import type { HarnessRun, RunHarness } from './harness'
 import { ReviewError } from './pr'
 import { buildReviewerPrompt, buildSynthesisPrompt } from './prompts'
-import { implicitSynthesis, type Reviewer, type ReviewSlots, type Slot } from './slots'
+import { implicitSynthesis, type Reviewer, type ReviewSlots, type Slot, usesPi } from './slots'
 import type { StatusUi } from './status'
 import type { StepUsage } from './usage'
 import { forgetUsedModel, recordUsedModel, type StepName } from './usedModels'
@@ -136,7 +136,16 @@ async function synthesise(requestPath: string, succeeded: Reviewer[], reviewersR
   return rawReviews(succeeded, context)
 }
 
+function assertPiCanReview({ cwd, slots }: ReviewContext): void {
+  if (!usesPi(slots) || !lstatSync(join(cwd, '.pi', 'commands'), { throwIfNoEntry: false })) return
+  throw new ReviewFailure(
+    "pi can't review this repo",
+    'pi renames .pi/commands to .pi/prompts when it starts, which would change the repo under review. Move .pi/commands to .pi/prompts in the repo, or use claude or codex for this review.',
+  )
+}
+
 export async function runReview(request: string, reviewContext: ReviewContext): Promise<ReviewResult> {
+  assertPiCanReview(reviewContext)
   const context: RunContext = { ...reviewContext, usage: {} }
   const requestPath = join(context.reviewDir, 'request.md')
   writeFileSync(requestPath, request)

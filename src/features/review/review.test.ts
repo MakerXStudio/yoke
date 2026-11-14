@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,17 +9,14 @@ import { findingMarker, type PriorComment } from './comments'
 import { parseSynthesis } from './findings'
 import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFailure, postFindings } from './post'
-import type * as Pr from './pr'
-import { checkoutHead, ReviewError } from './pr'
+import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { assertHead, reviewAtHead, saveReview } from './review'
+import { assertHead, saveReview } from './review'
 import { type ReviewContext, ReviewFailure, runReview } from './run'
 import { reviewRunDir } from './runDir'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
 import type { StepName } from './usedModels'
-
-vi.mock('./pr', async (actual) => ({ ...(await actual<typeof Pr>()), checkoutHead: vi.fn() }))
 
 const synthesis = `## Summary
 
@@ -71,6 +68,12 @@ function context({ reviews = {}, synthesis: synthesised = synthesis }: Fake = {}
       return { ok: true }
     },
   }
+}
+
+function repoWith(...paths: string[]): string {
+  const repo = join(reviewDir, 'repo')
+  for (const path of paths) mkdirSync(join(repo, path), { recursive: true })
+  return repo
 }
 
 function cache(step: StepName, output: string, slot: string): void {
@@ -182,6 +185,37 @@ describe('runReview', () => {
     const slots: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: piSlot }
     await runReview('request', context({ reviews: { claude: new Error('down') } }, slots))
     expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+  })
+
+  const piReviewer1: ReviewSlots = { ...ownAuth, reviewer1: { harness: 'pi' } }
+  const piSlots: [string, ReviewSlots][] = [
+    ['reviewer 1', piReviewer1],
+    ['reviewer 2', { ...ownAuth, reviewer2: { harness: 'pi' } }],
+    ['synthesis', { ...ownAuth, synthesis: { harness: 'pi' } }],
+  ]
+
+  it.each(piSlots)('stops before any reviewer runs when %s uses pi and the repo has .pi/commands', async (_, slots) => {
+    const review = runReview('request', { ...context({}, slots), cwd: repoWith('.pi/commands') })
+    await expect(review).rejects.toThrow(ReviewFailure)
+    await expect(review).rejects.toMatchObject({ reason: "pi can't review this repo" })
+    expect(runs).toEqual([])
+  })
+
+  it('stops when .pi/commands is a dangling symlink', async () => {
+    const repo = repoWith('.pi')
+    symlinkSync(join(repo, 'missing'), join(repo, '.pi', 'commands'))
+    await expect(runReview('request', { ...context({}, piReviewer1), cwd: repo })).rejects.toThrow(ReviewFailure)
+    expect(runs).toEqual([])
+  })
+
+  it('reviews a repo with .pi/commands when no slot uses pi', async () => {
+    await runReview('request', { ...context(), cwd: repoWith('.pi/commands') })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews with pi when the repo has only .pi/prompts', async () => {
+    await runReview('request', { ...context({}, piReviewer1), cwd: repoWith('.pi/prompts') })
+    expect(runs).toHaveLength(3)
   })
 
   it('fails when every reviewer fails', async () => {
@@ -466,31 +500,5 @@ describe('saveReview', () => {
     writeFileSync(path, synthesis)
     saveReview(path, null)
     expect(existsSync(path)).toBe(false)
-  })
-})
-
-describe('reviewAtHead', () => {
-  const pr: PullRequest = {
-    number: 4,
-    url: 'https://github.com/o/r/pull/4',
-    title: 't',
-    baseRefName: 'main',
-    baseRefOid: 'b',
-    headRefName: 'f',
-    headRefOid: 'abcdef123',
-    files: [],
-  }
-  const checkedOut = new Error('checked out')
-
-  it.each([
-    ['no slot uses pi', ownAuth, false],
-    ['reviewer1 uses pi', { ...ownAuth, reviewer1: { harness: 'pi' } }, true],
-    ['reviewer2 uses pi', { ...ownAuth, reviewer2: { harness: 'pi' } }, true],
-    ['synthesis uses pi', { ...ownAuth, synthesis: { harness: 'pi' } }, true],
-  ] as const)('forces a worktree checkout only when a pi slot runs (%s)', async (_, slots: ReviewSlots, force) => {
-    vi.mocked(checkoutHead).mockReset().mockRejectedValue(checkedOut)
-    const ui = lineUi(() => {}, { activity: false })
-    await expect(reviewAtHead(pr, reviewDir, 'request', slots, ui, { strict: false, untrusted: false })).rejects.toBe(checkedOut)
-    expect(checkoutHead).toHaveBeenCalledWith(pr, expect.any(String), force)
   })
 })
