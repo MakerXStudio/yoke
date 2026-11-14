@@ -37,7 +37,7 @@ function prepareRunDir(reviewDir: string, force: boolean): void {
   if (force) for (const name of cachedOutputs) rmSync(join(reviewDir, name), { force: true })
 }
 
-async function reviewAtHead(
+export async function reviewAtHead(
   pr: PullRequest,
   reviewDir: string,
   request: string,

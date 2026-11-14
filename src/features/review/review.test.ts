@@ -9,13 +9,16 @@ import { findingMarker, type PriorComment } from './comments'
 import { parseSynthesis } from './findings'
 import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFailure, postFindings } from './post'
-import { ReviewError } from './pr'
+import type * as Pr from './pr'
+import { checkoutHead, ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { assertHead, reviewRunDir, saveReview } from './review'
+import { assertHead, reviewAtHead, reviewRunDir, saveReview } from './review'
 import { type ReviewContext, ReviewFailure, runReview } from './run'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
 import type { StepName } from './usedModels'
+
+vi.mock('./pr', async (actual) => ({ ...(await actual<typeof Pr>()), checkoutHead: vi.fn() }))
 
 const synthesis = `## Summary
 
@@ -462,5 +465,31 @@ describe('saveReview', () => {
     writeFileSync(path, synthesis)
     saveReview(path, null)
     expect(existsSync(path)).toBe(false)
+  })
+})
+
+describe('reviewAtHead', () => {
+  const pr: PullRequest = {
+    number: 4,
+    url: 'https://github.com/o/r/pull/4',
+    title: 't',
+    baseRefName: 'main',
+    baseRefOid: 'b',
+    headRefName: 'f',
+    headRefOid: 'abcdef123',
+    files: [],
+  }
+  const checkedOut = new Error('checked out')
+
+  it.each([
+    ['no slot uses pi', ownAuth, false],
+    ['reviewer1 uses pi', { ...ownAuth, reviewer1: { harness: 'pi' } }, true],
+    ['reviewer2 uses pi', { ...ownAuth, reviewer2: { harness: 'pi' } }, true],
+    ['synthesis uses pi', { ...ownAuth, synthesis: { harness: 'pi' } }, true],
+  ] as const)('forces a worktree checkout only when a pi slot runs (%s)', async (_, slots: ReviewSlots, force) => {
+    vi.mocked(checkoutHead).mockReset().mockRejectedValue(checkedOut)
+    const ui = lineUi(() => {}, { activity: false })
+    await expect(reviewAtHead(pr, reviewDir, 'request', slots, ui, { strict: false, untrusted: false })).rejects.toBe(checkedOut)
+    expect(checkoutHead).toHaveBeenCalledWith(pr, expect.any(String), force)
   })
 })

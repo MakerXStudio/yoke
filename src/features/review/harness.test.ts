@@ -1,10 +1,16 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import type * as fs from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { harnessArgs, type HarnessRun, piFailure, runHarness, windowsQuote } from './harness'
+
+vi.mock('node:fs', async (actual) => {
+  const real = await actual<typeof fs>()
+  return { ...real, writeFileSync: vi.fn(real.writeFileSync) }
+})
 
 const run: HarnessRun = { harness: 'codex', prompt: 'p', cwd: '/repo', reviewDir: '/review', outputPath: '/review/out.md' }
 
@@ -70,7 +76,10 @@ afterEach(() => {
 function binDir(name: string, files: string[]): string {
   const bin = join(dir, name)
   mkdirSync(bin, { recursive: true })
-  for (const file of files) writeFileSync(join(bin, file), '')
+  for (const file of files) {
+    writeFileSync(join(bin, file), '')
+    chmodSync(join(bin, file), 0o755)
+  }
   return bin
 }
 
@@ -106,6 +115,14 @@ describe('harnessArgs for pi', () => {
   it('offers grep and find when rg and fd are on PATH', () => {
     const env = { ...agentEnv(), PATH: [binDir('a', ['rg']), binDir('b', ['fd'])].join(':') }
     expect(harnessArgs(pi, env, 'linux')).toEqual([...flags, '--tools', 'read,ls,bash,grep,find'])
+  })
+
+  it.skipIf(process.platform === 'win32')('does not offer grep for an rg that is not executable or not a file', () => {
+    const bin = binDir('a', ['rg'])
+    chmodSync(join(bin, 'rg'), 0o644)
+    mkdirSync(join(binDir('b', []), 'rg'))
+    const env = { ...agentEnv(), PATH: [bin, join(dir, 'b')].join(':') }
+    expect(harnessArgs(pi, env, 'linux').at(-1)).toBe('read,ls,bash')
   })
 
   it("offers find with Debian's fdfind", () => {
@@ -146,6 +163,12 @@ describe('piFailure', () => {
     expect(error).toContain('401: {"error":"[redacted] Authorization: [redacted]')
   })
 
+  it('redacts a LiteLLM key hash', () => {
+    expect(piFailure('error', 'Authentication Error, Invalid proxy server token passed. Key Hash (Token) =4a1f9c0e')).toBe(
+      'pi stopped: error: Authentication Error, Invalid proxy server token passed. Key Hash (Token) =[redacted]',
+    )
+  })
+
   it('caps the error at 300 characters', () => {
     expect(piFailure('length', 'x'.repeat(400))).toBe(`pi stopped: length: ${'x'.repeat(300)}`)
   })
@@ -184,6 +207,19 @@ function fakePi(output: string, script = ''): void {
   chmodSync(join(bin, 'pi'), 0o755)
   vi.stubEnv('PATH', `${bin}${delimiter}${process.env.PATH ?? ''}`)
   vi.stubEnv('PI_CODING_AGENT_DIR', binDir('user-agent', []))
+}
+
+const providerOverride = {
+  args: ['--model', 'yoke/kimi'],
+  env: { YOKE_PI_API_KEY: 'k-secret' },
+  pi: { baseUrl: 'https://llm/v1', model: 'kimi' },
+}
+
+function stubTmpdir(): string {
+  const temp = join(dir, 'tmp')
+  mkdirSync(temp)
+  vi.stubEnv('TMPDIR', temp)
+  return temp
 }
 
 function piRun(): HarnessRun {
@@ -230,6 +266,42 @@ describe.skipIf(process.platform === 'win32')('runHarness on a recorded pi strea
     expect(existsSync(agentDir ?? '')).toBe(false)
     expect(JSON.parse(readFileSync(`${seen}.json`, 'utf8'))).toMatchObject({ providers: { yoke: { baseUrl: 'https://llm/v1' } } })
     expect(readFileSync(`${seen}.path`, 'utf8').split(delimiter)[0]).toBe(join(dir, 'user-agent', 'bin'))
+  })
+
+  it('redacts the credential and key shapes when pi exits nonzero', async () => {
+    fakePi('', "echo 'Error: 401 bad key k-secret Bearer tok Key Hash (Token) = 77ab' >&2\nexit 1")
+    const result = await runHarness({ ...piRun(), override: providerOverride })
+    expect(result).toEqual({
+      ok: false,
+      error: 'pi exited with code 1\nError: 401 bad key [redacted] [redacted] Key Hash (Token) = [redacted]',
+    })
+  })
+
+  it('fails the run, without leaking a temp dir, when writing models.json fails', async () => {
+    const temp = stubTmpdir()
+    fakePi(stream(reviewTurn))
+    vi.mocked(writeFileSync).mockImplementationOnce(() => {
+      throw new Error('disk full')
+    })
+    expect(await runHarness({ ...piRun(), override: providerOverride })).toEqual({
+      ok: false,
+      error: 'pi could not set up its agent dir: disk full',
+    })
+    expect(readdirSync(temp)).toEqual([])
+  })
+
+  it('fails the run when its temp dir cannot be made', async () => {
+    vi.stubEnv('TMPDIR', join(dir, 'missing'))
+    fakePi(stream(reviewTurn))
+    expect(await runHarness({ ...piRun(), override: providerOverride })).toMatchObject({ ok: false })
+  })
+
+  it('fails the run and removes the temp dir when the review cannot be written', async () => {
+    const temp = stubTmpdir()
+    fakePi(stream(reviewTurn))
+    const result = await runHarness({ ...piRun(), outputPath: join(dir, 'missing', 'out.md'), override: providerOverride })
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('pi could not finish the review: ENOENT') })
+    expect(readdirSync(temp)).toEqual([])
   })
 
   it("keeps the user's pi agent dir for an own-auth slot", async () => {

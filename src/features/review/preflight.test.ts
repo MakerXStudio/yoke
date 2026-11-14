@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { Harness } from './harness'
 import { ReviewError } from './pr'
-import { assertViable, type Checks, type PiAuth, piDefaultProvider, piSignIn, type SignIn } from './preflight'
+import { assertViable, type Checks, type PiAuth, piDefaultProvider, piSignIn, reach, type SignIn } from './preflight'
 import type { ProbeRequest } from './provider'
 import { ReviewFailure } from './run'
 import type { ReviewSlots, Slot } from './slots'
@@ -14,6 +14,11 @@ import type { ReviewSlots, Slot } from './slots'
 const ownAuth: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
 
 const probe = (url: string): ProbeRequest => ({ url, headers: {}, body: {} })
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+})
 
 type Fake = { missing?: Harness[]; signedOut?: Harness[]; signIn?: SignIn; unreachable?: Record<string, string> }
 
@@ -129,7 +134,22 @@ describe('assertViable with pi', () => {
   it('names a model pi cannot resolve', async () => {
     const slots: ReviewSlots = { ...ownAuth, reviewer1: { harness: 'pi', model: 'kimi' } }
     const message = await errorOf(() => assertViable(slots, fake({ signIn: 'unresolvedModel' })))
-    expect(message).toContain('- pi can\'t resolve model "kimi"; use <provider>/<model> (see pi --list-models)')
+    expect(message).toContain('- pi can\'t resolve model "kimi"; use <provider>/<model> (see pi --list-models), and check ')
+  })
+
+  it("says pi's provider is not built in or in models.json, so an extension provider can't be used", async () => {
+    vi.stubEnv('PI_CODING_AGENT_DIR', '/pi')
+    const slots: ReviewSlots = { ...ownAuth, reviewer1: { harness: 'pi', model: 'myext/m' } }
+    const message = await errorOf(() => assertViable(slots, fake({ signIn: 'unknownProvider' })))
+    expect(message).toContain(
+      `- pi's provider for model "myext/m" is not built in or set in ${join('/pi', 'models.json')} (review.reviewer1, review.synthesis); yoke runs pi without extensions, so Pi extension providers are unavailable to yoke`,
+    )
+  })
+
+  it("points at pi's models.json when pi can't load its models", async () => {
+    vi.stubEnv('PI_CODING_AGENT_DIR', '/pi')
+    const message = await errorOf(() => assertViable({ ...ownAuth, reviewer1: { harness: 'pi' } }, fake({ signIn: 'invalidModels' })))
+    expect(message).toContain(`- pi can't load its models (review.reviewer1, review.synthesis); fix ${join('/pi', 'models.json')}`)
   })
 
   it('stops when pi has no model to run', async () => {
@@ -138,13 +158,13 @@ describe('assertViable with pi', () => {
   })
 })
 
-function auth(code: number, defaultProvider?: string): PiAuth & { args: string[][] } {
+function auth(code: number, defaultProvider?: string, stdout = ''): PiAuth & { args: string[][] } {
   const args: string[][] = []
   return {
     args,
     check: async (checked) => {
       args.push(checked)
-      return code
+      return { code, stdout }
     },
     defaultProvider: () => defaultProvider,
   }
@@ -165,6 +185,17 @@ describe('piSignIn', () => {
     const fakeAuth = auth(0, 'openai-codex')
     expect(await piSignIn(undefined, fakeAuth)).toBe('signedIn')
     expect(fakeAuth.args).toEqual([['--provider', 'openai-codex']])
+  })
+
+  it.each([
+    [1, '{"status":"not_ready","provider":"myext","reason":"provider_not_found"}', undefined, 'unknownProvider'],
+    [1, '{"status":"not_ready","provider":"openai","reason":"credentials_not_configured"}', undefined, 'signedOut'],
+    [2, '{"status":"invalid","provider":"openai","reason":"invalid_state"}', undefined, 'invalidModels'],
+    [2, '{"status":"invalid","provider":"kimi","reason":"invalid_state"}', 'kimi', 'unresolvedModel'],
+    [1, 'not json', undefined, 'signedOut'],
+    [2, '', undefined, 'noModel'],
+  ] as const)('maps exit %i with `%s` to %s', async (code, stdout, model, state) => {
+    expect(await piSignIn(model, auth(code, 'openai', stdout))).toBe(state)
   })
 
   it('stops without running pi when there is no model and no default provider', async () => {
@@ -194,5 +225,26 @@ describe('piDefaultProvider', () => {
     expect(piDefaultProvider({ PI_CODING_AGENT_DIR: dir })).toBeUndefined()
     writeFileSync(join(dir, 'settings.json'), JSON.stringify({ theme: 'dark' }))
     expect(piDefaultProvider({ PI_CODING_AGENT_DIR: dir })).toBeUndefined()
+  })
+})
+
+function failWith(status: number, body: string): void {
+  vi.stubGlobal('fetch', async () => new Response(body, { status }))
+}
+
+describe('reach', () => {
+  it('redacts the credential and key shapes from a failed probe body, keeping the status and safe text', async () => {
+    failWith(401, 'bad key secret-1 for model kimi; Bearer abc sk-live_2 api_key=plain Key Hash (Token) = 9f3a1c')
+    const error = await reach({ url: 'https://p/v1/chat/completions', headers: { Authorization: 'Bearer secret-1' }, body: {} })
+    expect(error).not.toMatch(/secret-1|abc|sk-live_2|plain|9f3a1c/)
+    expect(error).toBe(
+      'HTTP 401: bad key [redacted] for model kimi; [redacted] [redacted] api_key=[redacted] Key Hash (Token) = [redacted]',
+    )
+  })
+
+  it('redacts an x-api-key credential before capping the body at 300 characters', async () => {
+    failWith(400, `${'x'.repeat(295)}key-abcdefgh`)
+    const error = await reach({ url: 'https://p/v1/messages', headers: { 'x-api-key': 'key-abcdefgh' }, body: {} })
+    expect(error).toBe(`HTTP 400: ${'x'.repeat(295)}[reda`)
   })
 })
