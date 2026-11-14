@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -67,6 +67,12 @@ function context({ reviews = {}, synthesis: synthesised = synthesis }: Fake = {}
       return { ok: true }
     },
   }
+}
+
+function repoWith(...paths: string[]): string {
+  const repo = join(reviewDir, 'repo')
+  for (const path of paths) mkdirSync(join(repo, path), { recursive: true })
+  return repo
 }
 
 function cache(step: StepName, output: string, slot: string): void {
@@ -163,6 +169,67 @@ describe('runReview', () => {
     }
     await runReview('request', context({ reviews: { claude: new Error('down') } }, slots))
     expect(runs.at(-1)).toMatchObject({ harness: 'codex', override: undefined })
+  })
+
+  const piOverride = { args: ['--model', 'yoke/kimi'], env: { YOKE_PI_API_KEY: 'k' }, pi: { baseUrl: 'https://llm/v1', model: 'kimi' } }
+  const piSlot = { harness: 'pi', model: 'kimi', provider: 'litellm', override: piOverride } as const
+
+  it("runs an unset synthesis slot on reviewer 1's whole pi slot, provider and model included", async () => {
+    await runReview('request', context({}, { reviewer1: piSlot, reviewer2: { harness: 'codex' } }))
+    expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+    expect(logs).toContain('synthesis (pi: litellm/kimi)…')
+  })
+
+  it('copies a pi reviewer 2 whole for the synthesis when reviewer 1 fails', async () => {
+    const slots: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: piSlot }
+    await runReview('request', context({ reviews: { claude: new Error('down') } }, slots))
+    expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+  })
+
+  const piReviewer1: ReviewSlots = { ...ownAuth, reviewer1: { harness: 'pi' } }
+  const piSlots: [string, ReviewSlots][] = [
+    ['reviewer 1', piReviewer1],
+    ['reviewer 2', { ...ownAuth, reviewer2: { harness: 'pi' } }],
+    ['synthesis', { ...ownAuth, synthesis: { harness: 'pi' } }],
+  ]
+
+  it.each(piSlots)('stops before any reviewer runs when %s uses pi and the repo has .pi/commands but no .pi/prompts', async (_, slots) => {
+    const review = runReview('request', { ...context({}, slots), cwd: repoWith('.pi/commands') })
+    await expect(review).rejects.toThrow(ReviewFailure)
+    await expect(review).rejects.toMatchObject({ reason: "pi can't review this repo" })
+    expect(runs).toEqual([])
+  })
+
+  it('reviews with pi and leaves a dangling .pi/commands symlink alone', async () => {
+    const repo = repoWith('.pi')
+    const target = join(repo, 'missing')
+    symlinkSync(target, join(repo, '.pi', 'commands'))
+    await runReview('request', { ...context({}, piReviewer1), cwd: repo })
+    expect(runs).toHaveLength(3)
+    expect(readlinkSync(join(repo, '.pi', 'commands'))).toBe(target)
+  })
+
+  it('reviews with pi when .pi is a file', async () => {
+    const repo = repoWith()
+    mkdirSync(repo, { recursive: true })
+    writeFileSync(join(repo, '.pi'), '')
+    await runReview('request', { ...context({}, piReviewer1), cwd: repo })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews a repo with .pi/commands when no slot uses pi', async () => {
+    await runReview('request', { ...context(), cwd: repoWith('.pi/commands') })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews with pi when the repo has both .pi/commands and .pi/prompts', async () => {
+    await runReview('request', { ...context({}, piReviewer1), cwd: repoWith('.pi/commands', '.pi/prompts') })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews with pi when the repo has only .pi/prompts', async () => {
+    await runReview('request', { ...context({}, piReviewer1), cwd: repoWith('.pi/prompts') })
+    expect(runs).toHaveLength(3)
   })
 
   it('fails when every reviewer fails', async () => {

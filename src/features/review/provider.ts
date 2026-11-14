@@ -10,9 +10,13 @@ export type Provider = { kind: ProviderKind; baseUrl: string } & Credential
 
 export type Endpoints = { anthropic: string; responses: string }
 
-export type Override = { args: string[]; env: Record<string, string> }
+export type PiModel = { baseUrl: string; model: string }
 
-const harnesses: Harness[] = ['claude', 'codex']
+export type Override = { args: string[]; env: Record<string, string>; pi?: PiModel }
+
+const harnesses: Harness[] = ['claude', 'codex', 'pi']
+
+export const piKeyEnv = 'YOKE_PI_API_KEY'
 
 function codexKeyEnv(provider: Provider): string {
   return `YOKE_${provider.kind.toUpperCase()}_${'token' in provider ? 'TOKEN' : 'API_KEY'}`
@@ -63,6 +67,40 @@ function buildCodexOverride(provider: Provider, endpoints: Endpoints, model: str
   }
 }
 
+function buildPiOverride(provider: Provider, endpoints: Endpoints, model: string): Override {
+  return {
+    args: ['--model', `yoke/${model}`],
+    env: { [piKeyEnv]: credentialOf(provider) },
+    pi: { baseUrl: endpoints.responses, model },
+  }
+}
+
+const piMaxTokens = 32_000
+
+export function piModels({ baseUrl, model }: PiModel): unknown {
+  const entry = {
+    id: model,
+    name: model,
+    reasoning: true,
+    input: ['text'],
+    contextWindow: 200_000,
+    maxTokens: piMaxTokens,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // pi guesses these from the base URL (a proxy host containing deepseek.com flips most of them),
+    // so pin them to the request buildProbe sends.
+    compat: {
+      supportsDeveloperRole: true,
+      supportsStore: true,
+      maxTokensField: 'max_completion_tokens',
+      supportsUsageInStreaming: true,
+      supportsReasoningEffort: true,
+      thinkingFormat: 'openai',
+      supportsStrictMode: false,
+    },
+  }
+  return { providers: { yoke: { baseUrl, api: 'openai-completions', apiKey: `$${piKeyEnv}`, models: [entry] } } }
+}
+
 function claudeProviderEnv(provider: Provider, endpoints: Endpoints): Record<string, string> {
   if (provider.kind === 'foundry' && 'apiKey' in provider)
     return { CLAUDE_CODE_USE_FOUNDRY: '1', ANTHROPIC_FOUNDRY_BASE_URL: endpoints.anthropic, ANTHROPIC_FOUNDRY_API_KEY: provider.apiKey }
@@ -93,11 +131,26 @@ function claudeAuthHeaders(provider: Provider): Record<string, string> {
 
 export function buildProbe({ harness, model }: SlotModel, provider: Provider): ProbeRequest {
   const endpoints = deriveEndpoints(provider.kind, provider.baseUrl)
+  const bearer = { Authorization: `Bearer ${credentialOf(provider)}` }
   if (harness === 'codex')
+    return { url: `${endpoints.responses}/responses`, headers: bearer, body: { model, input: 'ping', max_output_tokens: 16 } }
+  if (harness === 'pi')
     return {
-      url: `${endpoints.responses}/responses`,
-      headers: { Authorization: `Bearer ${credentialOf(provider)}` },
-      body: { model, input: 'ping', max_output_tokens: 16 },
+      url: `${endpoints.responses}/chat/completions`,
+      headers: bearer,
+      body: {
+        model,
+        messages: [
+          { role: 'developer', content: 'Reply briefly.' },
+          { role: 'user', content: 'ping' },
+        ],
+        stream: true,
+        stream_options: { include_usage: true },
+        store: false,
+        max_completion_tokens: piMaxTokens,
+        tools: [{ type: 'function', function: { name: 'ping', description: 'Ping.', parameters: { type: 'object', properties: {} } } }],
+        reasoning_effort: 'medium',
+      },
     }
   return {
     url: `${endpoints.anthropic}/v1/messages`,
@@ -109,5 +162,6 @@ export function buildProbe({ harness, model }: SlotModel, provider: Provider): P
 export function buildOverride({ harness, model }: SlotModel, provider: Provider): Override {
   const endpoints = deriveEndpoints(provider.kind, provider.baseUrl)
   if (harness === 'codex') return buildCodexOverride(provider, endpoints, model)
+  if (harness === 'pi') return buildPiOverride(provider, endpoints, model)
   return buildClaudeOverride(provider, endpoints, model)
 }
