@@ -23,7 +23,7 @@ export function piAgentDir(env: NodeJS.ProcessEnv, home = homedir()): string {
   return dir === '~' ? home : dir.replace(/^~(?=[/\\])/, home)
 }
 
-function pathKey(env: NodeJS.ProcessEnv): string {
+export function pathKey(env: NodeJS.ProcessEnv): string {
   if ('PATH' in env) return 'PATH'
   return Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
 }
@@ -76,6 +76,6 @@ export function piEnv(env: NodeJS.ProcessEnv, agentDir: string | undefined): Nod
   const pi = { ...env, PI_OFFLINE: '1', PI_TELEMETRY: '0' }
   if (!agentDir) return pi
   const key = pathKey(env)
-  const path = [join(piAgentDir(env), 'bin'), env[key]].filter(Boolean).join(delimiter)
+  const path = [env[key], join(piAgentDir(env), 'bin')].filter(Boolean).join(delimiter)
   return { ...pi, [key]: path, PI_CODING_AGENT_DIR: agentDir }
 }

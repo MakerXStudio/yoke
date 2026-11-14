@@ -272,8 +272,13 @@ describe('review tools lockfile', () => {
     .parse(JSON.parse(readFileSync(join(toolsDir, 'package-lock.json'), 'utf8')))
   const installed = Object.entries(lock.packages).filter(([path]) => path !== '')
 
-  it('pins yoke, Claude Code and Codex to exact versions', () => {
-    expect(Object.keys(manifest.dependencies).toSorted()).toEqual(['@anthropic-ai/claude-code', '@makerx/yoke', '@openai/codex'])
+  it('pins yoke, Claude Code, Codex and Pi to exact versions', () => {
+    expect(Object.keys(manifest.dependencies).toSorted()).toEqual([
+      '@anthropic-ai/claude-code',
+      '@earendil-works/pi-coding-agent',
+      '@makerx/yoke',
+      '@openai/codex',
+    ])
     for (const [name, version] of Object.entries(manifest.dependencies)) {
       expect(version, name).toMatch(/^\d+\.\d+\.\d+$/)
       expect(lock.packages[`node_modules/${name}`]?.version, name).toBe(version)
