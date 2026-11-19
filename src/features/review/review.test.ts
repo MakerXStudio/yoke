@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -77,7 +77,7 @@ function cache(step: StepName, output: string, slot: string): void {
 describe('runReview', () => {
   it('runs both reviewers before synthesis and prints the ranked findings', async () => {
     const { report: output, synthesis: parsed } = await runReview('request', context())
-    expect(runs.map((r) => [r.harness, r.outputPath.split('/').at(-1)])).toEqual([
+    expect(runs.map((r) => [r.harness, basename(r.outputPath)])).toEqual([
       ['claude', 'reviewer1.md'],
       ['codex', 'reviewer2.md'],
       ['claude', 'synthesis.md'],
@@ -145,7 +145,7 @@ describe('runReview', () => {
       synthesis: { harness: 'claude', model: 'sonnet', override: { args: ['--model', 'sonnet'], env: {} } },
     }
     const { report } = await runReview('request', context({}, slots))
-    expect(runs.map((r) => [r.harness, r.outputPath.split('/').at(-1), r.override?.args])).toEqual([
+    expect(runs.map((r) => [r.harness, basename(r.outputPath), r.override?.args])).toEqual([
       ['codex', 'reviewer1.md', ['-m', 'gpt-5-codex']],
       ['codex', 'reviewer2.md', undefined],
       ['claude', 'synthesis.md', ['--model', 'sonnet']],
@@ -180,7 +180,7 @@ describe('runReview', () => {
     const review = runReview('request', { ...context({ reviews: { codex: new Error('down') } }), strict: true })
     await expect(review).rejects.toThrow(ReviewFailure)
     await expect(review).rejects.toMatchObject({ reason: 'reviewer 2 failed' })
-    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer1.md', 'reviewer2.md'])
+    expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer1.md', 'reviewer2.md'])
   })
 
   it('when strict, fails when synthesis fails instead of showing the raw reviews', async () => {
@@ -210,7 +210,7 @@ describe('runReview', () => {
     cache('reviewer1', 'cached claude review', 'claude: default model')
     cache('synthesis', 'stale synthesis', 'claude: default model')
     const { report } = await runReview('request', context())
-    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer2.md', 'synthesis.md'])
+    expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer2.md', 'synthesis.md'])
     expect(logs).toContain('reviewer1 (claude: default model): cached')
     expect(report).toContain('Crash')
   })
@@ -229,7 +229,7 @@ describe('runReview', () => {
     cache('reviewer2', 'codex', 'codex: gpt-5')
     cache('synthesis', synthesis, 'claude: default model')
     await runReview('request', context())
-    expect(runs.map((r) => r.outputPath.split('/').at(-1))).toEqual(['reviewer2.md', 'synthesis.md'])
+    expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer2.md', 'synthesis.md'])
   })
 
   it('does not cache the output of a failed reviewer', async () => {

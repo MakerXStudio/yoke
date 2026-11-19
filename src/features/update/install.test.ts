@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -9,7 +10,9 @@ const { detectInstall, installDir, isGitClone, isGlobalNpmInstall } = await impo
 
 describe('installDir', () => {
   it('is the package root above the bundled cli', () => {
-    expect(installDir('file:///usr/lib/node_modules/@makerx/yoke/dist/cli.js')).toBe(join('/usr/lib/node_modules/@makerx/yoke'))
+    expect(installDir(pathToFileURL(resolve('/usr/lib/node_modules/@makerx/yoke/dist/cli.js')).href)).toBe(
+      resolve('/usr/lib/node_modules/@makerx/yoke'),
+    )
   })
 })
 
