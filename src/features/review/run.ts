@@ -138,6 +138,7 @@ async function synthesise(requestPath: string, succeeded: Reviewer[], reviewersR
 
 function assertPiCanReview({ cwd, slots }: ReviewContext): void {
   if (!usesPi(slots) || !lstatSync(join(cwd, '.pi', 'commands'), { throwIfNoEntry: false })) return
+  if (existsSync(join(cwd, '.pi', 'prompts'))) return
   throw new ReviewFailure(
     "pi can't review this repo",
     'pi renames .pi/commands to .pi/prompts when it starts, which would change the repo under review. Move .pi/commands to .pi/prompts in the repo, or use claude or codex for this review.',

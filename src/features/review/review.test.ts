@@ -194,7 +194,7 @@ describe('runReview', () => {
     ['synthesis', { ...ownAuth, synthesis: { harness: 'pi' } }],
   ]
 
-  it.each(piSlots)('stops before any reviewer runs when %s uses pi and the repo has .pi/commands', async (_, slots) => {
+  it.each(piSlots)('stops before any reviewer runs when %s uses pi and the repo has .pi/commands but no .pi/prompts', async (_, slots) => {
     const review = runReview('request', { ...context({}, slots), cwd: repoWith('.pi/commands') })
     await expect(review).rejects.toThrow(ReviewFailure)
     await expect(review).rejects.toMatchObject({ reason: "pi can't review this repo" })
@@ -210,6 +210,11 @@ describe('runReview', () => {
 
   it('reviews a repo with .pi/commands when no slot uses pi', async () => {
     await runReview('request', { ...context(), cwd: repoWith('.pi/commands') })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews with pi when the repo has both .pi/commands and .pi/prompts', async () => {
+    await runReview('request', { ...context({}, piReviewer1), cwd: repoWith('.pi/commands', '.pi/prompts') })
     expect(runs).toHaveLength(3)
   })
 
