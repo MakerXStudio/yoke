@@ -59,7 +59,7 @@ function spawnError(harness: Harness, error: NodeJS.ErrnoException): string {
 }
 
 function exitError(harness: Harness, code: number | null, output: string, secret?: string): string {
-  const detail = harness === 'pi' ? sanitizeError(tail(output), [secret]) : tail(output)
+  const detail = harness === 'pi' ? sanitizeError(tail(output), [secret], { keep: 'end' }) : tail(output)
   return [`${harness} exited with code ${code ?? 'unknown'}`, ...(detail ? [detail] : [])].join('\n')
 }
 

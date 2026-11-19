@@ -287,6 +287,17 @@ describe.skipIf(process.platform === 'win32')('runHarness on a recorded pi strea
     })
   })
 
+  it('keeps the final error line of long exit output, redacting a secret at the truncation boundary', async () => {
+    const noise = Array.from({ length: 30 }, (_, i) => `progress line ${i} ${'.'.repeat(20)}`).join('\n')
+    const cause = 'Error: 401 invalid credentials'
+    fakePi('', `cat <<'OUT' >&2\n${noise}\nk-secret${'x'.repeat(300 - cause.length - 5)}\n${cause}\nOUT\nexit 1`)
+    const result = await runHarness({ ...piRun(), override: providerOverride })
+    expect(result.ok).toBe(false)
+    const error = result.ok ? '' : result.error
+    expect(error).toMatch(/\nError: 401 invalid credentials$/)
+    expect(error).not.toContain('cret')
+  })
+
   it('fails the run, without leaking a temp dir, when writing models.json fails', async () => {
     const temp = stubTmpdir()
     fakePi(stream(reviewTurn))
