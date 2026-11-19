@@ -507,7 +507,7 @@ describe('writeCallerWorkflow', () => {
   it('finds the repo root from a subdirectory', () => {
     execFileSync('git', ['init', '-q'], { cwd: root })
     mkdirSync(join(root, 'sub'))
-    expect(repoRoot(join(root, 'sub'))).toBe(realpathSync(root))
+    expect(repoRoot(join(root, 'sub'))).toBe(realpathSync.native(root))
   })
 
   it('fails outside a git repository', () => {

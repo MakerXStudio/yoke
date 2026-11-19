@@ -9,6 +9,12 @@ describe('raiseGuide', () => {
     expect(lines).toContain('EOF')
   })
 
+  it('passes the body by file, never as a --body argument', () => {
+    expect(raiseGuide).toContain('--body-file "<path>"')
+    expect(raiseGuide).toContain('--body-file - <<')
+    expect(raiseGuide).not.toContain('--body "')
+  })
+
   it('starts body headings flush-left', () => {
     expect(lines).toContain('## What')
   })

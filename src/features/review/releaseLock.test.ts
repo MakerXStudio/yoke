@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,6 +11,13 @@ const steps = z
   .object({ jobs: z.object({ release: z.object({ steps: z.array(z.object({ name: z.string(), run: z.string().optional() })) }) }) })
   .parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8'))).jobs.release.steps
 const findNewTag = steps.find((step) => step.name === 'Find new tag')?.run ?? ''
+
+// On Windows a bare `bash` can resolve to WSL's System32\bash.exe, which runs in Linux and can't use this Windows git or paths.
+const gitBash = () => {
+  const root = join(execFileSync('git', ['--exec-path'], { encoding: 'utf8' }).trim(), '../../..')
+  return [join(root, 'bin', 'bash.exe'), join(root, 'usr', 'bin', 'bash.exe')].find((path) => existsSync(path)) ?? 'bash'
+}
+const bash = process.platform === 'win32' ? gitBash() : 'bash'
 
 describe('release Find new tag', () => {
   let dir: string
@@ -26,7 +33,7 @@ describe('release Find new tag', () => {
     writeFileSync(join(dir, 'tags-before'), tagsBefore.map((t) => `${t}\n`).join(''))
     const output = join(dir, 'output')
     writeFileSync(output, '')
-    execFileSync('bash', ['-e', '-c', findNewTag], { cwd: dir, env: { ...process.env, RUNNER_TEMP: dir, GITHUB_OUTPUT: output } })
+    execFileSync(bash, ['-e', '-c', findNewTag], { cwd: dir, env: { ...process.env, RUNNER_TEMP: dir, GITHUB_OUTPUT: output } })
     return Object.fromEntries(
       readFileSync(output, 'utf8')
         .trim()

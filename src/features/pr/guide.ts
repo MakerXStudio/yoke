@@ -58,11 +58,18 @@ Mandatory in every permission mode, including auto-accept and bypass. Write the 
 
 Create
 
+Write the body as UTF-8 with your file-writing tool to a new file outside the repo: in your session scratchpad dir if you have one, else in the OS temp dir with a name unique to this PR, such as one containing the branch name. Never reuse a file you did not write this session; another session may own it. Overwrite your own when revising. Pass the exact absolute path you wrote, quoted:
+
 git push -u origin HEAD
-yoke pr raise --title "<title>" --body "$(cat <<'EOF'
+yoke pr raise --title "<title>" --body-file "<path>"
+
+Delete the file once \`yoke pr raise\` succeeds.
+
+In bash, a heredoc into stdin also works:
+
+yoke pr raise --title "<title>" --body-file - <<'EOF'
 <body>
 EOF
-)"
 
 Always a draft; the user marks it ready for review themselves. If \`yoke pr raise\` rejects the description, it names each rule that failed: fix those, show the revised description, and get approval again before rerunning. On success it prints the PR URL; report it.
 `

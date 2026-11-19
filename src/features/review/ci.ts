@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 import packageJson from '../../../package.json' with { type: 'json' }
 import { howToSet, type SettingKey, type Settings } from '../config/settings'
@@ -11,7 +11,7 @@ import { shellQuote } from './shellQuote'
 
 export const reviewWorkflowRef = `MakerXStudio/yoke/.github/workflows/review.yml@review-v${packageJson.version}`
 
-export const callerWorkflowPath = join('.github', 'workflows', 'review-pr.yml')
+export const callerWorkflowPath = '.github/workflows/review-pr.yml'
 
 export const baseUrlVariable = 'REVIEW_CI_BASE_URL'
 export const apiKeySecret = 'REVIEW_CI_API_KEY'
@@ -147,7 +147,9 @@ export function githubRepo(cwd = process.cwd()): string {
 
 export function repoRoot(cwd = process.cwd()): string {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return resolve(
+      execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(),
+    )
   } catch {
     throw new ReviewError('Not in a git repository; run `yoke review ci` from the repo to review.')
   }

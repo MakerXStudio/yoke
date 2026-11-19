@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { PrValidationError, raisePr } from './raise'
+import { PrBodyError, PrValidationError, raisePr, readBody } from './raise'
 
 const title = 'feat(retake): confirm before resetting'
+const failingRead = () => {
+  throw new Error('ENOENT: no such file or directory')
+}
 const body = '## What\n\nRetake asks for confirmation.\n\n## Why\n\nResults were lost by accident.\n'
 
 describe('raisePr', () => {
@@ -26,5 +29,38 @@ describe('raisePr', () => {
 
   it('names the failed rule in the error message', () => {
     expect(() => raisePr({ title, body: '## What\n\nOnly what.', draft: true }, vi.fn())).toThrow(/why-required/)
+  })
+})
+
+describe('readBody', () => {
+  it('returns --body unchanged', () => {
+    const read = vi.fn(() => '')
+    expect(readBody({ body }, read)).toBe(body)
+    expect(read).not.toHaveBeenCalled()
+  })
+
+  it('reads the body from a file path', () => {
+    const read = vi.fn(() => body)
+    expect(readBody({ bodyFile: 'body.md' }, read)).toBe(body)
+    expect(read).toHaveBeenCalledWith('body.md')
+  })
+
+  it('hands - to the reader for stdin', () => {
+    const read = vi.fn(() => body)
+    expect(readBody({ bodyFile: '-' }, read)).toBe(body)
+    expect(read).toHaveBeenCalledWith('-')
+  })
+
+  it('strips a leading UTF-8 BOM', () => {
+    expect(readBody({ bodyFile: 'body.md' }, () => `\uFEFF${body}`)).toBe(body)
+  })
+
+  it('reports an unreadable file as a PrBodyError naming the path', () => {
+    expect(() => readBody({ bodyFile: 'missing.md' }, failingRead)).toThrow(PrBodyError)
+    expect(() => readBody({ bodyFile: 'missing.md' }, failingRead)).toThrow(/missing.md: ENOENT/)
+  })
+
+  it('requires --body or --body-file', () => {
+    expect(() => readBody({}, vi.fn())).toThrow(PrBodyError)
   })
 })
