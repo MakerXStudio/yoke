@@ -22,7 +22,9 @@ const runsSchema = z.object({
   workflow_runs: z.array(z.object({ id: z.number(), run_number: z.number(), pull_requests: z.array(z.object({ number: z.number() })) })),
 })
 
-const jobsSchema = z.object({ jobs: z.array(z.object({ name: z.string(), status: z.string(), conclusion: z.string().nullable() })) })
+const jobsSchema = z.object({
+  jobs: z.array(z.object({ id: z.number(), name: z.string(), status: z.string(), conclusion: z.string().nullable() })),
+})
 
 const statusesSchema = z.array(
   z.object({ context: z.string(), state: z.string(), description: z.string().nullable(), target_url: z.string().nullable() }),
@@ -49,6 +51,8 @@ export type Verdict = { pass: boolean; message: string }
 export const pollInterval = 30_000
 
 const runsPerPage = 100
+
+const jobsPerPage = 100
 
 const rerunHint = 'Mark the PR as draft, then ready for review, to run the review again.'
 
@@ -103,7 +107,13 @@ export async function earlierRuns({ repo, runId, runNumber, event }: GateContext
 }
 
 export async function runJobs(repo: string, run: number, deps: Pick<GateDeps, 'get'>) {
-  return jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run}/jobs`)).jobs
+  const allJobs: z.infer<typeof jobsSchema>['jobs'] = []
+  for (let page = 1; ; page++) {
+    const query = new URLSearchParams({ per_page: String(jobsPerPage), page: String(page) })
+    const { jobs } = jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run}/jobs?${query.toString()}`))
+    allJobs.push(...jobs)
+    if (jobs.length < jobsPerPage) return allJobs
+  }
 }
 
 async function reviewJob(repo: string, run: number, deps: Pick<GateDeps, 'get'>) {
