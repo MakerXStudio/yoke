@@ -58,11 +58,16 @@ Mandatory in every permission mode, including auto-accept and bypass. Write the 
 
 Create
 
+Write the body as UTF-8 with your file-writing tool to a file in the OS temp dir, outside the repo so the tree stays clean. Then:
+
 git push -u origin HEAD
-yoke pr raise --title "<title>" --body "$(cat <<'EOF'
+yoke pr raise --title "<title>" --body-file <path>
+
+In bash, a heredoc into stdin also works:
+
+yoke pr raise --title "<title>" --body-file - <<'EOF'
 <body>
 EOF
-)"
 
 Always a draft; the user marks it ready for review themselves. If \`yoke pr raise\` rejects the description, it names each rule that failed: fix those, show the revised description, and get approval again before rerunning. On success it prints the PR URL; report it.
 `

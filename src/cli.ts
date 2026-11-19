@@ -1,13 +1,13 @@
 import { relative } from 'node:path'
 
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 
 import packageJson from '../package.json' with { type: 'json' }
 import { addSettingOptions, flagSettings, settingsHelp } from './cliSettings'
 import { listSettings, resolveSettings, settingKeys } from './features/config/settings'
 import { ConfigError, readUserConfig, setSetting, userConfigPath } from './features/config/userConfig'
 import { raiseGuide } from './features/pr/guide'
-import { PrValidationError, raisePr } from './features/pr/raise'
+import { PrBodyError, PrValidationError, raisePr, readBody } from './features/pr/raise'
 import { listModels } from './features/review/models'
 import { ReviewError } from './features/review/pr'
 import { reviewPr } from './features/review/review'
@@ -55,15 +55,16 @@ const pr = program.command('pr').description('Pull request commands')
 pr.command('raise')
   .description('Validate a PR title and body, then create the PR with gh')
   .requiredOption('--title <title>', 'single-line PR title')
-  .requiredOption('--body <body>', 'PR body with ## What, ## Why and optionally ## How')
+  .addOption(new Option('--body <body>', 'PR body with ## What, ## Why and optionally ## How').conflicts('bodyFile'))
+  .option('--body-file <path>', 'read the PR body from a file, or from stdin with -')
   .option('--base <branch>', 'base branch (defaults to the repo default)')
   .option('--no-draft', 'create a ready-for-review PR instead of a draft')
   .addHelpText('after', raiseGuide)
-  .action((options: { title: string; body: string; base?: string; draft: boolean }) => {
+  .action((options: { title: string; body?: string; bodyFile?: string; base?: string; draft: boolean }) => {
     try {
-      console.log(raisePr(options))
+      console.log(raisePr({ ...options, body: readBody(options) }))
     } catch (error) {
-      if (!(error instanceof PrValidationError)) throw error
+      if (!(error instanceof PrValidationError || error instanceof PrBodyError)) throw error
       console.error(error.message)
       process.exitCode = 1
     }

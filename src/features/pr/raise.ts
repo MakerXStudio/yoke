@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 import { type Violation, validatePr } from './validate'
 
@@ -10,6 +11,33 @@ export class PrValidationError extends Error {
   constructor(readonly violations: Violation[]) {
     super(['PR description rejected:', ...violations.map((v) => `  ✗ ${v.rule}: ${v.message}`)].join('\n'))
     this.name = 'PrValidationError'
+  }
+}
+
+export class PrBodyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PrBodyError'
+  }
+}
+
+export type ReadBodyFile = (path: string) => string
+
+const readBodyFile: ReadBodyFile = (path) => readFileSync(path === '-' ? 0 : path, 'utf8')
+
+export function readBody({ body, bodyFile }: { body?: string; bodyFile?: string }, read: ReadBodyFile = readBodyFile): string {
+  const text = bodyFile === undefined ? body : readFrom(bodyFile, read)
+  if (text === undefined) throw new PrBodyError('Pass the PR body with --body or --body-file.')
+  return text.replace(/^\uFEFF/, '')
+}
+
+function readFrom(path: string, read: ReadBodyFile): string {
+  try {
+    return read(path)
+  } catch (error) {
+    throw new PrBodyError(
+      `Could not read the PR body from ${path === '-' ? 'stdin' : path}: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 
