@@ -58,7 +58,7 @@ Mandatory in every permission mode, including auto-accept and bypass. Write the 
 
 Create
 
-Write the body as UTF-8 with your file-writing tool to a new file outside the repo: in your session scratchpad dir if you have one, else in the OS temp dir with a name unique to this PR, such as one containing the branch name. Never reuse an existing file; another session may own it. Pass the exact absolute path you wrote, quoted:
+Write the body as UTF-8 with your file-writing tool to a new file outside the repo: in your session scratchpad dir if you have one, else in the OS temp dir with a name unique to this PR, such as one containing the branch name. Never reuse a file you did not write this session; another session may own it. Overwrite your own when revising. Pass the exact absolute path you wrote, quoted:
 
 git push -u origin HEAD
 yoke pr raise --title "<title>" --body-file "<path>"
