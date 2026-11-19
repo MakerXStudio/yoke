@@ -75,6 +75,8 @@ function buildPiOverride(provider: Provider, endpoints: Endpoints, model: string
   }
 }
 
+const piMaxTokens = 32_000
+
 export function piModels({ baseUrl, model }: PiModel): unknown {
   const entry = {
     id: model,
@@ -82,7 +84,7 @@ export function piModels({ baseUrl, model }: PiModel): unknown {
     reasoning: true,
     input: ['text'],
     contextWindow: 200_000,
-    maxTokens: 32_000,
+    maxTokens: piMaxTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   }
   return { providers: { yoke: { baseUrl, api: 'openai-completions', apiKey: `$${piKeyEnv}`, models: [entry] } } }
@@ -125,7 +127,19 @@ export function buildProbe({ harness, model }: SlotModel, provider: Provider): P
     return {
       url: `${endpoints.responses}/chat/completions`,
       headers: bearer,
-      body: { model, messages: [{ role: 'user', content: 'ping' }], max_completion_tokens: 16 },
+      body: {
+        model,
+        messages: [
+          { role: 'developer', content: 'Reply briefly.' },
+          { role: 'user', content: 'ping' },
+        ],
+        stream: true,
+        stream_options: { include_usage: true },
+        store: false,
+        max_completion_tokens: piMaxTokens,
+        tools: [{ type: 'function', function: { name: 'ping', description: 'Ping.', parameters: { type: 'object', properties: {} } } }],
+        reasoning_effort: 'medium',
+      },
     }
   return {
     url: `${endpoints.anthropic}/v1/messages`,

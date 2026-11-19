@@ -247,4 +247,33 @@ describe('reach', () => {
     const error = await reach({ url: 'https://p/v1/messages', headers: { 'x-api-key': 'key-abcdefgh' }, body: {} })
     expect(error).toBe(`HTTP 400: ${'x'.repeat(295)}[reda`)
   })
+
+  it('passes a plain JSON 2xx reply', async () => {
+    failWith(200, JSON.stringify({ id: 'msg_1', content: [] }))
+    expect(await reach({ url: 'https://p/v1/messages', headers: {}, body: {} })).toBeUndefined()
+  })
+
+  it('passes a streamed reply after its first event and cancels the rest of the stream', async () => {
+    const cancel = vi.fn()
+    const stream = new ReadableStream<Uint8Array>({
+      start: (controller) =>
+        controller.enqueue(new TextEncoder().encode(': keep-alive\n\ndata: {"choices":[{"delta":{"role":"assistant"}}]}\n\n')),
+      cancel,
+    })
+    vi.stubGlobal('fetch', async () => new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }))
+    expect(await reach({ url: 'https://p/v1/chat/completions', headers: {}, body: {} })).toBeUndefined()
+    expect(cancel).toHaveBeenCalled()
+  })
+
+  it('fails a streamed reply whose first event is an error, redacting the credential', async () => {
+    const event = { error: { message: 'reasoning with tools is not supported for secret-1', code: 400 } }
+    failWith(200, `data: ${JSON.stringify(event)}\r\n\r\ndata: [DONE]\r\n\r\n`)
+    const error = await reach({ url: 'https://p/v1/chat/completions', headers: { Authorization: 'Bearer secret-1' }, body: {} })
+    expect(error).toBe('HTTP 200 with error: reasoning with tools is not supported for [redacted]')
+  })
+
+  it('fails a JSON 2xx reply that carries an error payload', async () => {
+    failWith(200, JSON.stringify({ error: 'model not deployed' }))
+    expect(await reach({ url: 'https://p/v1/chat/completions', headers: {}, body: {} })).toBe('HTTP 200 with error: model not deployed')
+  })
 })

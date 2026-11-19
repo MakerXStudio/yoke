@@ -85,6 +85,48 @@ function probeSecrets(headers: Record<string, string>): string[] {
   return [headers.Authorization?.replace(/^Bearer\s+/i, ''), headers['x-api-key']].filter((secret) => secret !== undefined)
 }
 
+function firstSseData(text: string): string | undefined {
+  for (const event of text.replace(/\r\n?/g, '\n').split('\n\n').slice(0, -1)) {
+    const data = event
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).replace(/^ /, ''))
+    if (data.length) return data.join('\n')
+  }
+  return undefined
+}
+
+// The first SSE data event of a streamed reply, or the whole body when the server ignored `stream`.
+async function firstEvent(response: Response): Promise<string> {
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return firstSseData(`${text}\n\n`) ?? text
+      text += decoder.decode(value, { stream: true })
+      const data = /^\s*[[{]/.test(text) ? undefined : firstSseData(text)
+      if (data !== undefined) return data
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+}
+
+function errorPayload(event: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(event)
+    if (typeof parsed !== 'object' || parsed === null || !('error' in parsed) || !parsed.error) return undefined
+    const { error } = parsed
+    if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message
+    return typeof error === 'string' ? error : JSON.stringify(error)
+  } catch {
+    return undefined
+  }
+}
+
 export async function reach({ url, headers, body }: ProbeRequest): Promise<string | undefined> {
   try {
     const response = await fetch(url, {
@@ -93,7 +135,10 @@ export async function reach({ url, headers, body }: ProbeRequest): Promise<strin
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(probeTimeout),
     })
-    if (response.ok) return undefined
+    if (response.ok) {
+      const error = errorPayload(await firstEvent(response))
+      return error === undefined ? undefined : `HTTP ${response.status} with error: ${sanitizeError(error.trim(), probeSecrets(headers))}`
+    }
     const text = sanitizeError((await response.text()).trim(), probeSecrets(headers))
     return `HTTP ${response.status}${text ? `: ${text}` : ''}`
   } catch (error) {

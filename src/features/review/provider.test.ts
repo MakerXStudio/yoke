@@ -124,7 +124,19 @@ describe('pi', () => {
     expect(buildProbe({ harness: 'pi', model: 'kimi' }, provider)).toEqual({
       url: `${baseUrl}/chat/completions`,
       headers: { Authorization: `Bearer ${credential}` },
-      body: { model: 'kimi', messages: [{ role: 'user', content: 'ping' }], max_completion_tokens: 16 },
+      body: {
+        model: 'kimi',
+        messages: [
+          { role: 'developer', content: 'Reply briefly.' },
+          { role: 'user', content: 'ping' },
+        ],
+        stream: true,
+        stream_options: { include_usage: true },
+        store: false,
+        max_completion_tokens: 32000,
+        tools: [{ type: 'function', function: { name: 'ping', description: 'Ping.', parameters: { type: 'object', properties: {} } } }],
+        reasoning_effort: 'medium',
+      },
     })
   })
 

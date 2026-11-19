@@ -44,7 +44,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 A `pi` slot runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) from your `PATH` with read, ls and bash tools, plus grep when `rg` is installed and find when `fd` is. It loads no sessions, extensions, skills, MCP servers, `AGENTS.md` or the repo's `.pi/` settings. It can't review a repo that has `.pi/commands`, because Pi renames that folder to `.pi/prompts` when it starts.
 
 - **Own login:** Pi uses your `~/.pi` sign-in and models (run `pi`, then `/login`). Providers added by Pi extensions aren't available. With no `review.<slot>.model`, Pi runs its default model; set one in Pi, or set the slot's model to `<provider>/<model>` (see `pi --list-models`).
-- **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`). It can't use Foundry deployments of GPT-5.6 and later, which refuse tools with reasoning on that API.
+- **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`) with reasoning and tools, so the model must accept both together on that API; non-reasoning models can't be used, nor can Foundry deployments of GPT-5.6 and later. Preflight sends the same kind of request and stops the review when the model refuses it.
 
 With no synthesis slot set, the synthesis runs on reviewer 1's harness (reviewer 2's when reviewer 1 fails). When that harness is `pi`, the synthesis also uses that reviewer's provider and model.
 
