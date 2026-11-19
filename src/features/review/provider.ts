@@ -86,6 +86,17 @@ export function piModels({ baseUrl, model }: PiModel): unknown {
     contextWindow: 200_000,
     maxTokens: piMaxTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // pi guesses these from the base URL (a proxy host containing deepseek.com flips most of them),
+    // so pin them to the request buildProbe sends.
+    compat: {
+      supportsDeveloperRole: true,
+      supportsStore: true,
+      maxTokensField: 'max_completion_tokens',
+      supportsUsageInStreaming: true,
+      supportsReasoningEffort: true,
+      thinkingFormat: 'openai',
+      supportsStrictMode: false,
+    },
   }
   return { providers: { yoke: { baseUrl, api: 'openai-completions', apiKey: `$${piKeyEnv}`, models: [entry] } } }
 }

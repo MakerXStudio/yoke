@@ -156,6 +156,37 @@ describe('pi', () => {
               contextWindow: 200000,
               maxTokens: 32000,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              compat: {
+                supportsDeveloperRole: true,
+                supportsStore: true,
+                maxTokensField: 'max_completion_tokens',
+                supportsUsageInStreaming: true,
+                supportsReasoningEffort: true,
+                thinkingFormat: 'openai',
+                supportsStrictMode: false,
+              },
+            },
+          ],
+        },
+      },
+    })
+  })
+
+  it('pins the compat settings so a proxy host name cannot change what pi sends', () => {
+    expect(piModels({ baseUrl: 'https://deepseek.company.com/v1', model: 'kimi' })).toMatchObject({
+      providers: {
+        yoke: {
+          models: [
+            {
+              compat: {
+                supportsDeveloperRole: true,
+                supportsStore: true,
+                maxTokensField: 'max_completion_tokens',
+                supportsUsageInStreaming: true,
+                supportsReasoningEffort: true,
+                thinkingFormat: 'openai',
+                supportsStrictMode: false,
+              },
             },
           ],
         },
