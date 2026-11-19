@@ -44,8 +44,9 @@ function fakeGet(runs: ReturnType<typeof run>[], jobs: Record<number, Job[]>) {
     paths.push(path)
     if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
     if (path.startsWith('repos/o/r/actions/workflows/77/runs?')) return { workflow_runs: runs }
-    const id = Number(/runs\/(\d+)\/jobs$/.exec(path)?.[1])
-    return { jobs: jobs[id] ?? [] }
+    const match = /runs\/(\d+)\/jobs\?per_page=100&page=(\d+)$/.exec(path)
+    const [id, page] = [Number(match?.[1]), Number(match?.[2])]
+    return { jobs: (jobs[id] ?? []).slice((page - 1) * 100, page * 100).map((job, i) => ({ id: i + 1, ...job })) }
   }
   return { get, paths }
 }
@@ -58,12 +59,26 @@ describe('pushReview', () => {
     const get = async (path: string) => {
       paths.push(path)
       if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
-      const page = /[?&]page=(\d+)/.exec(path)?.[1]
+      const page = /\/workflows\/77\/runs\?.*[?&]page=(\d+)/.exec(path)?.[1]
       if (page) return { workflow_runs: pages[page] ?? [] }
-      return { jobs: path.includes('/runs/1/') ? review('completed', 'success') : review('completed', 'skipped') }
+      const jobs = path.includes('/runs/1/') ? review('completed', 'success') : review('completed', 'skipped')
+      return { jobs: jobs.map((job, i) => ({ id: i + 1, ...job })) }
     }
     expect((await pushReview(context(), { get })).message).toContain('runs/1,')
     expect(paths.filter((path) => path.includes('/workflows/77/runs?'))).toHaveLength(2)
+  })
+
+  it('pages past a full page of jobs to find an earlier review', async () => {
+    const matrix = Array.from({ length: 100 }, (_, i) => ({ name: `build (${i})`, status: 'completed', conclusion: 'success' }))
+    const deps = fakeGet([run(1, 7)], { 1: [...matrix, ...review('completed', 'success')] })
+    expect(await pushReview(context(), deps)).toEqual({
+      review: false,
+      message: 'A review already started for this PR, in run https://github.com/o/r/actions/runs/1, so this push skips it.',
+    })
+    expect(deps.paths.filter((path) => path.includes('/runs/1/jobs'))).toEqual([
+      'repos/o/r/actions/runs/1/jobs?per_page=100&page=1',
+      'repos/o/r/actions/runs/1/jobs?per_page=100&page=2',
+    ])
   })
 
   it('runs the review on a push to a PR with no earlier runs', async () => {
