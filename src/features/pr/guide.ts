@@ -58,10 +58,12 @@ Mandatory in every permission mode, including auto-accept and bypass. Write the 
 
 Create
 
-Write the body as UTF-8 with your file-writing tool to a file in the OS temp dir, outside the repo so the tree stays clean. Then:
+Write the body as UTF-8 with your file-writing tool to a new file outside the repo, so the tree stays clean: in your session scratchpad dir if you have one, else the OS temp dir with a name unique to this PR, such as one containing the branch name. Never reuse an existing file; another session may own it. Then pass the exact absolute path you wrote, quoted:
 
 git push -u origin HEAD
-yoke pr raise --title "<title>" --body-file <path>
+yoke pr raise --title "<title>" --body-file "<path>"
+
+Delete the file once \`yoke pr raise\` succeeds.
 
 In bash, a heredoc into stdin also works:
 
