@@ -193,8 +193,18 @@ function fakeInstall() {
   return vi.fn(async () => tools)
 }
 
+function agentBin(...names: string[]): string {
+  const bin = join(dir, 'agent', 'bin')
+  mkdirSync(bin, { recursive: true })
+  for (const name of names) writeFileSync(join(bin, name), '')
+  return bin
+}
+
 describe('withSearchTools', () => {
-  const ci = { GITHUB_ACTIONS: 'true', PATH: '/usr/bin' }
+  let ci: NodeJS.ProcessEnv
+  beforeEach(() => {
+    ci = { GITHUB_ACTIONS: 'true', PATH: '/usr/bin', PI_CODING_AGENT_DIR: join(dir, 'agent') }
+  })
   const piSlots: ReviewSlots = {
     reviewer1: { harness: 'pi', model: 'm', override: { args: ['--model', 'm'], env: { YOKE_PI_API_KEY: 'k' } } },
     reviewer2: { harness: 'claude' },
@@ -227,15 +237,14 @@ describe('withSearchTools', () => {
 
   it('offers grep and find to the pi child once the tools are on its PATH', async () => {
     const install = fakeInstall()
-    const env = { ...ci, PI_CODING_AGENT_DIR: join(dir, 'agent') }
     await withSearchTools(
       piSlots,
       async (slots) => {
         const run = { harness: 'pi' as const, prompt: 'p', cwd: dir, reviewDir: dir, outputPath: join(dir, 'out.md') }
-        const args = harnessArgs({ ...run, override: slots.reviewer1.override }, { ...env, ...slots.reviewer1.override?.env }, 'linux')
+        const args = harnessArgs({ ...run, override: slots.reviewer1.override }, { ...ci, ...slots.reviewer1.override?.env }, 'linux')
         expect(args[args.indexOf('--tools') + 1]).toBe('read,ls,git,read_range,grep,find')
       },
-      { env, platform: 'linux', install },
+      { env: ci, platform: 'linux', install },
     )
     expect(install).toHaveBeenCalledOnce()
   })
@@ -243,7 +252,7 @@ describe('withSearchTools', () => {
   it('keeps the Windows Path key and the inherited path after the tools', async () => {
     const install = fakeInstall()
     const slots = await withSearchTools(piSlots, async (given) => given, {
-      env: { GITHUB_ACTIONS: 'true', Path: 'C:\\Windows' },
+      env: { GITHUB_ACTIONS: 'true', Path: 'C:\\Windows', PI_CODING_AGENT_DIR: join(dir, 'agent') },
       platform: 'win32',
       install,
     })
@@ -255,5 +264,79 @@ describe('withSearchTools', () => {
     const failed = withSearchTools(piSlots, async () => Promise.reject(new Error('boom')), { env: ci, install })
     await expect(failed).rejects.toThrow('boom')
     expect(existsSync(join(dir, 'tools'))).toBe(false)
+  })
+
+  it.each(['rg', 'fd'])("fails before installing when an own-login pi slot's agent dir has %s", async (name) => {
+    const bin = agentBin(name)
+    const install = fakeInstall()
+    const run = vi.fn(async (slots: ReviewSlots) => slots)
+    const error = await withSearchTools(piSlots, run, { env: ci, platform: 'linux', install }).catch((e) => e)
+    expect(error).toBeInstanceOf(ReviewFailure)
+    expect(error.message).toContain(join(bin, name))
+    expect(error.message).toContain('Remove it')
+    expect(install).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it('looks for the .exe names on Windows', async () => {
+    const bin = agentBin('fd', 'rg.exe')
+    const error = await withSearchTools(piSlots, async (slots) => slots, { env: ci, platform: 'win32', install: fakeInstall() }).catch(
+      (e) => e,
+    )
+    expect(error).toBeInstanceOf(ReviewFailure)
+    expect(error.message).toContain(join(bin, 'rg.exe'))
+  })
+
+  it("checks the agent dir from the slot's own env", async () => {
+    const bin = join(dir, 'slot-agent', 'bin')
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, 'rg'), '')
+    const slots: ReviewSlots = {
+      reviewer1: { harness: 'pi', override: { args: [], env: { PI_CODING_AGENT_DIR: join(dir, 'slot-agent') } } },
+      reviewer2: { harness: 'claude' },
+    }
+    const install = fakeInstall()
+    await expect(withSearchTools(slots, async (given) => given, { env: ci, platform: 'linux', install })).rejects.toThrow(join(bin, 'rg'))
+    expect(install).not.toHaveBeenCalled()
+  })
+
+  it('fails before installing when an own-login pi slot has a relative agent dir', async () => {
+    const install = fakeInstall()
+    const error = await withSearchTools(piSlots, async (slots) => slots, {
+      env: { ...ci, PI_CODING_AGENT_DIR: 'agent' },
+      platform: 'linux',
+      install,
+    }).catch((e) => e)
+    expect(error).toBeInstanceOf(ReviewFailure)
+    expect(error.message).toContain('PI_CODING_AGENT_DIR is agent')
+    expect(install).not.toHaveBeenCalled()
+  })
+
+  it('accepts a ~ agent dir, as pi expands it', async () => {
+    const install = fakeInstall()
+    await withSearchTools({ reviewer1: { harness: 'pi' }, reviewer2: { harness: 'claude' } }, async (slots) => slots, {
+      env: { ...ci, PI_CODING_AGENT_DIR: '~/yoke-test-missing-agent' },
+      platform: 'linux',
+      install,
+    })
+    expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('does not check provider pi slots, which get their own agent dir', async () => {
+    agentBin('rg', 'fd')
+    const install = fakeInstall()
+    const slots: ReviewSlots = {
+      reviewer1: { harness: 'pi', override: { args: [], env: {}, pi: { baseUrl: 'https://example.test/v1', model: 'm' } } },
+      reviewer2: { harness: 'claude' },
+    }
+    await withSearchTools(slots, async (given) => given, { env: { ...ci, PI_CODING_AGENT_DIR: 'agent' }, platform: 'linux', install })
+    expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('does not check the agent dir outside CI', async () => {
+    agentBin('rg', 'fd')
+    const run = vi.fn(async (slots: ReviewSlots) => slots)
+    await withSearchTools(piSlots, run, { env: { PATH: '/usr/bin', PI_CODING_AGENT_DIR: join(dir, 'agent') }, install: fakeInstall() })
+    expect(run).toHaveBeenCalledOnce()
   })
 })

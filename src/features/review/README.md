@@ -47,6 +47,8 @@ A `pi` slot runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-ag
 - **Own login:** Pi uses your `~/.pi` sign-in and models (run `pi`, then `/login`). Providers added by Pi extensions aren't available. With no `review.<slot>.model`, Pi runs its default model; set one in Pi, or set the slot's model to `<provider>/<model>` (see `pi --list-models`).
 - **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`) with reasoning and tools in each request, so non-reasoning models and Foundry deployments of GPT-5.6 and later don't work. Before the review starts, yoke sends the model such a request and stops if the model refuses it.
 
+In a hand-written CI job, an own-login slot fails before the review when `rg` or `fd` is in Pi's agent dir `bin` (Pi would run it instead of the checksum-verified one yoke installs) or when `PI_CODING_AGENT_DIR` is relative; yoke's workflow always uses a provider.
+
 With no synthesis slot set, the synthesis runs on reviewer 1's harness (reviewer 2's when reviewer 1 fails). When that harness is `pi`, the synthesis also uses that reviewer's provider and model.
 
 ## CI

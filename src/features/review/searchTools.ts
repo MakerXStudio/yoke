@@ -1,11 +1,11 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 import { isCi } from './ciRun'
-import { pathKey, removeDir } from './pi'
+import { pathKey, piAgentDir, removeDir } from './pi'
 import { ReviewFailure } from './run'
 import { type ReviewSlots, type Slot, usesPi } from './slots'
 
@@ -138,6 +138,27 @@ function withToolsOnPath(slot: Slot, dir: string, env: NodeJS.ProcessEnv, platfo
   return { ...slot, override: { ...override, env: { ...override.env, [key]: path } } }
 }
 
+// Pi runs `rg` and `fd` from its agent dir's bin before the verified ones on PATH, and resolves a relative agent dir
+// against the reviewed checkout.
+function assertOwnLoginToolsVerified(slot: Slot | undefined, env: NodeJS.ProcessEnv, platform: string): void {
+  if (slot?.harness !== 'pi' || slot.override?.pi) return
+  const childEnv = { ...env, ...slot.override?.env }
+  const agentDir = piAgentDir(childEnv)
+  if (childEnv.PI_CODING_AGENT_DIR && !isAbsolute(agentDir))
+    throw new ReviewFailure(
+      'pi agent dir is relative',
+      `PI_CODING_AGENT_DIR is ${childEnv.PI_CODING_AGENT_DIR}, which pi would resolve against the reviewed checkout. Set it to an absolute path.`,
+    )
+  for (const name of ['rg', 'fd']) {
+    const file = join(agentDir, 'bin', platform === 'win32' ? `${name}.exe` : name)
+    if (existsSync(file))
+      throw new ReviewFailure(
+        'pi would use an unverified search tool',
+        `${file} would be used instead of the verified ${name}. Remove it, or give the slot a provider.`,
+      )
+  }
+}
+
 const defaultDeps: SearchToolDeps = { env: process.env, platform: process.platform, arch: process.arch, fetch: globalThis.fetch }
 
 export async function withSearchTools<T>(
@@ -147,6 +168,7 @@ export async function withSearchTools<T>(
 ): Promise<T> {
   const resolved = { ...defaultDeps, ...deps }
   if (!isCi(resolved.env) || !usesPi(slots)) return run(slots)
+  for (const slot of [slots.reviewer1, slots.reviewer2, slots.synthesis]) assertOwnLoginToolsVerified(slot, resolved.env, resolved.platform)
   const dir = await install(resolved)
   const onPath = (slot: Slot) => withToolsOnPath(slot, dir, resolved.env, resolved.platform)
   try {
