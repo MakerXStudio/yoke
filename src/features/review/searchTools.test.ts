@@ -242,7 +242,7 @@ describe('withSearchTools', () => {
       async (slots) => {
         const run = { harness: 'pi' as const, prompt: 'p', cwd: dir, reviewDir: dir, outputPath: join(dir, 'out.md') }
         const args = harnessArgs({ ...run, override: slots.reviewer1.override }, { ...ci, ...slots.reviewer1.override?.env }, 'linux')
-        expect(args[args.indexOf('--tools') + 1]).toBe('read,ls,bash,grep,find')
+        expect(args[args.indexOf('--tools') + 1]).toBe('read,ls,git,read_range,grep,find')
       },
       { env: ci, platform: 'linux', install },
     )
