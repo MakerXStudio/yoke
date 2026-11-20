@@ -278,6 +278,17 @@ describe('withSearchTools', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
+  it.each(['rg', 'fd'])("fails when an own-login pi slot's agent dir has %s in tools, which pi moves into bin", async (name) => {
+    const tools = join(dir, 'agent', 'tools')
+    mkdirSync(tools, { recursive: true })
+    writeFileSync(join(tools, name), '')
+    const install = fakeInstall()
+    const error = await withSearchTools(piSlots, async (slots) => slots, { env: ci, platform: 'linux', install }).catch((e) => e)
+    expect(error).toBeInstanceOf(ReviewFailure)
+    expect(error.message).toContain(join(tools, name))
+    expect(install).not.toHaveBeenCalled()
+  })
+
   it('looks for the .exe names on Windows', async () => {
     const bin = agentBin('fd', 'rg.exe')
     const error = await withSearchTools(piSlots, async (slots) => slots, { env: ci, platform: 'win32', install: fakeInstall() }).catch(

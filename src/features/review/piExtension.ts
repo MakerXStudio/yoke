@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 import { open } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 
+import { gitArgv, gitSubcommands } from './piGit'
+
 type TextResult = { content: { type: 'text'; text: string }[]; details: undefined }
 
 type ToolContext = { cwd: string }
@@ -17,56 +19,11 @@ type PiTool = {
 
 export type PiExtensionApi = { registerTool(tool: PiTool): void }
 
-export const gitSubcommands = ['log', 'show', 'blame', 'diff', 'merge-base'] as const
-
-type GitSubcommand = (typeof gitSubcommands)[number]
-
-const gitConfig = [
-  'core.fsmonitor=false',
-  'log.showSignature=false',
-  'gpg.program=false',
-  'protocol.allow=never',
-  'diff.external=',
-].flatMap((setting) => ['-c', setting])
-
-const noExternalDiff = ['--no-ext-diff', '--no-textconv']
-
-const forcedFlags: Record<GitSubcommand, string[]> = {
-  log: noExternalDiff,
-  show: noExternalDiff,
-  diff: noExternalDiff,
-  blame: [],
-  'merge-base': [],
-}
-
-const refusedPrefixes = ['--output', '--ext-diff', '--textconv', '--show-signature', '--remerge-diff', '--diff-merges']
-
 const outputCap = 50 * 1024
 const gitTimeoutMs = 30_000
 export const maxRangeBytes = 50 * 1024
 
-export function refusedArg(arg: string): string | undefined {
-  const prefix = refusedPrefixes.find((refused) => arg.startsWith(refused))
-  if (prefix) return `git refuses ${prefix}`
-  if (arg.includes('%G')) return 'git refuses %G placeholders, which verify signatures'
-  return undefined
-}
-
-function isSubcommand(value: unknown): value is GitSubcommand {
-  return (gitSubcommands as readonly unknown[]).includes(value)
-}
-
-export function gitArgv(subcommand: unknown, args: unknown = []): string[] {
-  if (!isSubcommand(subcommand)) throw new Error(`git subcommand must be one of ${gitSubcommands.join(', ')}`)
-  if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) throw new Error('git args must be an array of strings')
-  for (const arg of args) {
-    const reason = refusedArg(arg)
-    if (reason) throw new Error(`${reason}: ${arg}`)
-  }
-  return [...gitConfig, subcommand, ...forcedFlags[subcommand], ...args]
-}
-
-type RunOptions = { cwd: string; signal?: AbortSignal; timeoutMs?: number; cap?: number }
+type RunOptions = { cwd: string; signal?: AbortSignal; timeoutMs?: number; cap?: number; diffExit?: boolean }
 
 type Capture = { chunks: Buffer[]; bytes: number; truncated: boolean }
 
@@ -85,8 +42,19 @@ function capture(cap: number, onFull: () => void) {
   return { state, add, text: () => Buffer.concat(state.chunks).toString('utf8') }
 }
 
+type Ended = { file: string; code: number | null; stopped?: string; stdout: string; stderr: string; cap: number; diffExit: boolean }
+
+// With diffExit, exit 1 means the inputs differ, as git diff --no-index and --exit-code report, unless git wrote only an error.
+function commandOutput({ file, code, stopped, stdout, stderr, cap, diffExit }: Ended): string {
+  if (stopped === 'truncated') return `${stdout}\n[output truncated at ${cap} bytes; narrow the command]`
+  if (stopped) throw new Error(stopped)
+  const differs = diffExit && code === 1 && (stdout !== '' || stderr === '')
+  if (code !== 0 && !differs) throw new Error(`${file} exited with code ${code}: ${stderr}`)
+  return stdout
+}
+
 export function runCommand(file: string, argv: string[], options: RunOptions): Promise<string> {
-  const { cwd, signal, timeoutMs = gitTimeoutMs, cap = outputCap } = options
+  const { cwd, signal, timeoutMs = gitTimeoutMs, cap = outputCap, diffExit = false } = options
   return new Promise((resolvePromise, reject) => {
     if (signal?.aborted) return reject(new Error(`${file} was aborted`))
     const env = { ...process.env, GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0' }
@@ -113,10 +81,11 @@ export function runCommand(file: string, argv: string[], options: RunOptions): P
     })
     child.on('close', (code) => {
       cleanup()
-      if (stopped === 'truncated') return resolvePromise(`${stdout.text()}\n[output truncated at ${cap} bytes; narrow the command]`)
-      if (stopped) return reject(new Error(stopped))
-      if (code !== 0) return reject(new Error(`${file} exited with code ${code}: ${stderr.text().trim()}`))
-      resolvePromise(stdout.text())
+      try {
+        resolvePromise(commandOutput({ file, code, stopped, stdout: stdout.text(), stderr: stderr.text().trim(), cap, diffExit }))
+      } catch (error) {
+        reject(error)
+      }
     })
   })
 }
@@ -164,7 +133,8 @@ const gitTool: PiTool = {
     additionalProperties: false,
   },
   async execute(_id, params: GitParams, signal, _onUpdate, ctx) {
-    return textResult(await runCommand('git', gitArgv(params.subcommand, params.args ?? []), { cwd: ctx.cwd, signal }))
+    const argv = gitArgv(params.subcommand, params.args ?? [])
+    return textResult(await runCommand('git', argv, { cwd: ctx.cwd, signal, diffExit: params.subcommand === 'diff' }))
   },
 }
 

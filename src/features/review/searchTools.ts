@@ -138,8 +138,8 @@ function withToolsOnPath(slot: Slot, dir: string, env: NodeJS.ProcessEnv, platfo
   return { ...slot, override: { ...override, env: { ...override.env, [key]: path } } }
 }
 
-// Pi runs `rg` and `fd` from its agent dir's bin before the verified ones on PATH, and resolves a relative agent dir
-// against the reviewed checkout.
+// Pi runs `rg` and `fd` from its agent dir's bin before the verified ones on PATH, moves them there from the agent dir's
+// tools when it starts, and resolves a relative agent dir against the reviewed checkout.
 function assertOwnLoginToolsVerified(slot: Slot | undefined, env: NodeJS.ProcessEnv, platform: string): void {
   if (slot?.harness !== 'pi' || slot.override?.pi) return
   const childEnv = { ...env, ...slot.override?.env }
@@ -150,8 +150,10 @@ function assertOwnLoginToolsVerified(slot: Slot | undefined, env: NodeJS.Process
       `PI_CODING_AGENT_DIR is ${childEnv.PI_CODING_AGENT_DIR}, which pi would resolve against the reviewed checkout. Set it to an absolute path.`,
     )
   for (const name of ['rg', 'fd']) {
-    const file = join(agentDir, 'bin', platform === 'win32' ? `${name}.exe` : name)
-    if (existsSync(file))
+    const file = ['bin', 'tools']
+      .map((sub) => join(agentDir, sub, platform === 'win32' ? `${name}.exe` : name))
+      .find((path) => existsSync(path))
+    if (file)
       throw new ReviewFailure(
         'pi would use an unverified search tool',
         `${file} would be used instead of the verified ${name}. Remove it, or give the slot a provider.`,

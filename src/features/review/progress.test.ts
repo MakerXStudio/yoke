@@ -125,6 +125,14 @@ describe('parseHarnessEvent for pi', () => {
     })
   })
 
+  it.each([
+    [{ toolName: 'git', args: { subcommand: 'log', args: ['-n', '5', '--', 'src'] } }, 'git log -n 5 -- src'],
+    [{ toolName: 'git', args: { subcommand: 'merge-base' } }, 'git merge-base'],
+    [{ toolName: 'read_range', args: { path: 'dist/app.min.js', offset: 0, length: 100 } }, 'read_range dist/app.min.js'],
+  ])("reports pi's %o call", (event, text) => {
+    expect(parseHarnessEvent('pi', line({ type: 'tool_execution_start', ...event }))).toEqual({ kind: 'activity', text })
+  })
+
   it('reads the usage of a successful compaction', () => {
     const event = { type: 'compaction_end', result: { summary: 's', usage: { input: 5, output: 6 } }, aborted: false }
     expect(parseHarnessEvent('pi', line(event))).toEqual({ kind: 'usage', usage: { input: 5, output: 6 } })

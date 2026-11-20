@@ -30,6 +30,11 @@ function text(input: Json, key: string): string | undefined {
 
 function toolSummary(input: unknown): string {
   if (!isJson(input)) return ''
+  const subcommand = text(input, 'subcommand')
+  if (subcommand) {
+    const args = Array.isArray(input.args) ? input.args.filter((arg) => typeof arg === 'string') : []
+    return truncate([subcommand, ...args].join(' '))
+  }
   const pattern = text(input, 'pattern')
   if (pattern) {
     const scope = text(input, 'path')

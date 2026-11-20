@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { devNull, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -10,20 +10,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
 import { createPiAgentDir, piArgs, piEnv, removeDir } from './pi'
-import piExtension, { gitArgv, maxRangeBytes, type PiExtensionApi, readRange, refusedArg, runCommand } from './piExtension'
-
-const config = [
-  '-c',
-  'core.fsmonitor=false',
-  '-c',
-  'log.showSignature=false',
-  '-c',
-  'gpg.program=false',
-  '-c',
-  'protocol.allow=never',
-  '-c',
-  'diff.external=',
-]
+import piExtension, { maxRangeBytes, type PiExtensionApi, readRange, runCommand } from './piExtension'
+import { gitArgv } from './piGit'
 
 let dir: string
 
@@ -35,14 +23,30 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function gitRepo(): string {
+function git(...args: string[]): void {
   const env = { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' }
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env, stdio: 'ignore' })
+  execFileSync('git', args, { cwd: dir, env, stdio: 'ignore' })
+}
+
+function gitRepo(): string {
   git('init', '-q')
   writeFileSync(join(dir, 'a.txt'), 'one\n')
   git('add', 'a.txt')
   git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'first commit')
   return dir
+}
+
+// A repo whose .git/config sets an external diff and textconv helper for *.txt, which leaves a mark when it runs.
+function helperRepo(): string {
+  gitRepo()
+  writeFileSync(join(dir, 'b.txt'), 'two\n')
+  const helper = join(dir, 'helper.sh')
+  writeFileSync(helper, `#!/bin/sh\necho ran >> "${join(dir, 'helper-ran')}"\ncat "$1"\n`)
+  chmodSync(helper, 0o755)
+  writeFileSync(join(dir, '.gitattributes'), '*.txt diff=helper\n')
+  git('config', 'diff.helper.command', helper)
+  git('config', 'diff.helper.textconv', helper)
+  return join(dir, 'helper-ran')
 }
 
 type Registered = Parameters<PiExtensionApi['registerTool']>[0]
@@ -59,51 +63,6 @@ function call(name: string, params: unknown): Promise<string> {
   return tool.execute('id', params, undefined, undefined, { cwd: dir }).then((result) => result.content[0]?.text ?? '')
 }
 
-describe('gitArgv', () => {
-  it('runs log, show and diff with config pinned and external diff and textconv off', () => {
-    for (const subcommand of ['log', 'show', 'diff']) {
-      expect(gitArgv(subcommand, ['-n', '1'])).toEqual([...config, subcommand, '--no-ext-diff', '--no-textconv', '-n', '1'])
-    }
-  })
-
-  it('runs blame and merge-base with no forced flags', () => {
-    expect(gitArgv('blame', ['a.txt'])).toEqual([...config, 'blame', 'a.txt'])
-    expect(gitArgv('merge-base', ['main', 'HEAD'])).toEqual([...config, 'merge-base', 'main', 'HEAD'])
-  })
-
-  it('keeps the forced flags ahead of a -- in args', () => {
-    expect(gitArgv('diff', ['--', 'src']).slice(config.length)).toEqual(['diff', '--no-ext-diff', '--no-textconv', '--', 'src'])
-  })
-
-  it.each(['push', 'config', 'checkout', '-c', '--git-dir=x', undefined])('refuses subcommand %s', (subcommand) => {
-    expect(() => gitArgv(subcommand, [])).toThrow('git subcommand must be one of log, show, blame, diff, merge-base')
-  })
-
-  it('refuses args that are not an array of strings', () => {
-    expect(() => gitArgv('log', '-n 1')).toThrow('git args must be an array of strings')
-    expect(() => gitArgv('log', [1])).toThrow('git args must be an array of strings')
-  })
-
-  it.each([
-    '--output=/tmp/x',
-    '--output-indicator-new=x',
-    '--ext-diff',
-    '--textconv',
-    '--show-signature',
-    '--remerge-diff',
-    '--diff-merges=remerge',
-    '--format=%G?',
-    '--pretty=format:%GS',
-  ])('refuses %s', (arg) => {
-    expect(refusedArg(arg)).toBeDefined()
-    expect(() => gitArgv('log', ['-n', '1', arg])).toThrow(arg)
-  })
-
-  it('allows copy detection and combined-diff flags after the subcommand', () => {
-    expect(gitArgv('log', ['-C', '-c', '--format=%H %s']).slice(-3)).toEqual(['-C', '-c', '--format=%H %s'])
-  })
-})
-
 describe('runCommand', () => {
   it('runs git log in the repo', async () => {
     const out = await runCommand('git', gitArgv('log', ['--format=%s']), { cwd: gitRepo() })
@@ -113,6 +72,12 @@ describe('runCommand', () => {
   it('does not hang on log --stdin, since stdin is closed', async () => {
     const out = await runCommand('git', gitArgv('log', ['--stdin', '--format=%s', 'HEAD']), { cwd: gitRepo(), timeoutMs: 5_000 })
     expect(out.trim()).toBe('first commit')
+  })
+
+  it('fails on exit 1 unless told it means the inputs differ', async () => {
+    const exit = ['-e', 'process.stdout.write("out"); process.exit(1)']
+    await expect(runCommand(process.execPath, exit, { cwd: dir })).rejects.toThrow('exited with code 1')
+    expect(await runCommand(process.execPath, exit, { cwd: dir, diffExit: true })).toBe('out')
   })
 
   it('fails with git stderr on a nonzero exit', async () => {
@@ -186,6 +151,58 @@ describe('piExtension', () => {
     gitRepo()
     await expect(call('git', { subcommand: 'show', args: ['--remerge-diff'] })).rejects.toThrow('--remerge-diff')
     await expect(call('git', { subcommand: 'log', args: ['--show-signature'] })).rejects.toThrow('--show-signature')
+  })
+
+  it('refuses an orderfile, so git cannot read /dev/zero into memory', async () => {
+    gitRepo()
+    await expect(call('git', { subcommand: 'log', args: ['-p', '-1', '-O/dev/zero'] })).rejects.toThrow('-O/dev/zero')
+    await expect(call('git', { subcommand: 'show', args: ['--orderfile=/dev/zero'] })).rejects.toThrow('--orderfile')
+    await expect(call('git', { subcommand: 'blame', args: ['-S', '/dev/zero', 'a.txt'] })).rejects.toThrow('-S')
+    await expect(call('git', { subcommand: 'blame', args: ['--ignore-revs-file=/dev/zero', 'a.txt'] })).rejects.toThrow('--ignore-revs')
+  })
+
+  it('returns the diff when git diff exits 1 because the inputs differ', async () => {
+    gitRepo()
+    writeFileSync(join(dir, 'b.txt'), 'two\n')
+    expect(await call('git', { subcommand: 'diff', args: ['--no-index', 'a.txt', 'b.txt'] })).toContain('-one\n+two')
+    writeFileSync(join(dir, 'a.txt'), 'changed\n')
+    expect(await call('git', { subcommand: 'diff', args: ['--exit-code'] })).toContain('+changed')
+    expect(await call('git', { subcommand: 'diff', args: ['--quiet'] })).toBe('')
+  })
+
+  it('fails when git diff is given an invalid input', async () => {
+    gitRepo()
+    await expect(call('git', { subcommand: 'diff', args: ['--no-index', 'a.txt', 'nope.txt'] })).rejects.toThrow(
+      /git exited with code 1: .*nope\.txt/,
+    )
+    await expect(call('git', { subcommand: 'diff', args: ['nope'] })).rejects.toThrow(/git exited with code 128: .*nope/)
+  })
+
+  it('runs the repo diff helper only when the forced flags are missing', async () => {
+    const ran = helperRepo()
+    await runCommand('git', ['-c', 'diff.external=', 'diff', '--no-index', '--ext-diff', 'a.txt', 'b.txt'], { cwd: dir, diffExit: true })
+    expect(existsSync(ran)).toBe(true)
+    rmSync(ran)
+    await runCommand('git', ['blame', 'a.txt'], { cwd: dir })
+    expect(existsSync(ran)).toBe(true)
+    rmSync(ran)
+    await call('git', { subcommand: 'diff', args: ['--no-index', 'a.txt', 'b.txt'] })
+    await call('git', { subcommand: 'log', args: ['-p'] })
+    await call('git', { subcommand: 'blame', args: ['a.txt'] })
+    expect(existsSync(ran)).toBe(false)
+  })
+
+  it.each(['--ext-di', '--ext-diff', '--textcon', '--textconv'])('never runs the repo diff helper for %s', async (arg) => {
+    const ran = helperRepo()
+    for (const [subcommand, args] of [
+      ['diff', ['--no-index', arg, 'a.txt', 'b.txt']],
+      ['diff', [arg, 'HEAD']],
+      ['log', ['-p', arg]],
+      ['blame', [arg, 'a.txt']],
+    ] as const) {
+      await expect(call('git', { subcommand, args })).rejects.toThrow(arg)
+    }
+    expect(existsSync(ran)).toBe(false)
   })
 
   it('reads a range of a path relative to the tool context cwd, ignoring a leading @', async () => {
