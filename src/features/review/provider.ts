@@ -10,7 +10,7 @@ export type Provider = { kind: ProviderKind; baseUrl: string } & Credential
 
 export type Endpoints = { anthropic: string; responses: string }
 
-export type PiModel = { baseUrl: string; model: string }
+export type PiModel = { baseUrl: string; model: string; contextWindow?: number }
 
 export type Override = { args: string[]; env: Record<string, string>; pi?: PiModel }
 
@@ -36,7 +36,7 @@ export function deriveEndpoints(kind: ProviderKind, baseUrl: string): Endpoints 
   return { anthropic: base, responses: `${base}/v1` }
 }
 
-export type SlotModel = { harness: Harness; model: string }
+export type SlotModel = { harness: Harness; model: string; contextWindow?: number }
 
 export function isHarness(value: string): value is Harness {
   return (harnesses as string[]).includes(value)
@@ -67,24 +67,35 @@ function buildCodexOverride(provider: Provider, endpoints: Endpoints, model: str
   }
 }
 
-function buildPiOverride(provider: Provider, endpoints: Endpoints, model: string): Override {
+function buildPiOverride(provider: Provider, endpoints: Endpoints, model: string, contextWindow: number | undefined): Override {
   return {
     args: ['--model', `yoke/${model}`],
     env: { [piKeyEnv]: credentialOf(provider) },
-    pi: { baseUrl: endpoints.responses, model },
+    pi: { baseUrl: endpoints.responses, model, ...(contextWindow ? { contextWindow } : {}) },
   }
 }
 
 const piMaxTokens = 32_000
 
-export function piModels({ baseUrl, model }: PiModel): unknown {
+const piContextWindow = 200_000
+
+const probePrompt = 'ping'
+
+// pi's clampMaxTokensToContext (pi-ai 1.5.2) estimates input at 3.5 characters a token, counting only the
+// messages, and keeps a 4,096 token margin. The probe's input is far too small for pi's other margin to apply.
+function probeMaxTokens(contextWindow: number): number {
+  const input = Math.ceil(probePrompt.length / 3.5)
+  return Math.min(piMaxTokens, Math.max(1, contextWindow - input - 4_096))
+}
+
+export function piModels({ baseUrl, model, contextWindow = piContextWindow }: PiModel): unknown {
   const entry = {
     id: model,
     name: model,
     reasoning: true,
     input: ['text'],
-    contextWindow: 200_000,
-    maxTokens: piMaxTokens,
+    contextWindow,
+    maxTokens: Math.min(piMaxTokens, contextWindow),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // pi guesses these from the base URL (a proxy host containing deepseek.com flips most of them),
     // so pin them to the request buildProbe sends.
@@ -129,7 +140,7 @@ function claudeAuthHeaders(provider: Provider): Record<string, string> {
   return { Authorization: `Bearer ${provider.apiKey}`, 'x-api-key': provider.apiKey }
 }
 
-export function buildProbe({ harness, model }: SlotModel, provider: Provider): ProbeRequest {
+export function buildProbe({ harness, model, contextWindow = piContextWindow }: SlotModel, provider: Provider): ProbeRequest {
   const endpoints = deriveEndpoints(provider.kind, provider.baseUrl)
   const bearer = { Authorization: `Bearer ${credentialOf(provider)}` }
   if (harness === 'codex')
@@ -142,12 +153,12 @@ export function buildProbe({ harness, model }: SlotModel, provider: Provider): P
         model,
         messages: [
           { role: 'developer', content: 'Reply briefly.' },
-          { role: 'user', content: 'ping' },
+          { role: 'user', content: probePrompt },
         ],
         stream: true,
         stream_options: { include_usage: true },
         store: false,
-        max_completion_tokens: piMaxTokens,
+        max_completion_tokens: probeMaxTokens(contextWindow),
         tools: [{ type: 'function', function: { name: 'ping', description: 'Ping.', parameters: { type: 'object', properties: {} } } }],
         reasoning_effort: 'medium',
       },
@@ -159,9 +170,9 @@ export function buildProbe({ harness, model }: SlotModel, provider: Provider): P
   }
 }
 
-export function buildOverride({ harness, model }: SlotModel, provider: Provider): Override {
+export function buildOverride({ harness, model, contextWindow }: SlotModel, provider: Provider): Override {
   const endpoints = deriveEndpoints(provider.kind, provider.baseUrl)
   if (harness === 'codex') return buildCodexOverride(provider, endpoints, model)
-  if (harness === 'pi') return buildPiOverride(provider, endpoints, model)
+  if (harness === 'pi') return buildPiOverride(provider, endpoints, model, contextWindow)
   return buildClaudeOverride(provider, endpoints, model)
 }

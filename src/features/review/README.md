@@ -38,6 +38,7 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 | `review.<slot>.harness` | `claude`, `codex` or `pi`. Defaults: `claude`, `codex`, reviewer1's harness. |
 | `review.<slot>.provider` | `litellm` or `foundry`. Unset: your own CLI login. |
 | `review.<slot>.model` | Model to run; required with a provider. See `yoke models`. |
+| `review.<slot>.contextWindow` | Context window in tokens of a `pi` slot with a provider (a synthesis slot's harness may come from reviewer1). Default: 200000. |
 
 ### Pi
 

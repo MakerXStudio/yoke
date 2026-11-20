@@ -172,6 +172,19 @@ describe('pi', () => {
     })
   })
 
+  it('caps the model entry and the probe by a small context window', () => {
+    const provider = { kind: 'litellm', baseUrl: 'https://llm', apiKey: 'k' } as const
+    const override = buildOverride({ harness: 'pi', model: 'kimi', contextWindow: 16_000 }, provider)
+    expect(override.pi).toEqual({ baseUrl: 'https://llm/v1', model: 'kimi', contextWindow: 16_000 })
+    expect(piModels(override.pi!)).toMatchObject({ providers: { yoke: { models: [{ contextWindow: 16_000, maxTokens: 16_000 }] } } })
+    expect(buildProbe({ harness: 'pi', model: 'kimi', contextWindow: 16_000 }, provider).body).toMatchObject({
+      max_completion_tokens: 16_000 - 2 - 4_096,
+    })
+    expect(buildProbe({ harness: 'pi', model: 'kimi', contextWindow: 1_000_000 }, provider).body).toMatchObject({
+      max_completion_tokens: 32_000,
+    })
+  })
+
   it('pins the compat settings so a proxy host name cannot change what pi sends', () => {
     expect(piModels({ baseUrl: 'https://deepseek.company.com/v1', model: 'kimi' })).toMatchObject({
       providers: {
