@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -201,11 +201,21 @@ describe('runReview', () => {
     expect(runs).toEqual([])
   })
 
-  it('stops when .pi/commands is a dangling symlink', async () => {
+  it('reviews with pi and leaves a dangling .pi/commands symlink alone', async () => {
     const repo = repoWith('.pi')
-    symlinkSync(join(repo, 'missing'), join(repo, '.pi', 'commands'))
-    await expect(runReview('request', { ...context({}, piReviewer1), cwd: repo })).rejects.toThrow(ReviewFailure)
-    expect(runs).toEqual([])
+    const target = join(repo, 'missing')
+    symlinkSync(target, join(repo, '.pi', 'commands'))
+    await runReview('request', { ...context({}, piReviewer1), cwd: repo })
+    expect(runs).toHaveLength(3)
+    expect(readlinkSync(join(repo, '.pi', 'commands'))).toBe(target)
+  })
+
+  it('reviews with pi when .pi is a file', async () => {
+    const repo = repoWith()
+    mkdirSync(repo, { recursive: true })
+    writeFileSync(join(repo, '.pi'), '')
+    await runReview('request', { ...context({}, piReviewer1), cwd: repo })
+    expect(runs).toHaveLength(3)
   })
 
   it('reviews a repo with .pi/commands when no slot uses pi', async () => {

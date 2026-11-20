@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { cachedSlot, recordSlot } from './cachedSlots'
@@ -137,7 +137,7 @@ async function synthesise(requestPath: string, succeeded: Reviewer[], reviewersR
 }
 
 function assertPiCanReview({ cwd, slots }: ReviewContext): void {
-  if (!usesPi(slots) || !lstatSync(join(cwd, '.pi', 'commands'), { throwIfNoEntry: false })) return
+  if (!usesPi(slots) || !existsSync(join(cwd, '.pi', 'commands'))) return
   if (existsSync(join(cwd, '.pi', 'prompts'))) return
   throw new ReviewFailure(
     "pi can't review this repo",
