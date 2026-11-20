@@ -6,6 +6,7 @@ import { delimiter, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { harnessArgs, type HarnessRun, piFailure, runHarness, windowsQuote } from './harness'
+import { piExtension } from './pi'
 
 vi.mock('node:fs', async (actual) => {
   const real = await actual<typeof fs>()
@@ -100,13 +101,20 @@ describe('harnessArgs for pi', () => {
     '--no-prompt-templates',
     '--no-themes',
     '--no-context-files',
+    '-e',
+    piExtension,
   ]
-  it('runs pi locked down with only read, ls and bash when neither rg nor fd is on PATH, then the model', () => {
+
+  it('loads the extension source next to pi.ts when no build sits beside it', () => {
+    expect(piExtension).toBe(join(import.meta.dirname, 'piExtension.ts'))
+  })
+
+  it('runs pi locked down with only read, ls, git and read_range when neither rg nor fd is on PATH, then the model', () => {
     const env = { ...agentEnv(), PATH: binDir('empty', []) }
     expect(harnessArgs({ ...pi, override: { args: ['--model', 'yoke/kimi'], env: {} } }, env, 'linux')).toEqual([
       ...flags,
       '--tools',
-      'read,ls,bash',
+      'read,ls,git,read_range',
       '--model',
       'yoke/kimi',
     ])
@@ -114,7 +122,7 @@ describe('harnessArgs for pi', () => {
 
   it('offers grep and find when rg and fd are on PATH', () => {
     const env = { ...agentEnv(), PATH: [binDir('a', ['rg']), binDir('b', ['fd'])].join(':') }
-    expect(harnessArgs(pi, env, 'linux')).toEqual([...flags, '--tools', 'read,ls,bash,grep,find'])
+    expect(harnessArgs(pi, env, 'linux')).toEqual([...flags, '--tools', 'read,ls,git,read_range,grep,find'])
   })
 
   it.skipIf(process.platform === 'win32')('does not offer grep for an rg that is not executable or not a file', () => {
@@ -122,27 +130,27 @@ describe('harnessArgs for pi', () => {
     chmodSync(join(bin, 'rg'), 0o644)
     mkdirSync(join(binDir('b', []), 'rg'))
     const env = { ...agentEnv(), PATH: [bin, join(dir, 'b')].join(':') }
-    expect(harnessArgs(pi, env, 'linux').at(-1)).toBe('read,ls,bash')
+    expect(harnessArgs(pi, env, 'linux').at(-1)).toBe('read,ls,git,read_range')
   })
 
   it("offers find with Debian's fdfind", () => {
-    expect(harnessArgs(pi, { ...agentEnv(), PATH: binDir('a', ['fdfind']) }, 'linux').at(-1)).toBe('read,ls,bash,find')
+    expect(harnessArgs(pi, { ...agentEnv(), PATH: binDir('a', ['fdfind']) }, 'linux').at(-1)).toBe('read,ls,git,read_range,find')
   })
 
   it("finds rg in pi's agent bin", () => {
     const agent = join(dir, 'agent')
     binDir(join('agent', 'bin'), ['rg'])
-    expect(harnessArgs(pi, { PI_CODING_AGENT_DIR: agent, PATH: binDir('empty', []) }, 'linux').at(-1)).toBe('read,ls,bash,grep')
+    expect(harnessArgs(pi, { PI_CODING_AGENT_DIR: agent, PATH: binDir('empty', []) }, 'linux').at(-1)).toBe('read,ls,git,read_range,grep')
   })
 
   it('reads the Windows Path key and looks for .exe tools', () => {
     const env = { ...agentEnv(), Path: [binDir('a', ['rg.exe']), binDir('b', ['fd'])].join(';') }
-    expect(harnessArgs(pi, env, 'win32').at(-1)).toBe('read,ls,bash,grep')
+    expect(harnessArgs(pi, env, 'win32').at(-1)).toBe('read,ls,git,read_range,grep')
   })
 
   it('prefers PATH over Path', () => {
     const env = { ...agentEnv(), PATH: binDir('a', ['rg']), Path: binDir('b', ['fd']) }
-    expect(harnessArgs(pi, env, 'linux').at(-1)).toBe('read,ls,bash,grep')
+    expect(harnessArgs(pi, env, 'linux').at(-1)).toBe('read,ls,git,read_range,grep')
   })
 })
 
