@@ -24,7 +24,7 @@ describe('listSettings', () => {
   it('lists every setting with its description under the value', () => {
     const lines = listSettings({}).split('\n')
     const harness = lines.findIndex((line) => line.startsWith('review.reviewer1.harness'))
-    expect(lines[harness + 1]).toBe(`${' '.repeat(27)}claude, codex or pi. Default: claude`)
+    expect(lines[harness + 1]).toBe(`${' '.repeat(32)}claude, codex or pi. Default: claude`)
   })
 
   it('wraps a description within the terminal, aligned under the value whatever the value length', () => {
@@ -32,7 +32,7 @@ describe('listSettings', () => {
     const start = lines.findIndex((line) => line.startsWith('review.reviewer1.model'))
     const description = lines.slice(start + 1, lines.indexOf('', start))
     expect(description.length).toBeGreaterThan(1)
-    expect(description.every((line) => /^ {27}\S/.test(line) && line.length <= 50)).toBe(true)
+    expect(description.every((line) => /^ {32}\S/.test(line) && line.length <= 50)).toBe(true)
   })
 })
 

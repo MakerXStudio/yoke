@@ -27,7 +27,7 @@ type SlotName = keyof ReviewSlots
 
 const slotNames: SlotName[] = ['reviewer1', 'reviewer2', 'synthesis']
 
-type SlotSpec = { harness?: Harness; model?: string; provider?: ProviderKind }
+type SlotSpec = { harness?: Harness; model?: string; provider?: ProviderKind; contextWindow?: number }
 
 function notSet(key: SettingKey, ciName: string, placeholder: string, env: NodeJS.ProcessEnv): string {
   return isCi(env) ? `${ciName} is not set` : `${key} is not set; ${howToSet(key, placeholder)}`
@@ -52,11 +52,13 @@ function readSpec(settings: Settings, slot: SlotName, errors: string[]): SlotSpe
     harness: `review.${slot}.harness`,
     provider: `review.${slot}.provider`,
     model: `review.${slot}.model`,
+    contextWindow: `review.${slot}.contextWindow`,
   } as const satisfies Record<string, SettingKey>
   const harness = settings[keys.harness]
   const provider = settings[keys.provider]
   const model = settings[keys.model]
-  if (!harness && !provider && !model) return undefined
+  const window = settings[keys.contextWindow]
+  if (!harness && !provider && !model && !window) return undefined
   if (harness && !isHarness(harness))
     errors.push(`${keys.harness} "${harness}" must be claude, codex or pi; ${howToSet(keys.harness, '<claude|codex|pi>')}`)
   if (provider && !isProviderKind(provider))
@@ -65,19 +67,28 @@ function readSpec(settings: Settings, slot: SlotName, errors: string[]): SlotSpe
     )
   if (provider && !model)
     errors.push(`${keys.model} is required when ${keys.provider} is set; ${howToSet(keys.model, '<model>')} (see \`yoke models\`)`)
+  const contextWindow = window && /^[1-9]\d*$/.test(window) ? Number(window) : undefined
+  if (window && !contextWindow)
+    errors.push(`${keys.contextWindow} "${window}" must be a positive integer; ${howToSet(keys.contextWindow, '<tokens>')}`)
   return {
     ...(harness && isHarness(harness) ? { harness } : {}),
     ...(provider && isProviderKind(provider) ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(contextWindow ? { contextWindow } : {}),
   }
+}
+
+function checkContextWindow(name: SlotName, spec: SlotSpec | undefined, harness: Harness, errors: string[]): void {
+  if (spec?.contextWindow && (harness !== 'pi' || !spec.provider))
+    errors.push(`review.${name}.contextWindow only applies to a slot that runs pi through a provider`)
 }
 
 type Providers = Partial<Record<ProviderKind, Provider>>
 
-function toSlot({ harness: chosen, model, provider: kind }: SlotSpec, fallback: Harness, providers: Providers): Slot {
+function toSlot({ harness: chosen, model, provider: kind, contextWindow }: SlotSpec, fallback: Harness, providers: Providers): Slot {
   const harness = chosen ?? fallback
   if (!model) return { harness }
-  const slot: SlotModel = { harness, model }
+  const slot: SlotModel = { harness, model, ...(contextWindow ? { contextWindow } : {}) }
   const provider = kind && providers[kind]
   if (provider) return { ...slot, provider: kind, override: buildOverride(slot, provider), probe: buildProbe(slot, provider) }
   return { ...slot, override: ownAuthOverride(slot) }
@@ -95,6 +106,13 @@ export function resolveSlots(settings: Settings): ReviewSlots {
   const specs: Partial<Record<SlotName, SlotSpec>> = {}
   const errors: string[] = []
   for (const name of slotNames) specs[name] = readSpec(settings, name, errors)
+  const reviewer1Harness = specs.reviewer1?.harness ?? 'claude'
+  const harnesses: Record<SlotName, Harness> = {
+    reviewer1: reviewer1Harness,
+    reviewer2: specs.reviewer2?.harness ?? 'codex',
+    synthesis: specs.synthesis?.harness ?? reviewer1Harness,
+  }
+  for (const name of slotNames) checkContextWindow(name, specs[name], harnesses[name], errors)
   const providers: Providers = {}
   for (const kind of new Set(Object.values(specs).flatMap((spec) => (spec?.provider ? [spec.provider] : [])))) {
     const read = readProvider(settings, kind)
@@ -102,10 +120,9 @@ export function resolveSlots(settings: Settings): ReviewSlots {
     else providers[kind] = read
   }
   if (errors.length) throw new ReviewError(['Review settings are incomplete:', ...errors.map((error) => `- ${error}`)].join('\n'))
-  const reviewer1 = toSlot(specs.reviewer1 ?? {}, 'claude', providers)
   return {
-    reviewer1,
-    reviewer2: toSlot(specs.reviewer2 ?? {}, 'codex', providers),
-    synthesis: specs.synthesis && toSlot(specs.synthesis, reviewer1.harness, providers),
+    reviewer1: toSlot(specs.reviewer1 ?? {}, harnesses.reviewer1, providers),
+    reviewer2: toSlot(specs.reviewer2 ?? {}, harnesses.reviewer2, providers),
+    synthesis: specs.synthesis && toSlot(specs.synthesis, harnesses.synthesis, providers),
   }
 }

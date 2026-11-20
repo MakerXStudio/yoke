@@ -38,13 +38,23 @@ Slots are `reviewer1`, `reviewer2` and `synthesis`.
 | `review.<slot>.harness` | `claude`, `codex` or `pi`. Defaults: `claude`, `codex`, reviewer1's harness. |
 | `review.<slot>.provider` | `litellm` or `foundry`. Unset: your own CLI login. |
 | `review.<slot>.model` | Model to run; required with a provider. See `yoke models`. |
+| `review.<slot>.contextWindow` | Context window in tokens; only for a `pi` slot with a provider. Default: 200000. |
 
 ### Pi
 
-A `pi` slot runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) from your `PATH` with read, ls, git (`log`, `show`, `blame`, `diff` and `merge-base` only) and read_range (a byte range of a file, for lines too long for read) tools, plus grep when `rg` is installed and find when `fd` is, and no shell. The git and read_range tools come from a Pi extension that yoke ships. It loads no sessions, other extensions, skills, MCP servers, `AGENTS.md` or the repo's `.pi/` settings. It can't review a repo that has `.pi/commands` and no `.pi/prompts`, because Pi renames `.pi/commands` to `.pi/prompts` when it starts.
+A `pi` slot runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) from your `PATH` with no shell. Its tools are:
+
+- read and ls
+- git, limited to `log`, `show`, `blame`, `diff` and `merge-base`
+- read_range, which reads a byte range of a file, for lines too long for read
+- grep when `rg` is installed, and find when `fd` is
+
+git and read_range come from a Pi extension that yoke ships. Pi loads no sessions, other extensions, skills, MCP servers, `AGENTS.md` or the repo's `.pi/` settings. It can't review a repo that has `.pi/commands` and no `.pi/prompts`, because Pi renames `.pi/commands` to `.pi/prompts` when it starts.
 
 - **Own login:** Pi uses your `~/.pi` sign-in and models (run `pi`, then `/login`). Providers added by Pi extensions aren't available. With no `review.<slot>.model`, Pi runs its default model; set one in Pi, or set the slot's model to `<provider>/<model>` (see `pi --list-models`).
 - **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`) with reasoning and tools in each request, so non-reasoning models and Foundry deployments of GPT-5.6 and later don't work. Before the review starts, yoke sends the model such a request and stops if the model refuses it.
+
+In CI, yoke installs checksum-verified `rg` and `fd` for Pi. An own-login slot stops before the review when Pi's agent dir has its own `rg` or `fd` in `bin` or `tools`, which Pi would run instead, or when `PI_CODING_AGENT_DIR` is a relative path. Remove the file, set an absolute path, or give the slot a provider.
 
 With no synthesis slot set, the synthesis runs on reviewer 1's harness (reviewer 2's when reviewer 1 fails). When that harness is `pi`, the synthesis also uses that reviewer's provider and model.
 
@@ -126,7 +136,7 @@ For a PR from a fork, the gate fails until a review a maintainer approved succee
 The review doesn't run automatically on a PR from a fork: it needs the repo's secrets, and its reviewers run on the fork's code. The gate fails for the PR, telling a maintainer to read the diff and add the `review` label.
 
 > [!WARNING]
-> Adding the `review` label runs the reviewers, with `REVIEW_CI_API_KEY` (or the Entra app's token) and a GitHub token that can write to the repo's PRs, statuses and Actions runs, on the fork's code. Read the whole diff first, including workflows, scripts, `.npmrc`, `.claude/` settings and hooks, `.mcp.json`, `.codex/` config and any instructions aimed at an AI agent, and add the label only when nothing in it could leak a secret or misuse that token. Any reviewer can read files on the runner, including its environment, and its output is posted to the PR.
+> Adding the `review` label runs the reviewers, with `REVIEW_CI_API_KEY` (or the Entra app's token) and a GitHub token that can write to the repo's PRs, statuses and Actions runs, on the fork's code. Read the whole diff first, including workflows, scripts, `.npmrc`, `.claude/` settings and hooks, `.mcp.json`, `.codex/` config and any instructions aimed at an AI agent, and add the label only when nothing in it could leak a secret or misuse that token. Any reviewer can read files on the runner, including its environment variables, and the review's output is posted to the PR.
 
 Adding the label runs the review on `pull_request_target`, which takes the workflow from the PR's base branch. Only a label from a user with write, maintain or admin access approves the review; triage access can add labels, but then the review doesn't run and the `review / approved review` status says who added the label and the access it needs. The job checks out the base branch, so `npm` and `npx` never read the fork's config, and yoke reviews the labelled commit in a separate worktree, running Claude with `--setting-sources user --strict-mcp-config` so the fork's settings, hooks and MCP servers don't load. It reviews only that commit: if the fork pushed after the label was added, the review fails without running. It posts its findings like any other review.
 

@@ -10,6 +10,7 @@ function secret(description: string) {
 
 const providerHelp = 'litellm or foundry. Unset: your own login'
 const modelHelp = 'See `yoke models`. Required with a provider'
+const contextWindowHelp = 'Context window in tokens, for a pi slot with a provider. Default: 200000'
 
 const settingsSchema = z.object({
   'litellm.baseUrl': setting('LiteLLM proxy URL'),
@@ -24,12 +25,15 @@ const settingsSchema = z.object({
   'review.reviewer1.harness': setting('claude, codex or pi. Default: claude'),
   'review.reviewer1.provider': setting(providerHelp),
   'review.reviewer1.model': setting(modelHelp),
+  'review.reviewer1.contextWindow': setting(contextWindowHelp),
   'review.reviewer2.harness': setting('claude, codex or pi. Default: codex'),
   'review.reviewer2.provider': setting(providerHelp),
   'review.reviewer2.model': setting(modelHelp),
+  'review.reviewer2.contextWindow': setting(contextWindowHelp),
   'review.synthesis.harness': setting('claude, codex or pi. Default: reviewer1 harness'),
   'review.synthesis.provider': setting(providerHelp),
   'review.synthesis.model': setting(modelHelp),
+  'review.synthesis.contextWindow': setting(contextWindowHelp),
 })
 
 export const settingKeys = settingsSchema.keyof().options

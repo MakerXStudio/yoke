@@ -117,6 +117,57 @@ describe('pi slots', () => {
     })
   })
 
+  it("carries a pi slot's context window into its model and probe", () => {
+    const slots = resolveSlots({
+      ...foundry,
+      'review.reviewer1.harness': 'pi',
+      'review.reviewer1.provider': 'foundry',
+      'review.reviewer1.model': 'kimi',
+      'review.reviewer1.contextWindow': '64000',
+    })
+    expect(slots.reviewer1).toMatchObject({
+      model: 'kimi',
+      contextWindow: 64000,
+      override: { pi: { contextWindow: 64000 } },
+      probe: { body: { max_completion_tokens: 32000 } },
+    })
+  })
+
+  it("accepts a context window on a synthesis slot that inherits reviewer1's pi harness", () => {
+    const slots = resolveSlots({
+      ...foundry,
+      'review.reviewer1.harness': 'pi',
+      'review.synthesis.provider': 'foundry',
+      'review.synthesis.model': 'kimi',
+      'review.synthesis.contextWindow': '8000',
+    })
+    expect(slots.synthesis).toMatchObject({ harness: 'pi', override: { pi: { contextWindow: 8000 } } })
+  })
+
+  it('rejects a context window on a slot that does not run pi through a provider', () => {
+    for (const settings of [
+      { 'review.reviewer1.contextWindow': '64000' },
+      { ...foundry, 'review.synthesis.provider': 'foundry', 'review.synthesis.model': 'sonnet', 'review.synthesis.contextWindow': '64000' },
+      { 'review.reviewer2.harness': 'pi', 'review.reviewer2.contextWindow': '64000' },
+    ])
+      expect(errorOf(() => resolveSlots(settings))).toMatch(
+        /- review\.\w+\.contextWindow only applies to a slot that runs pi through a provider/,
+      )
+  })
+
+  it.each(['0', '-5', '1.5', '64k'])('rejects a context window of %s', (value) => {
+    const message = errorOf(() =>
+      resolveSlots({
+        ...foundry,
+        'review.reviewer1.harness': 'pi',
+        'review.reviewer1.provider': 'foundry',
+        'review.reviewer1.model': 'kimi',
+        'review.reviewer1.contextWindow': value,
+      }),
+    )
+    expect(message).toContain(`- review.reviewer1.contextWindow "${value}" must be a positive integer; pass --reviewer-1-context-window`)
+  })
+
   it('says whether any slot uses pi', () => {
     const own: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
     expect(usesPi(own)).toBe(false)
