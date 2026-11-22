@@ -25,6 +25,8 @@ If no workflow or setting names the models, ask which model each reviewer runs. 
 
 For Foundry with Entra, reuse the client and tenant IDs from the existing workflow; ask only if none is there.
 
+Pass \`--risk\` only when the user asks for risk-based review (auto-approving or auto-merging low-risk PRs); it is experimental. With an edited workflow, add the \`review-app-client-id\` input and \`YOKE_REVIEW_APP_PRIVATE_KEY\` secret from \`--print\`, and write the printed example \`.github/yoke-risk.yml\` if the repo has none.
+
 ## Variable and secret
 
 Never ask whether they are set for the organisation, and don't query org settings.

@@ -15,16 +15,24 @@ export class ReviewError extends Error {
 
 const maxBuffer = 256 * 1024 * 1024
 
-const run: Run = (command, args, cwd, input) =>
-  new Promise((resolve, reject) => {
-    const child = execFile(command, args, { cwd, encoding: 'utf8', maxBuffer }, (error, stdout, stderr) => {
-      if (!error) return resolve(stdout)
-      const detail = stderr.trim()
-      reject(new ReviewError(`\`${command} ${args.join(' ')}\` failed${detail ? `: ${detail}` : ''}`))
+const runWith =
+  (env?: NodeJS.ProcessEnv): Run =>
+  (command, args, cwd, input) =>
+    new Promise((resolve, reject) => {
+      const child = execFile(command, args, { cwd, env, encoding: 'utf8', maxBuffer }, (error, stdout, stderr) => {
+        if (!error) return resolve(stdout)
+        const detail = stderr.trim()
+        reject(new ReviewError(`\`${command} ${args.join(' ')}\` failed${detail ? `: ${detail}` : ''}`))
+      })
+      child.stdin?.on('error', () => {})
+      child.stdin?.end(input)
     })
-    child.stdin?.on('error', () => {})
-    child.stdin?.end(input)
-  })
+
+const run = runWith()
+
+export function runAs(token: string): Run {
+  return runWith({ ...process.env, GH_TOKEN: token })
+}
 
 const fields = 'number,url,title,baseRefName,baseRefOid,headRefName,headRefOid,files'
 
@@ -162,6 +170,23 @@ export async function githubGet(path: string, exec: Run = run): Promise<unknown>
 export async function githubPost(path: string, body: unknown, exec: Run = run): Promise<unknown> {
   const output = await exec('gh', ['api', '--method', 'POST', path, '--input', '-'], undefined, JSON.stringify(body))
   return output.trim() ? JSON.parse(output) : null
+}
+
+export async function githubPut(path: string, body: unknown, exec: Run = run): Promise<unknown> {
+  return JSON.parse(await exec('gh', ['api', '--method', 'PUT', path, '--input', '-'], undefined, JSON.stringify(body)))
+}
+
+export async function githubPaginate(path: string, exec: Run = run): Promise<unknown[]> {
+  const output = await exec('gh', ['api', '--paginate', path, '--jq', '.[]'])
+  return output
+    .split('\n')
+    .filter((line) => line.trim())
+    .map((line): unknown => JSON.parse(line))
+}
+
+export async function githubGraphql(query: string, variables: Record<string, string>, exec: Run = run): Promise<unknown> {
+  const values = Object.entries(variables).flatMap(([name, value]) => ['-f', `${name}=${value}`])
+  return JSON.parse(await exec('gh', ['api', 'graphql', '-f', `query=${query}`, ...values]))
 }
 
 export async function githubDelete(path: string, exec: Run = run): Promise<void> {

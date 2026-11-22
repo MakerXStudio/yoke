@@ -47,12 +47,23 @@ on:
         description: LiteLLM proxy URL, or https://<resource>.services.ai.azure.com for Foundry; typically vars.REVIEW_CI_BASE_URL
         type: string
         default: ''
+      yoke-from-source:
+        description: Run yoke built from the yoke commit this workflow is called at, instead of the locked release, to test an unreleased yoke branch
+        type: boolean
+        default: false
+      review-app-client-id:
+        description: 'Experimental: client ID of the yoke-review GitHub App, which approves or auto-merges PRs .github/yoke-risk.yml rates low risk; typically vars.YOKE_REVIEW_APP_CLIENT_ID'
+        type: string
+        default: ''
     secrets:
       REVIEW_CI_BASE_URL:
         description: 'Deprecated: pass the base-url input instead'
         required: false
       REVIEW_CI_API_KEY:
         description: LiteLLM or Foundry API key
+        required: false
+      YOKE_REVIEW_APP_PRIVATE_KEY:
+        description: 'Experimental: private key of the yoke-review GitHub App'
         required: false
 
 jobs:
@@ -84,8 +95,8 @@ jobs:
           npm ci --omit=optional
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: Check out yoke's own PR source, so its workflow runs the commands it adds
-        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+      - name: Check out yoke at this workflow's commit, for yoke's own PRs or a caller testing it with yoke-from-source
+        if: github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)
         uses: actions/checkout@v4
         with:
           repository: MakerXStudio/yoke
@@ -94,7 +105,7 @@ jobs:
           persist-credentials: false
 
       - name: Build that yoke and put it ahead of the locked yoke on PATH
-        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)
         working-directory: yoke-source
         run: |
           npm ci && npm run build
@@ -105,6 +116,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: yoke review-push
+
+      - name: Get a yoke-review App token to withdraw its approval of a push that is not reviewed
+        id: review-app
+        if: ${{ steps.decide.outputs.review != 'true' && inputs.review-app-client-id != '' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.review-app-client-id }}
+          private-key: ${{ secrets.YOKE_REVIEW_APP_PRIVATE_KEY }}
+
+      - name: Dismiss the yoke-review App's approval and disable its auto-merge, since this push is not reviewed or rated
+        if: ${{ steps.review-app.outputs.token != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YOKE_REVIEW_APP_TOKEN: ${{ steps.review-app.outputs.token }}
+          YOKE_REVIEW_APP_SLUG: ${{ steps.review-app.outputs.app-slug }}
+        run: yoke review-risk skipped
 
   review:
     needs: push
@@ -144,8 +173,8 @@ jobs:
           npm ci
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: Check out yoke's own PR source, so its workflow runs the commands it adds
-        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+      - name: Check out yoke at this workflow's commit, for yoke's own PRs or a caller testing it with yoke-from-source
+        if: github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)
         uses: actions/checkout@v4
         with:
           repository: MakerXStudio/yoke
@@ -154,7 +183,7 @@ jobs:
           persist-credentials: false
 
       - name: Build that yoke and put it ahead of the locked yoke on PATH
-        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)
         working-directory: yoke-source
         run: |
           npm ci && npm run build
@@ -170,6 +199,7 @@ jobs:
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Review PR
+        id: review
         working-directory: pr
         env:
           GH_TOKEN: ${{ github.token }}
@@ -193,6 +223,25 @@ jobs:
         run: |
           gh auth setup-git
           yoke review "$PR_NUMBER" --post --verbose ${APPROVED_HEAD:+--head "$APPROVED_HEAD"}
+
+      - name: Get a yoke-review App token for the risk review
+        id: review-app
+        if: ${{ !cancelled() && steps.review.outcome != 'skipped' && inputs.review-app-client-id != '' && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.review-app-client-id }}
+          private-key: ${{ secrets.YOKE_REVIEW_APP_PRIVATE_KEY }}
+
+      - name: Rate the PR's risk with the default branch's .github/yoke-risk.yml, approving or auto-merging it as the yoke-review App when low
+        if: ${{ !cancelled() && steps.review.outcome != 'skipped' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          YOKE_REVIEW_APP_TOKEN: ${{ steps.review-app.outputs.token }}
+          YOKE_REVIEW_APP_SLUG: ${{ steps.review-app.outputs.app-slug }}
+          REVIEW_RESULT: ${{ steps.review.outcome }}
+        run: yoke review-risk "$REVIEW_RESULT"
 
   gate:
     needs: review
@@ -219,8 +268,8 @@ jobs:
           npm ci --omit=optional
           echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: Check out yoke's own PR source, so its workflow runs the commands it adds
-        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+      - name: Check out yoke at this workflow's commit, for yoke's own PRs or a caller testing it with yoke-from-source
+        if: github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)
         uses: actions/checkout@v4
         with:
           repository: MakerXStudio/yoke
@@ -229,7 +278,7 @@ jobs:
           persist-credentials: false
 
       - name: Build that yoke and put it ahead of the locked yoke on PATH
-        if: github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)
         working-directory: yoke-source
         run: |
           npm ci && npm run build

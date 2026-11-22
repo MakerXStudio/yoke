@@ -35,6 +35,8 @@ yoke review [number]          # review a PR (used by /review)
 yoke review ci                # add the CI review workflow (used by /review-ci)
 yoke review ci-gate           # require the review / gate check on the default branch (used by /review-ci-gate)
 yoke review gate <result>     # block merging until the PR's latest, or a fork's approved, review succeeds (used by review.yml)
+yoke review risk <result>     # experimental: approve or auto-merge PRs .github/yoke-risk.yml rates low risk (used by review.yml)
+yoke review risk-report       # experimental: list recent risk decisions and sampled PRs' human verdicts
 yoke models                   # list each provider's models
 ```
 

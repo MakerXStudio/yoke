@@ -10,6 +10,7 @@ import {
   fetchPr,
   fetchPriorComments,
   githubDelete,
+  githubGraphql,
   githubPost,
   openPendingReview,
   ReviewError,
@@ -241,5 +242,13 @@ describe('githubPost', () => {
 
   it('returns null for an empty response', async () => {
     expect(await githubPost('repos/o/r/actions/jobs/1/rerun', {}, returning(''))).toBeNull()
+  })
+})
+
+describe('githubGraphql', () => {
+  it('passes the query and each variable as a string field', async () => {
+    const exec = returning('{"data":{}}')
+    expect(await githubGraphql('mutation($pr: ID!) { x }', { pr: 'PR_1' }, exec)).toEqual({ data: {} })
+    expect(exec).toHaveBeenCalledWith('gh', ['api', 'graphql', '-f', 'query=mutation($pr: ID!) { x }', '-f', 'pr=PR_1'])
   })
 })
