@@ -24,12 +24,12 @@ const forcedFlags: Record<GitSubcommand, string[]> = {
 
 const refusedLong = ['--output', '--ext-diff', '--textconv', '--show-signature', '--remerge-diff', '--diff-merges', '--orderfile']
 
-// Blame's -S and --ignore-revs-file read a file, like -O and --orderfile; on log, -S is the pickaxe.
+// Blame's -S, --ignore-revs-file and --contents read a file, like -O and --orderfile; on log, -S is the pickaxe.
 const refusedForSubcommand: Record<GitSubcommand, { long: string[]; short: string }> = {
   log: { long: refusedLong, short: 'O' },
   show: { long: refusedLong, short: 'O' },
   diff: { long: refusedLong, short: 'O' },
-  blame: { long: [...refusedLong, '--ignore-revs-file'], short: 'OS' },
+  blame: { long: [...refusedLong, '--ignore-revs-file', '--contents'], short: 'OS' },
   'merge-base': { long: refusedLong, short: 'O' },
 }
 

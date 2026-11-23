@@ -17,7 +17,14 @@ import {
   type SlotModel,
 } from './provider'
 
-export type Slot = { harness: Harness; model?: string; provider?: ProviderKind; override?: Override; probe?: ProbeRequest }
+export type Slot = {
+  harness: Harness
+  model?: string
+  provider?: ProviderKind
+  contextWindow?: number
+  override?: Override
+  probe?: ProbeRequest
+}
 
 export type Reviewer = 'reviewer1' | 'reviewer2'
 

@@ -75,7 +75,18 @@ describe('gitArgv', () => {
     expect(() => gitArgv('log', ['-n', '1', arg])).toThrow(arg)
   })
 
-  it.each(['-S', '-Sfile', '-lSfile', '--ignore-revs-file=x', '--ignore-revs', '-O/dev/zero', '--textcon'])('refuses blame %s', (arg) => {
+  it.each([
+    '-S',
+    '-Sfile',
+    '-lSfile',
+    '--ignore-revs-file=x',
+    '--ignore-revs',
+    '-O/dev/zero',
+    '--textcon',
+    '--contents',
+    '--contents=/dev/zero',
+    '--cont',
+  ])('refuses blame %s', (arg) => {
     expect(() => gitArgv('blame', [arg, 'a.txt'])).toThrow(arg)
   })
 

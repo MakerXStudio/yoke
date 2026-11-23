@@ -77,7 +77,7 @@ function buildPiOverride(provider: Provider, endpoints: Endpoints, model: string
 
 const piMaxTokens = 32_000
 
-const piContextWindow = 200_000
+export const piContextWindow = 200_000
 
 const probePrompt = 'ping'
 

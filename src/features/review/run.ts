@@ -6,6 +6,7 @@ import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import type { HarnessRun, RunHarness } from './harness'
 import { ReviewError } from './pr'
 import { buildReviewerPrompt, buildSynthesisPrompt } from './prompts'
+import { piContextWindow } from './provider'
 import { implicitSynthesis, type Reviewer, type ReviewSlots, type Slot, usesPi } from './slots'
 import type { StatusUi } from './status'
 import type { StepUsage } from './usage'
@@ -48,8 +49,9 @@ function seconds(since: number): string {
   return `${Math.round((Date.now() - since) / 1000)}s`
 }
 
-function describeSlot({ harness, model, provider }: Slot): string {
-  return `${harness}: ${provider ? `${provider}/` : ''}${model ?? 'default model'}`
+function describeSlot({ harness, model, provider, contextWindow = piContextWindow }: Slot): string {
+  const window = contextWindow === piContextWindow ? '' : `, ${contextWindow} context`
+  return `${harness}: ${provider ? `${provider}/` : ''}${model ?? 'default model'}${window}`
 }
 
 async function runStep({ name, label, slot, ...step }: Step, context: RunContext): Promise<boolean> {

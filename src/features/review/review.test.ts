@@ -306,6 +306,19 @@ describe('runReview', () => {
     expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer2.md', 'synthesis.md'])
   })
 
+  it('reruns a pi slot whose context window changed, and reuses one set to the default', async () => {
+    const slot = { harness: 'pi', model: 'kimi', provider: 'litellm', override: piOverride } as const
+    cache('reviewer1', 'pi', 'pi: litellm/kimi')
+    cache('reviewer2', 'pi', 'pi: litellm/kimi')
+    cache('synthesis', synthesis, 'pi: litellm/kimi')
+    await runReview('request', {
+      ...context(),
+      slots: { reviewer1: { ...slot, contextWindow: 128_000 }, reviewer2: { ...slot, contextWindow: 200_000 }, synthesis: slot },
+    })
+    expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer1.md', 'synthesis.md'])
+    expect(logs).toContain('reviewer2 (pi: litellm/kimi): cached')
+  })
+
   it('does not cache the output of a failed reviewer', async () => {
     const failing = context()
     await runReview('request', {
