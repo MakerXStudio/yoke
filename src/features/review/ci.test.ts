@@ -289,7 +289,33 @@ describe('review tools lockfile', () => {
     const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
     expect(release).toContain('working-directory: ci/review-tools')
     expect(release).toContain('npm install --package-lock-only --save-exact "@makerx/yoke@$version"')
-    expect(release).toMatch(/git commit -m "chore: /)
+    expect(release).toContain('git commit -m "chore: lock yoke $version for the CI review" --')
+  })
+
+  it('releases a patch for every chore except the lock commit, and a major for any breaking change', () => {
+    const plugin = z.tuple([z.string(), z.object({ preset: z.string() }).loose()])
+    const config = z
+      .object({ plugins: z.array(z.union([z.string(), plugin])) })
+      .parse(JSON.parse(readFileSync(join(import.meta.dirname, '../../../.releaserc.json'), 'utf8')))
+    const options = (name: string) => config.plugins.find((entry) => Array.isArray(entry) && entry[0] === name)?.[1]
+    const analyzer = z
+      .object({ preset: z.string(), releaseRules: z.array(z.record(z.string(), z.unknown())) })
+      .parse(options('@semantic-release/commit-analyzer'))
+    const notes = z
+      .object({ preset: z.string(), presetConfig: z.object({ types: z.array(z.object({ type: z.string(), section: z.string() })) }) })
+      .parse(options('@semantic-release/release-notes-generator'))
+    expect(analyzer.preset).toBe('conventionalcommits')
+    expect(analyzer.releaseRules).toEqual([
+      { breaking: true, release: 'major' },
+      { type: 'chore', subject: '!lock yoke *', release: 'patch' },
+    ])
+    expect(notes.preset).toBe('conventionalcommits')
+    expect(notes.presetConfig.types).toContainEqual({ type: 'chore', section: 'Maintenance' })
+  })
+
+  it('installs the conventionalcommits preset at an exact version for semantic-release', () => {
+    const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
+    expect(release).toMatch(/-p conventional-changelog-conventionalcommits@\d+\.\d+\.\d+ /)
   })
 
   it('tags the lock commit review-vN before rebasing it onto main, so the tag runs the yoke it names', () => {
