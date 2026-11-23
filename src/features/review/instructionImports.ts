@@ -81,7 +81,7 @@ function paragraphWithoutCodeSpans(text: string): string {
 // A code span can't cross a blank line, so each paragraph is handled on its own.
 function withoutCodeSpans(text: string): string {
   return text
-    .split(/(\n[ \t]*\n)/)
+    .split(/(\r?\n[ \t]*\r?\n)/)
     .map((part, index) => (index % 2 === 0 ? paragraphWithoutCodeSpans(part) : part))
     .join('')
 }

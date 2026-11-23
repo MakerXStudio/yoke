@@ -314,8 +314,11 @@ describe('imports', () => {
     expect(atRoot()).toEqual(['CLAUDE.md', 'a.md', 'b.md'])
   })
 
-  it('does not let a code span cross a blank line', () => {
-    write('CLAUDE.md', 'Use the ` key.\n\n@AGENTS.md\n\nRun `npm test`.')
+  it.each([
+    ['LF', '\n'],
+    ['CRLF', '\r\n'],
+  ])('does not let a code span cross a %s blank line', (_, eol) => {
+    write('CLAUDE.md', ['Use the ` key.', '', '@AGENTS.md', '', 'Run `npm test`.'].join(eol))
     write('AGENTS.md')
     expect(atRoot()).toEqual(['CLAUDE.md', 'AGENTS.md'])
   })
@@ -493,5 +496,28 @@ describe('.claude/rules', () => {
     expect(() => onRead('x.ts')).not.toThrow()
     expect(onRead('x.ts')).toEqual(['CLAUDE.md', '.claude/rules/b.md'])
     expect(performance.now() - started).toBeLessThan(2000)
+  })
+
+  it('parses each rule once per run', () => {
+    write('.claude/rules/r.md', '---\npaths: ["*.ts"]\n---\nrule')
+    write('a.md')
+    write('b.md')
+    const loaded = new Set<string>()
+    expect(onRead('a.md', loaded)).toEqual([])
+    write('.claude/rules/r.md', '---\npaths: ["*.md"]\n---\nrule')
+    expect(onRead('b.md', loaded)).toEqual([])
+    expect(onRead('b.md')).toEqual(['.claude/rules/r.md'])
+  })
+
+  it('spends the brace budget of a rule once across many reads', () => {
+    write('.claude/rules/a.md', `---\npaths: ["${'{a,b}'.repeat(10000)}"]\n---\nlong`)
+    for (let i = 0; i < 20; i++) write(`x${i}.ts`)
+    const loaded = new Set<string>()
+    const first = performance.now()
+    expect(onRead('x0.ts', loaded)).toEqual([])
+    const once = performance.now() - first
+    const started = performance.now()
+    for (let i = 1; i < 20; i++) expect(onRead(`x${i}.ts`, loaded)).toEqual([])
+    expect(performance.now() - started).toBeLessThan(Math.max(once * 5, 200))
   })
 })

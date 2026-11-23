@@ -117,16 +117,37 @@ function rulePatterns(frontmatter: string): string[] | undefined {
   return patterns.every((pattern) => pattern === '**') ? undefined : patterns
 }
 
-function parseRule(ctx: Context, path: string): Rule | undefined {
-  const file = readText(ctx, path)
-  if (!file) return undefined
-  const frontmatter = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/.exec(file.content)
-  if (!frontmatter) return { path, real: file.real, body: file.content, patterns: undefined }
+type Parsed = Pick<Rule, 'body' | 'patterns'>
+
+function parseContent(content: string): Parsed | undefined {
+  const frontmatter = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/.exec(content)
+  if (!frontmatter) return { body: content, patterns: undefined }
   try {
-    return { path, real: file.real, body: file.content.slice(frontmatter[0].length), patterns: rulePatterns(frontmatter[1] ?? '') }
+    return { body: content.slice(frontmatter[0].length), patterns: rulePatterns(frontmatter[1] ?? '') }
   } catch {
     return undefined
   }
+}
+
+// Each run (one `loaded` set) parses a rule file at most once, keyed by realpath, so brace
+// expansion isn't repeated on every read.
+const parsedByRun = new WeakMap<Set<string>, Map<string, Parsed | undefined>>()
+
+function parseRule(ctx: Context, path: string): Rule | undefined {
+  let parsed = parsedByRun.get(ctx.loaded)
+  if (!parsed) {
+    parsed = new Map()
+    parsedByRun.set(ctx.loaded, parsed)
+  }
+  const real = realInside(ctx, path)
+  if (!real) return undefined
+  if (!parsed.has(real)) {
+    const file = readText(ctx, path)
+    if (!file) return undefined
+    parsed.set(real, parseContent(file.content))
+  }
+  const rule = parsed.get(real)
+  return rule && { path, real, ...rule }
 }
 
 export function rules(ctx: Context, dir: string): Rule[] {
