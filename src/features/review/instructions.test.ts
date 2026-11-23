@@ -301,6 +301,35 @@ describe('imports', () => {
     expect(atRoot()).toEqual(['CLAUDE.md', 'ok.md'])
   })
 
+  it('ignores fence markers inside an HTML comment', () => {
+    write('CLAUDE.md', '<!--\n```\n-->\n@a.md\n<!--\n~~~\n-->\n@b.md')
+    write('a.md')
+    write('b.md')
+    expect(atRoot()).toEqual(['CLAUDE.md', 'a.md', 'b.md'])
+  })
+
+  it('ignores comment delimiters inside a fenced block', () => {
+    write('CLAUDE.md', '```\n<!--\n```\n@a.md\n~~~\n-->\n~~~\n<!-- @hidden.md -->\n@b.md')
+    for (const name of ['a', 'b', 'hidden']) write(`${name}.md`)
+    expect(atRoot()).toEqual(['CLAUDE.md', 'a.md', 'b.md'])
+  })
+
+  it('does not let a code span cross a blank line', () => {
+    write('CLAUDE.md', 'Use the ` key.\n\n@AGENTS.md\n\nRun `npm test`.')
+    write('AGENTS.md')
+    expect(atRoot()).toEqual(['CLAUDE.md', 'AGENTS.md'])
+  })
+
+  it('scans 4 MiB of unmatched backtick runs quickly', () => {
+    let runs = ''
+    for (let length = 1; runs.length < 4 * 1024 * 1024; length++) runs += `${'`'.repeat(length)} `
+    write('CLAUDE.md', `${runs.slice(0, 4 * 1024 * 1024 - 64)}\n@a.md`)
+    write('a.md')
+    const started = performance.now()
+    expect(atRoot()).toEqual(['CLAUDE.md', 'a.md'])
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
+
   it('needs @ at the start or after whitespace', () => {
     write('CLAUDE.md', 'mail me@a.md or @b.md')
     write('a.md')
@@ -415,5 +444,54 @@ describe('.claude/rules', () => {
     write('f1000.ts')
     expect(onRead('f1000.ts')).toEqual([])
     expect(onRead('f999.ts')).toEqual(['.claude/rules/r.md'])
+  })
+
+  it('caps patterns at 1,000 across list entries', () => {
+    const alternatives = Array.from({ length: 1000 }, (_, i) => `f${i}`).join(',')
+    write('.claude/rules/r.md', `---\npaths: ["{${alternatives}}.ts", "extra.ts"]\n---\nrule`)
+    write('f999.ts')
+    write('extra.ts')
+    expect(onRead('extra.ts')).toEqual([])
+    expect(onRead('f999.ts')).toEqual(['.claude/rules/r.md'])
+  })
+
+  it('caps plain list entries at 1,000', () => {
+    const entries = Array.from({ length: 1100 }, (_, i) => `"g${i}.ts"`).join(', ')
+    write('.claude/rules/r.md', `---\npaths: [${entries}]\n---\nrule`)
+    write('g999.ts')
+    write('g1000.ts')
+    expect(onRead('g1000.ts')).toEqual([])
+    expect(onRead('g999.ts')).toEqual(['.claude/rules/r.md'])
+  })
+
+  it('caps a comma string at 1,000 patterns', () => {
+    const entries = ['{a,b}{0,1,2,3,4,5,6,7,8,9}{0,1,2,3,4,5,6,7,8,9}.ts', ...Array.from({ length: 900 }, (_, i) => `h${i}.ts`)].join(', ')
+    write('.claude/rules/r.md', `---\npaths: "${entries}"\n---\nrule`)
+    write('b99.ts')
+    write('h799.ts')
+    write('h800.ts')
+    expect(onRead('h800.ts')).toEqual([])
+    expect(onRead('h799.ts')).toEqual(['.claude/rules/r.md'])
+    expect(onRead('b99.ts')).toEqual(['.claude/rules/r.md'])
+  })
+
+  it('expands 40 two-way groups quickly', () => {
+    write('CLAUDE.md')
+    write('.claude/rules/r.md', `---\npaths: ["${'{a,b}'.repeat(40)}"]\n---\nrule`)
+    write('a'.repeat(40))
+    const started = performance.now()
+    expect(onRead('a'.repeat(40))).toEqual(['CLAUDE.md', '.claude/rules/r.md'])
+    expect(performance.now() - started).toBeLessThan(1000)
+  })
+
+  it('keeps a too-long brace chain scoped without throwing and still loads other instructions', () => {
+    write('CLAUDE.md')
+    write('.claude/rules/a.md', `---\npaths: ["${'{a,b}'.repeat(10000)}"]\n---\nlong`)
+    write('.claude/rules/b.md', '---\npaths: ["*.ts"]\n---\nts')
+    write('x.ts')
+    const started = performance.now()
+    expect(() => onRead('x.ts')).not.toThrow()
+    expect(onRead('x.ts')).toEqual(['CLAUDE.md', '.claude/rules/b.md'])
+    expect(performance.now() - started).toBeLessThan(2000)
   })
 })
