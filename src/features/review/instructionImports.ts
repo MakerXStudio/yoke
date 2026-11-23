@@ -6,7 +6,7 @@ function fenceMarker(line: string): string | undefined {
   return /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
 }
 
-// Blanks the HTML comments in a line outside any fence, carrying an unclosed comment to the next line.
+// The line must be outside any fence; `state` carries an unclosed comment to the next line.
 function lineWithoutComments(line: string, state: { inComment: boolean }): string {
   let out = ''
   let from = 0
@@ -28,8 +28,8 @@ function lineWithoutComments(line: string, state: { inComment: boolean }): strin
   return out
 }
 
-// Fences and comments are found in one pass, so a fence marker inside a comment doesn't open a
-// fence and a comment opener inside a fence doesn't open a comment.
+// One pass, so a fence marker inside a comment opens no fence and a comment opener inside a fence
+// opens no comment.
 function withoutFencesAndComments(content: string): string {
   let fence: string | undefined
   const state = { inComment: false }
@@ -50,8 +50,8 @@ function withoutFencesAndComments(content: string): string {
     .join('\n')
 }
 
-// Blanks each code span: a backtick run up to the next run of the same length. A run with no
-// closer is literal. Runs are visited once and each length's closers are searched forward only.
+// A code span runs to the next backtick run of the same length; a run with no closer is literal.
+// Each length's closers are searched forward only, so the scan stays linear.
 function paragraphWithoutCodeSpans(text: string): string {
   const runs = [...text.matchAll(/`+/g)].map((match) => ({ start: match.index, end: match.index + match[0].length }))
   const byLength = new Map<number, { indexes: number[]; next: number }>()

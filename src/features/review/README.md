@@ -54,14 +54,7 @@ git and read_range come from a Pi extension that yoke ships. Pi loads no session
 - **Own login:** Pi uses your `~/.pi` sign-in and models (run `pi`, then `/login`). Providers added by Pi extensions aren't available. With no `review.<slot>.model`, Pi runs its default model; set one in Pi, or set the slot's model to `<provider>/<model>` (see `pi --list-models`).
 - **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`) with reasoning and tools in each request, so non-reasoning models and Foundry deployments of GPT-5.6 and later don't work. Before the review starts, yoke sends the model such a request and stops if the model refuses it.
 
-Pi reviewers load the repo's instructions, except in the synthesis and in fork PR reviews in CI. At the start, they load the files in the repo root, and when they read a file, they load the files in each folder from the root down to it. In each folder, they take the first match:
-
-1. `CLAUDE.local.md`: `CLAUDE.md`, `.claude/CLAUDE.md`, then `CLAUDE.local.md`.
-2. `CLAUDE.md` or `.claude/CLAUDE.md`: those files.
-3. `AGENTS.local.md`: `AGENTS.md`, then `AGENTS.local.md`.
-4. `AGENTS.md`.
-
-`.claude/rules/*.md` and `@path` imports load as they do in Claude Code. Nothing outside the repo loads.
+Pi reviewers load the repo's instructions, except in the synthesis and in [fork PR](#fork-prs) reviews. They load the repo root's at the start, and when they read a file, those of each folder from the root down to it. In each folder they load `CLAUDE.md` and `.claude/CLAUDE.md`, then `CLAUDE.local.md`; a folder with none of these loads `AGENTS.md`, then `AGENTS.local.md`. `.claude/rules/` files and `@path` imports load as they do in Claude Code. Files outside the repo don't load.
 
 In CI, yoke installs checksum-verified `rg` and `fd` for Pi. An own-login slot stops before the review when Pi's agent dir has its own `rg` or `fd` in `bin` or `tools`, which Pi would run instead, or when `PI_CODING_AGENT_DIR` is a relative path. Remove the file, set an absolute path, or give the slot a provider.
 
