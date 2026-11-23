@@ -4,10 +4,10 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 
-import { isCi } from './ciRun'
+import { isCi } from '../ciRun'
+import { ReviewFailure } from '../run'
+import { type ReviewSlots, type Slot, usesPi } from '../slots'
 import { pathKey, piAgentDir, removeDir } from './pi'
-import { ReviewFailure } from './run'
-import { type ReviewSlots, type Slot, usesPi } from './slots'
 
 export const searchToolTargets = [
   'x86_64-unknown-linux-musl',

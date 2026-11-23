@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
-import { createPiAgentDir, piArgs, piEnv, removeDir } from './pi'
+import { createPiAgentDir, piArgs, piEnv, removeDir } from './pi/pi'
 import { type HarnessEvent, parseHarnessEvent } from './progress'
 import { type Override, piKeyEnv } from './provider'
 import { sanitizeError } from './redact'

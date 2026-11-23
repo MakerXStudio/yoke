@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { Harness } from './harness'
-import { piAgentDir } from './pi'
+import { piAgentDir } from './pi/pi'
 import type { ProbeRequest } from './provider'
 import { sanitizeError } from './redact'
 import { ReviewFailure } from './run'

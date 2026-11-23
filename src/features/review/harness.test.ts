@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { harnessArgs, type HarnessRun, piFailure, runHarness, windowsQuote } from './harness'
-import { piEnv, piExtension } from './pi'
+import { piEnv, piExtension } from './pi/pi'
 
 vi.mock('node:fs', async (actual) => {
   const real = await actual<typeof fs>()
@@ -113,7 +113,7 @@ describe('harnessArgs for pi', () => {
   ]
 
   it('loads the extension source next to pi.ts when no build sits beside it', () => {
-    expect(piExtension).toBe(join(import.meta.dirname, 'piExtension.ts'))
+    expect(piExtension).toBe(join(import.meta.dirname, 'pi', 'piExtension.ts'))
   })
 
   it('runs pi locked down with only read, ls, git and read_range when neither rg nor fd is on PATH, then the model', () => {

@@ -379,7 +379,7 @@ async function stubServer(): Promise<Stub> {
 }
 
 // Inside the repo, so the bundle resolves its external dependencies from node_modules as the shipped dist/ does.
-const extensionOutDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'node_modules', '.cache', 'yoke-pi-extension-test')
+const extensionOutDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../node_modules/.cache/yoke-pi-extension-test')
 
 async function buildExtension(outDir: string): Promise<string> {
   const entry = join(dirname(fileURLToPath(import.meta.url)), 'piExtension.ts')

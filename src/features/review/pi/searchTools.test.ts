@@ -6,8 +6,9 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { harnessArgs } from './harness'
-import { ReviewFailure } from './run'
+import { harnessArgs } from '../harness'
+import { ReviewFailure } from '../run'
+import type { ReviewSlots } from '../slots'
 import {
   installAssets,
   installSearchTools,
@@ -19,7 +20,6 @@ import {
   systemTar,
   withSearchTools,
 } from './searchTools'
-import type { ReviewSlots } from './slots'
 
 let dir: string
 

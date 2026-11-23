@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: { cli: 'src/cli.ts', piExtension: 'src/features/review/piExtension.ts' },
+  entry: { cli: 'src/cli.ts', piExtension: 'src/features/review/pi/piExtension.ts' },
   format: ['esm'],
   target: 'node24',
   platform: 'node',

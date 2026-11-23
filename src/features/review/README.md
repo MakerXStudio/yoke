@@ -118,7 +118,7 @@ Pin `uses:` to a `review-v<version>` tag to run that yoke version; `/review-ci` 
 
 Each release commits the newly published yoke to the lockfile, tags that commit `review-vN` and pushes the tag, then pushes the commit to `main`, as the `yoke-release` GitHub App. If the latest `vN` has no `review-vN`, because its lock step failed, the next run of the release workflow, on a push to `main` or a manual dispatch, locks it from `vN`. The App bypasses the `main` ruleset. Its client ID and private key live in the `release` environment, which only `main` can use. Dependabot bumps Claude Code, Codex and Pi weekly.
 
-When a slot uses `pi`, CI also downloads `fd` and `rg`, checks each archive against the SHA-256 pinned in `src/features/review/searchTools.ts`, and puts them on the `pi` slots' `PATH`. A failed download or checksum fails the review. To update them, change the versions in `searchTools.ts` and take each asset's hash from its release:
+When a slot uses `pi`, CI also downloads `fd` and `rg`, checks each archive against the SHA-256 pinned in `src/features/review/pi/searchTools.ts`, and puts them on the `pi` slots' `PATH`. A failed download or checksum fails the review. To update them, change the versions in `searchTools.ts` and take each asset's hash from its release:
 
 ```sh
 gh api repos/sharkdp/fd/releases/tags/v<version> --jq '.assets[] | "\(.name) \(.digest)"'

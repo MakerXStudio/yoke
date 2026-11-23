@@ -3,7 +3,7 @@ import { homedir, tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { type PiModel, piModels } from './provider'
+import { type PiModel, piModels } from '../provider'
 
 const piFlags = [
   '--mode',
