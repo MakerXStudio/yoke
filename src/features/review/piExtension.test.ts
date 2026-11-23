@@ -1,12 +1,12 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { devNull, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { build } from 'tsup'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import { createPiAgentDir, piArgs, piEnv, removeDir } from './pi'
@@ -20,6 +20,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -53,7 +54,7 @@ type Registered = Parameters<PiExtensionApi['registerTool']>[0]
 
 function registered(): Map<string, Registered> {
   const tools = new Map<string, Registered>()
-  piExtension({ registerTool: (tool) => tools.set(tool.name, tool) })
+  piExtension({ registerTool: (tool) => tools.set(tool.name, tool), on: () => {} })
   return tools
 }
 
@@ -211,6 +212,121 @@ describe('piExtension', () => {
   })
 })
 
+type Content = { type: string; text?: string }
+
+type Hooks = {
+  agentStart?: (event: { systemPromptOptions: { contextFiles: { path: string; content: string }[] } }, ctx: { cwd: string }) => void
+  toolResult?: (event: ReturnType<typeof toolResult>, ctx: { cwd: string }) => { content: Content[] } | undefined
+}
+
+function hooks(): Hooks {
+  const found: Hooks = {}
+  piExtension({
+    registerTool: () => {},
+    on: (event: string, handler: never) => {
+      if (event === 'before_agent_start') found.agentStart = handler
+      if (event === 'tool_result') found.toolResult = handler
+    },
+  })
+  return found
+}
+
+function write(path: string, content: string): void {
+  mkdirSync(dirname(join(dir, path)), { recursive: true })
+  writeFileSync(join(dir, path), content)
+}
+
+function toolResult(toolName: string, path: unknown, isError = false) {
+  return { toolName, input: { path }, content: [{ type: 'text', text: 'file text' }], isError }
+}
+
+function boom(): never {
+  throw new Error('boom')
+}
+
+describe('piExtension instruction hooks', () => {
+  it('registers no hooks unless YOKE_PI_INSTRUCTIONS is 1', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '')
+    expect(hooks()).toEqual({})
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', 'true')
+    expect(hooks()).toEqual({})
+  })
+
+  it("appends the cwd's instructions to the context files at every run start", () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('CLAUDE.md', 'root rules')
+    const { agentStart } = hooks()
+    const existing = { path: 'x', content: 'y' }
+    for (let run = 0; run < 2; run++) {
+      const event = { systemPromptOptions: { contextFiles: [existing] } }
+      agentStart?.(event, { cwd: dir })
+      expect(event.systemPromptOptions.contextFiles).toEqual([
+        existing,
+        { path: join(realpathSync(dir), 'CLAUDE.md'), content: 'root rules' },
+      ])
+    }
+  })
+
+  it('appends the instructions a read triggers, resolving @ like pi, and loads each once', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('sub/AGENTS.md', 'sub rules')
+    write('sub/a.ts', 'a')
+    write('sub/b.ts', 'b')
+    const { toolResult: onResult } = hooks()
+    const result = onResult?.(toolResult('read', '@sub/a.ts'), { cwd: dir })
+    expect(result?.content).toEqual([
+      { type: 'text', text: 'file text' },
+      { type: 'text', text: `Contents of ${join(realpathSync(dir), 'sub', 'AGENTS.md')}:\n\nsub rules` },
+    ])
+    expect(onResult?.(toolResult('read_range', '@sub/b.ts'), { cwd: dir })).toBeUndefined()
+  })
+
+  it('appends the instructions a read_range triggers', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('sub/AGENTS.md', 'sub rules')
+    write('sub/a.ts', 'a')
+    const result = hooks().toolResult?.(toolResult('read_range', join(dir, 'sub', 'a.ts')), { cwd: dir })
+    expect(result?.content.at(-1)?.text).toContain('sub rules')
+  })
+
+  it('triggers nothing for an error result, another tool or a missing path, and does not use them up', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('sub/AGENTS.md', 'sub rules')
+    write('sub/a.ts', 'a')
+    const { toolResult: onResult } = hooks()
+    expect(onResult?.(toolResult('read', 'sub/a.ts', true), { cwd: dir })).toBeUndefined()
+    expect(onResult?.(toolResult('grep', 'sub/a.ts'), { cwd: dir })).toBeUndefined()
+    expect(onResult?.(toolResult('read', undefined), { cwd: dir })).toBeUndefined()
+    expect(onResult?.(toolResult('read', 'sub/a.ts'), { cwd: dir })?.content).toHaveLength(2)
+  })
+
+  it('never throws on a malformed event', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    const { agentStart, toolResult: onResult } = hooks()
+    expect(() =>
+      agentStart?.(
+        {
+          get systemPromptOptions() {
+            return boom()
+          },
+        },
+        { cwd: dir },
+      ),
+    ).not.toThrow()
+    expect(() =>
+      onResult?.(
+        {
+          ...toolResult('read', 'a.ts'),
+          get input() {
+            return boom()
+          },
+        },
+        { cwd: dir },
+      ),
+    ).not.toThrow()
+  })
+})
+
 const request = z.object({
   tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
   messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
@@ -236,6 +352,7 @@ const replies = [
       tool_calls: [
         toolCall(0, 'git', { subcommand: 'log', args: ['--format=%s'] }),
         toolCall(1, 'read_range', { path: 'a.txt', offset: 0, length: 3 }),
+        toolCall(2, 'read', { path: '@sub/b.txt' }),
       ],
     },
     'tool_calls',
@@ -261,6 +378,9 @@ async function stubServer(): Promise<Stub> {
   return { server, url: `http://127.0.0.1:${address.port}/v1`, requests }
 }
 
+// Inside the repo, so the bundle resolves its external dependencies from node_modules as the shipped dist/ does.
+const extensionOutDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'node_modules', '.cache', 'yoke-pi-extension-test')
+
 async function buildExtension(outDir: string): Promise<string> {
   const entry = join(dirname(fileURLToPath(import.meta.url)), 'piExtension.ts')
   await build({ entry: { piExtension: entry }, outDir, format: ['esm'], target: 'node24', platform: 'node', config: false, silent: true })
@@ -273,14 +393,21 @@ function piCli(): string {
 
 describe('pi with the built extension', () => {
   it('offers the model only read, ls, git and read_range, plus grep and find when present, and runs the yoke tools', async () => {
-    const extension = await buildExtension(join(dir, 'dist'))
+    const extension = await buildExtension(extensionOutDir)
     gitRepo()
+    write('CLAUDE.md', 'root codeword')
+    write('sub/AGENTS.md', 'nested codeword')
+    write('sub/b.txt', 'two')
     const stub = await stubServer()
     const agentDir = createPiAgentDir({ baseUrl: stub.url, model: 'm' })
     const env = { ...process.env, YOKE_PI_API_KEY: 'k', PI_CODING_AGENT_DIR: join(dir, 'user-agent') }
     const args = piArgs(env, process.platform, ['--model', 'yoke/m'])
     args[args.indexOf('-e') + 1] = extension
-    const child = spawn(process.execPath, [piCli(), ...args], { cwd: dir, env: piEnv(env, agentDir), stdio: ['pipe', 'ignore', 'pipe'] })
+    const child = spawn(process.execPath, [piCli(), ...args], {
+      cwd: dir,
+      env: piEnv(env, agentDir, true),
+      stdio: ['pipe', 'ignore', 'pipe'],
+    })
     let stderr = ''
     child.stderr.on('data', (data: Buffer) => (stderr += data.toString('utf8')))
     child.stdin.end('Say ok')
@@ -294,7 +421,12 @@ describe('pi with the built extension', () => {
       const results = stub.requests[1]?.messages
         .filter((message) => message.role === 'tool')
         .map((message) => JSON.stringify(message.content))
-      expect(results).toEqual([expect.stringContaining('first commit'), expect.stringContaining('one')])
+      expect(results).toEqual([
+        expect.stringContaining('first commit'),
+        expect.stringContaining('one'),
+        expect.stringMatching(/two.*Contents of .*AGENTS\.md:.*nested codeword/),
+      ])
+      expect(JSON.stringify(stub.requests[0]?.messages)).toMatch(/<project_instructions path=\\".*CLAUDE\.md\\">\\nroot codeword/)
     } finally {
       child.kill()
       stub.server.close()

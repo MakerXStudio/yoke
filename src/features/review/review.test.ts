@@ -94,9 +94,15 @@ describe('runReview', () => {
     expect(parsed?.findings.map((f) => f.title)).toEqual(['Crash'])
   })
 
+  it('loads repo instructions in the reviewer runs of a trusted review, not the synthesis', async () => {
+    await runReview('request', context())
+    expect(runs.map((r) => r.instructions)).toEqual([true, true, false])
+  })
+
   it('marks every harness run untrusted when reviewing an approved head', async () => {
     await runReview('request', { ...context(), untrusted: true })
     expect(runs.map((r) => r.untrusted)).toEqual([true, true, true])
+    expect(runs.map((r) => r.instructions)).toEqual([false, false, false])
   })
 
   it('returns the token usage each slot that ran reported, leaving cached slots out', async () => {

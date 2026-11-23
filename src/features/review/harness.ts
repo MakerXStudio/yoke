@@ -17,6 +17,7 @@ export type HarnessRun = {
   outputPath: string
   override?: Override
   untrusted?: boolean
+  instructions: boolean
   onProgress?: (activity: string) => void
 }
 
@@ -145,7 +146,7 @@ export const runHarness: RunHarness = (run) =>
 
 function spawnHarness(run: HarnessRun, agentDir: string | undefined, finish: (result: () => HarnessResult) => void): void {
   const env: NodeJS.ProcessEnv = { ...process.env, ...run.override?.env }
-  const childEnv = run.harness === 'pi' ? piEnv(env, agentDir) : env
+  const childEnv = run.harness === 'pi' ? piEnv(env, agentDir, run.instructions) : env
   const shell = process.platform === 'win32'
   const args = harnessArgs(run, env)
   const child = spawn(run.harness, shell ? args.map(windowsQuote) : args, {

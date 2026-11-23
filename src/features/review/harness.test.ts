@@ -6,14 +6,21 @@ import { delimiter, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { harnessArgs, type HarnessRun, piFailure, runHarness, windowsQuote } from './harness'
-import { piExtension } from './pi'
+import { piEnv, piExtension } from './pi'
 
 vi.mock('node:fs', async (actual) => {
   const real = await actual<typeof fs>()
   return { ...real, writeFileSync: vi.fn(real.writeFileSync) }
 })
 
-const run: HarnessRun = { harness: 'codex', prompt: 'p', cwd: '/repo', reviewDir: '/review', outputPath: '/review/out.md' }
+const run: HarnessRun = {
+  harness: 'codex',
+  prompt: 'p',
+  cwd: '/repo',
+  reviewDir: '/review',
+  outputPath: '/review/out.md',
+  instructions: false,
+}
 
 describe('harnessArgs', () => {
   it('runs codex read-only on stdin, streaming JSON events, with no overrides by default', () => {
@@ -151,6 +158,32 @@ describe('harnessArgs for pi', () => {
   it('prefers PATH over Path', () => {
     const env = { ...agentEnv(), PATH: binDir('a', ['rg']), Path: binDir('b', ['fd']) }
     expect(harnessArgs(pi, env, 'linux').at(-1)).toBe('read,ls,git,read_range,grep')
+  })
+})
+
+describe('piEnv', () => {
+  const slots = [
+    ['an own-auth', undefined],
+    ['a provider', '/tmp/yoke-pi-x'],
+  ] as const
+
+  it.each(slots)('turns instruction loading on for %s slot', (_, agentDir) => {
+    expect(piEnv({}, agentDir, true).YOKE_PI_INSTRUCTIONS).toBe('1')
+  })
+
+  it.each(slots)('leaves instruction loading off for %s slot', (_, agentDir) => {
+    expect(piEnv({}, agentDir, false)).not.toHaveProperty('YOKE_PI_INSTRUCTIONS')
+  })
+
+  it.each(slots)('drops an inherited YOKE_PI_INSTRUCTIONS in any case for %s slot', (_, agentDir) => {
+    const env = piEnv({ YOKE_PI_INSTRUCTIONS: '1', yoke_pi_instructions: '1', Yoke_Pi_Instructions: '1' }, agentDir, false)
+    expect(Object.keys(env).filter((key) => key.toUpperCase() === 'YOKE_PI_INSTRUCTIONS')).toEqual([])
+  })
+
+  it.each(slots)('replaces an inherited lower-case key with one upper-case key for %s slot', (_, agentDir) => {
+    const env = piEnv({ yoke_pi_instructions: '0' }, agentDir, true)
+    expect(Object.keys(env).filter((key) => key.toUpperCase() === 'YOKE_PI_INSTRUCTIONS')).toEqual(['YOKE_PI_INSTRUCTIONS'])
+    expect(env.YOKE_PI_INSTRUCTIONS).toBe('1')
   })
 })
 
@@ -338,5 +371,15 @@ describe.skipIf(process.platform === 'win32')('runHarness on a recorded pi strea
     fakePi(stream(reviewTurn), `echo "$PI_CODING_AGENT_DIR $PI_OFFLINE" > '${seen}'`)
     await runHarness(piRun())
     expect(readFileSync(seen, 'utf8').trim()).toBe(`${process.env.PI_CODING_AGENT_DIR} 1`)
+  })
+
+  it("keeps a provider env's YOKE_PI_INSTRUCTIONS from turning instruction loading on", async () => {
+    const seen = join(dir, 'seen')
+    fakePi(stream(reviewTurn), `echo "[$YOKE_PI_INSTRUCTIONS]" > '${seen}'`)
+    const override = { ...providerOverride, env: { ...providerOverride.env, YOKE_PI_INSTRUCTIONS: '1' } }
+    await runHarness({ ...piRun(), override })
+    expect(readFileSync(seen, 'utf8').trim()).toBe('[]')
+    await runHarness({ ...piRun(), override, instructions: true })
+    expect(readFileSync(seen, 'utf8').trim()).toBe('[1]')
   })
 })

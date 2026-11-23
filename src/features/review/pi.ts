@@ -81,8 +81,12 @@ export function removeDir(dir: string | undefined): void {
   } catch {}
 }
 
-export function piEnv(env: NodeJS.ProcessEnv, agentDir: string | undefined): NodeJS.ProcessEnv {
-  const pi = { ...env, PI_OFFLINE: '1', PI_TELEMETRY: '0' }
+const instructionsKey = 'YOKE_PI_INSTRUCTIONS'
+
+export function piEnv(env: NodeJS.ProcessEnv, agentDir: string | undefined, instructions: boolean): NodeJS.ProcessEnv {
+  const pi: NodeJS.ProcessEnv = { ...env, PI_OFFLINE: '1', PI_TELEMETRY: '0' }
+  for (const key of Object.keys(pi)) if (key.toUpperCase() === instructionsKey) delete pi[key]
+  if (instructions) pi[instructionsKey] = '1'
   if (!agentDir) return pi
   const key = pathKey(env)
   const path = [env[key], join(piAgentDir(env), 'bin')].filter(Boolean).join(delimiter)

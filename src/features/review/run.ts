@@ -61,6 +61,7 @@ async function runStep({ name, label, slot, ...step }: Step, context: RunContext
     harness,
     override,
     untrusted: context.untrusted,
+    instructions: name !== 'synthesis' && !context.untrusted,
     cwd: context.cwd,
     reviewDir: context.reviewDir,
     onProgress: status.update,

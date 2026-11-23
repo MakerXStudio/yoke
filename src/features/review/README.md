@@ -49,10 +49,19 @@ A `pi` slot runs [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-ag
 - read_range, which reads a byte range of a file, for lines too long for read
 - grep when `rg` is installed, and find when `fd` is
 
-git and read_range come from a Pi extension that yoke ships. Pi loads no sessions, other extensions, skills, MCP servers, `AGENTS.md` or the repo's `.pi/` settings. It can't review a repo that has `.pi/commands` and no `.pi/prompts`, because Pi renames `.pi/commands` to `.pi/prompts` when it starts.
+git and read_range come from a Pi extension that yoke ships. Pi loads no sessions, other extensions, skills, MCP servers or the repo's `.pi/` settings. It can't review a repo that has `.pi/commands` and no `.pi/prompts`, because Pi renames `.pi/commands` to `.pi/prompts` when it starts.
 
 - **Own login:** Pi uses your `~/.pi` sign-in and models (run `pi`, then `/login`). Providers added by Pi extensions aren't available. With no `review.<slot>.model`, Pi runs its default model; set one in Pi, or set the slot's model to `<provider>/<model>` (see `pi --list-models`).
 - **Provider:** Pi calls the provider's Chat Completions API (`<litellm>/v1` or `<foundry>/openai/v1`) with reasoning and tools in each request, so non-reasoning models and Foundry deployments of GPT-5.6 and later don't work. Before the review starts, yoke sends the model such a request and stops if the model refuses it.
+
+Pi reviewers load the repo's instructions, except in the synthesis and in fork PR reviews in CI. At the start, they load the files in the repo root, and when they read a file, they load the files in each folder from the root down to it. In each folder, they take the first match:
+
+1. `CLAUDE.local.md`: `CLAUDE.md`, `.claude/CLAUDE.md`, then `CLAUDE.local.md`.
+2. `CLAUDE.md` or `.claude/CLAUDE.md`: those files.
+3. `AGENTS.local.md`: `AGENTS.md`, then `AGENTS.local.md`.
+4. `AGENTS.md`.
+
+`.claude/rules/*.md` and `@path` imports load as they do in Claude Code. Nothing outside the repo loads.
 
 In CI, yoke installs checksum-verified `rg` and `fd` for Pi. An own-login slot stops before the review when Pi's agent dir has its own `rg` or `fd` in `bin` or `tools`, which Pi would run instead, or when `PI_CODING_AGENT_DIR` is a relative path. Remove the file, set an absolute path, or give the slot a provider.
 

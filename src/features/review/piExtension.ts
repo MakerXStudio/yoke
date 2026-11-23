@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { open } from 'node:fs/promises'
-import { isAbsolute, resolve } from 'node:path'
 
 import { gitArgv, gitSubcommands } from './piGit'
+import { type InstructionHooks, loadInstructions } from './piInstructions'
+import { resolvePath } from './piPaths'
 
 type TextResult = { content: { type: 'text'; text: string }[]; details: undefined }
 
@@ -17,7 +18,7 @@ type PiTool = {
   execute(id: string, params: unknown, signal: AbortSignal | undefined, onUpdate: unknown, ctx: ToolContext): Promise<TextResult>
 }
 
-export type PiExtensionApi = { registerTool(tool: PiTool): void }
+export type PiExtensionApi = { registerTool(tool: PiTool): void } & InstructionHooks
 
 const outputCap = 50 * 1024
 const gitTimeoutMs = 30_000
@@ -105,11 +106,6 @@ export async function readRange(path: string, offset: number, length: number): P
   }
 }
 
-function resolvePath(cwd: string, path: string): string {
-  const bare = path.replace(/^@/, '')
-  return isAbsolute(bare) ? bare : resolve(cwd, bare)
-}
-
 function textResult(value: string): TextResult {
   return { content: [{ type: 'text', text: value }], details: undefined }
 }
@@ -161,4 +157,5 @@ const readRangeTool: PiTool = {
 export default function piExtension(pi: PiExtensionApi): void {
   pi.registerTool(gitTool)
   pi.registerTool(readRangeTool)
+  if (process.env.YOKE_PI_INSTRUCTIONS === '1') loadInstructions(pi)
 }
