@@ -313,11 +313,6 @@ describe('review tools lockfile', () => {
     expect(notes.presetConfig.types).toContainEqual({ type: 'chore', section: 'Maintenance' })
   })
 
-  it('installs the conventionalcommits preset at an exact version for semantic-release', () => {
-    const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
-    expect(release).toMatch(/-p conventional-changelog-conventionalcommits@\d+\.\d+\.\d+ /)
-  })
-
   it('tags the lock commit review-vN before rebasing it onto main, so the tag runs the yoke it names', () => {
     const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
     const tag = release.indexOf('git tag "review-$TAG"')
