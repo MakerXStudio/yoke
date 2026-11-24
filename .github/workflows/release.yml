@@ -47,7 +47,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git tag --list 'v*' > "$RUNNER_TEMP/tags-before"
-          npx --yes semantic-release@25.0.9
+          npx --yes -p semantic-release@25.0.9 -p conventional-changelog-conventionalcommits@9.3.1 semantic-release
 
       - name: Find new tag
         id: release
@@ -83,7 +83,7 @@ jobs:
           npm install --package-lock-only --save-exact "@makerx/yoke@$version"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m "chore: lock yoke $version for the CI review" -- package.json package-lock.json
+          git commit -m "ci: lock yoke $version for the CI review" -- package.json package-lock.json
           git tag "review-$TAG"
           git -c http.https://github.com/.extraheader= push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}" "refs/tags/review-$TAG"
           git pull --rebase --autostash origin main
