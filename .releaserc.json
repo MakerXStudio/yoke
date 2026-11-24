@@ -7,7 +7,7 @@
         "preset": "conventionalcommits",
         "releaseRules": [
           { "breaking": true, "release": "major" },
-          { "type": "chore", "subject": "!lock yoke *", "release": "patch" }
+          { "type": "chore", "release": "patch" }
         ]
       }
     ],

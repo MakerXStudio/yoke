@@ -289,10 +289,10 @@ describe('review tools lockfile', () => {
     const release = readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')
     expect(release).toContain('working-directory: ci/review-tools')
     expect(release).toContain('npm install --package-lock-only --save-exact "@makerx/yoke@$version"')
-    expect(release).toContain('git commit -m "chore: lock yoke $version for the CI review" --')
+    expect(release).toContain('git commit -m "ci: lock yoke $version for the CI review" --')
   })
 
-  it('releases a patch for every chore except the lock commit, and a major for any breaking change', () => {
+  it('releases a patch for every chore and a major for any breaking change', () => {
     const plugin = z.tuple([z.string(), z.object({ preset: z.string() }).loose()])
     const config = z
       .object({ plugins: z.array(z.union([z.string(), plugin])) })
@@ -307,7 +307,7 @@ describe('review tools lockfile', () => {
     expect(analyzer.preset).toBe('conventionalcommits')
     expect(analyzer.releaseRules).toEqual([
       { breaking: true, release: 'major' },
-      { type: 'chore', subject: '!lock yoke *', release: 'patch' },
+      { type: 'chore', release: 'patch' },
     ])
     expect(notes.preset).toBe('conventionalcommits')
     expect(notes.presetConfig.types).toContainEqual({ type: 'chore', section: 'Maintenance' })
