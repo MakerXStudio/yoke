@@ -203,7 +203,7 @@ function slotsToRun(slots: ReviewSlots): SlotUse[] {
   const distinct = new Map<string, SlotUse>()
   for (const [key, slot] of uses) {
     const id = slot.probe
-      ? JSON.stringify({ url: slot.probe.url, body: slot.probe.body })
+      ? JSON.stringify({ provider: slot.provider, url: slot.probe.url, body: slot.probe.body })
       : `${slot.harness}:${slot.provider ?? 'own'}:${slot.model ?? ''}`
     const use = distinct.get(id)
     if (use) use.keys.push(key)

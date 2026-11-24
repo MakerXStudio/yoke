@@ -188,6 +188,22 @@ describe('assertViable with pi', () => {
     expect(checks.probes.map(({ body }) => body)).toMatchObject([{ max_completion_tokens: 32_000 }])
   })
 
+  it('probes each provider even when their requests are identical', async () => {
+    const foundry: Provider = { kind: 'foundry', baseUrl: 'https://res', apiKey: 'sk-foundry' }
+    const viaLitellm = buildProbe({ harness: 'pi', model: 'kimi' }, { kind: 'litellm', baseUrl: 'https://res/openai', apiKey: 'sk-test' })
+    const viaFoundry = buildProbe({ harness: 'pi', model: 'kimi' }, foundry)
+    expect(viaFoundry.url).toBe(viaLitellm.url)
+    const checks = fake()
+    await assertViable(
+      {
+        reviewer1: { harness: 'pi', model: 'kimi', provider: 'litellm', probe: viaLitellm },
+        reviewer2: { harness: 'pi', model: 'kimi', provider: 'foundry', probe: viaFoundry },
+      },
+      checks,
+    )
+    expect(checks.probes.map(({ headers }) => headers.Authorization)).toEqual(['Bearer sk-test', 'Bearer sk-foundry'])
+  })
+
   it('names the slots a failed probe covers', async () => {
     const url = 'https://p/v1/chat/completions'
     const checks = fake({ unreachable: { [url]: 'HTTP 400: max_completion_tokens too large' } })
