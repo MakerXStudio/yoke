@@ -191,7 +191,7 @@ async function slotProblem(use: SlotUse, check: Checks): Promise<string | undefi
     return state === 'signedIn' ? undefined : signInProblem[state](use)
   }
   const error = await check.reach(probe)
-  return error && `${harness} model "${model}" at ${probe.url}: ${error}`
+  return error && `${harness} model "${model}" at ${probe.url} (${use.keys.join(', ')}): ${error}`
 }
 
 function slotsToRun(slots: ReviewSlots): SlotUse[] {
@@ -202,7 +202,9 @@ function slotsToRun(slots: ReviewSlots): SlotUse[] {
   ]
   const distinct = new Map<string, SlotUse>()
   for (const [key, slot] of uses) {
-    const id = `${slot.harness}:${slot.provider ?? 'own'}:${slot.model ?? ''}`
+    const id = slot.probe
+      ? JSON.stringify({ url: slot.probe.url, body: slot.probe.body })
+      : `${slot.harness}:${slot.provider ?? 'own'}:${slot.model ?? ''}`
     const use = distinct.get(id)
     if (use) use.keys.push(key)
     else distinct.set(id, { slot, keys: [key] })

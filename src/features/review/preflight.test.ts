@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Harness } from './harness'
 import { ReviewError } from './pr'
 import { assertViable, type Checks, type PiAuth, piDefaultProvider, piSignIn, reach, type SignIn } from './preflight'
-import type { ProbeRequest } from './provider'
+import { buildProbe, type ProbeRequest, type Provider } from './provider'
 import { ReviewFailure } from './run'
 import type { ReviewSlots, Slot } from './slots'
 
@@ -22,20 +22,27 @@ afterEach(() => {
 
 type Fake = { missing?: Harness[]; signedOut?: Harness[]; signIn?: SignIn; unreachable?: Record<string, string> }
 
-function fake({ missing = [], signedOut = [], signIn, unreachable = {} }: Fake = {}): Checks & { reached: string[]; checked: Slot[] } {
+function fake({ missing = [], signedOut = [], signIn, unreachable = {} }: Fake = {}): Checks & {
+  reached: string[]
+  probes: ProbeRequest[]
+  checked: Slot[]
+} {
   const reached: string[] = []
+  const probes: ProbeRequest[] = []
   const checked: Slot[] = []
   return {
     reached,
+    probes,
     checked,
     onPath: async (harness) => !missing.includes(harness),
     signedIn: async (slot) => {
       checked.push(slot)
       return signIn ?? (signedOut.includes(slot.harness) ? 'signedOut' : 'signedIn')
     },
-    reach: async ({ url }) => {
-      reached.push(url)
-      return unreachable[url]
+    reach: async (request) => {
+      reached.push(request.url)
+      probes.push(request)
+      return unreachable[request.url]
     },
   }
 }
@@ -89,7 +96,10 @@ describe('assertViable', () => {
     const slots: ReviewSlots = { ...ownAuth, reviewer2: { harness: 'codex', model: 'gpt-5', probe: probe('https://p/v1/responses') } }
     const checks = fake({ signedOut: ['codex'], unreachable: { 'https://p/v1/responses': 'HTTP 401: bad key' } })
     const message = await errorOf(() => assertViable(slots, checks))
-    expect(message.split('\n')).toEqual(['Cannot review:', '- codex model "gpt-5" at https://p/v1/responses: HTTP 401: bad key'])
+    expect(message.split('\n')).toEqual([
+      'Cannot review:',
+      '- codex model "gpt-5" at https://p/v1/responses (review.reviewer2): HTTP 401: bad key',
+    ])
   })
 
   it('checks own-auth sign-in for an unset synthesis slot even when every reviewer uses the provider', async () => {
@@ -155,6 +165,38 @@ describe('assertViable with pi', () => {
   it('stops when pi has no model to run', async () => {
     const message = await errorOf(() => assertViable({ ...ownAuth, reviewer1: { harness: 'pi' } }, fake({ signIn: 'noModel' })))
     expect(message).toContain('- pi has no model: set review.reviewer1.model and review.synthesis.model, or pick a default model in pi')
+  })
+
+  const litellm: Provider = { kind: 'litellm', baseUrl: 'https://p', apiKey: 'sk-test' }
+  const windowed = (contextWindow?: number): Slot => ({
+    harness: 'pi',
+    model: 'kimi',
+    provider: 'litellm',
+    contextWindow,
+    probe: buildProbe({ harness: 'pi', model: 'kimi', contextWindow }, litellm),
+  })
+
+  it('probes one pi model separately for each context window that changes its request', async () => {
+    const checks = fake()
+    await assertViable({ reviewer1: windowed(16_000), reviewer2: windowed() }, checks)
+    expect(checks.probes.map(({ body }) => body)).toMatchObject([{ max_completion_tokens: 11_902 }, { max_completion_tokens: 32_000 }])
+  })
+
+  it('probes one pi model once when its context windows send the same request', async () => {
+    const checks = fake()
+    await assertViable({ reviewer1: windowed(100_000), reviewer2: windowed() }, checks)
+    expect(checks.probes.map(({ body }) => body)).toMatchObject([{ max_completion_tokens: 32_000 }])
+  })
+
+  it('names the slots a failed probe covers', async () => {
+    const url = 'https://p/v1/chat/completions'
+    const checks = fake({ unreachable: { [url]: 'HTTP 400: max_completion_tokens too large' } })
+    const message = await errorOf(() => assertViable({ reviewer1: windowed(16_000), reviewer2: windowed() }, checks))
+    expect(message.split('\n')).toEqual([
+      'Cannot review:',
+      `- pi model "kimi" at ${url} (review.reviewer1, review.synthesis): HTTP 400: max_completion_tokens too large`,
+      `- pi model "kimi" at ${url} (review.reviewer2): HTTP 400: max_completion_tokens too large`,
+    ])
   })
 })
 
