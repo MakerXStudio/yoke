@@ -39,14 +39,17 @@ type Status = { context: string; state: string; description: string | null; targ
 
 function fakeDeps(runs: ReturnType<typeof run>[], jobs: Record<number, Job[][]>, statuses: Status[] = []): GateDeps & { paths: string[] } {
   const paths: string[] = []
+  const polled: Record<number, Job[]> = {}
   const get = async (path: string) => {
     paths.push(path)
     if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
     if (path === 'repos/o/r/commits/abcdef123/statuses?per_page=100') return statuses
     if (path.startsWith('repos/o/r/commits/')) return []
     if (path.startsWith('repos/o/r/actions/workflows/77/runs?')) return { workflow_runs: runs }
-    const id = Number(/runs\/(\d+)\/jobs$/.exec(path)?.[1])
-    return { jobs: jobs[id]?.shift() ?? [] }
+    const match = /runs\/(\d+)\/jobs\?per_page=100&page=(\d+)$/.exec(path)
+    const [id, page] = [Number(match?.[1]), Number(match?.[2])]
+    if (page === 1) polled[id] = jobs[id]?.shift() ?? []
+    return { jobs: (polled[id] ?? []).slice((page - 1) * 100, page * 100).map((job, i) => ({ id: i + 1, ...job })) }
   }
   return { paths, get, post: vi.fn(async () => null), sleep: vi.fn(async () => {}), log: () => {} }
 }

@@ -1,0 +1,436 @@
+import { execFileSync, spawn } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer, type Server } from 'node:http'
+import { devNull, tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { build } from 'tsup'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
+
+import { createPiAgentDir, piArgs, piEnv, removeDir } from './pi'
+import piExtension, { maxRangeBytes, type PiExtensionApi, readRange, runCommand } from './piExtension'
+import { gitArgv } from './piGit'
+
+let dir: string
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'yoke-pi-extension-test-'))
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  rmSync(dir, { recursive: true, force: true })
+})
+
+function git(...args: string[]): void {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' }
+  execFileSync('git', args, { cwd: dir, env, stdio: 'ignore' })
+}
+
+function gitRepo(): string {
+  git('init', '-q')
+  writeFileSync(join(dir, 'a.txt'), 'one\n')
+  git('add', 'a.txt')
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'first commit')
+  return dir
+}
+
+// A repo whose .git/config sets an external diff and textconv helper for *.txt, which leaves a mark when it runs.
+function helperRepo(): string {
+  gitRepo()
+  writeFileSync(join(dir, 'b.txt'), 'two\n')
+  const helper = join(dir, 'helper.sh')
+  writeFileSync(helper, `#!/bin/sh\necho ran >> "${join(dir, 'helper-ran')}"\ncat "$1"\n`)
+  chmodSync(helper, 0o755)
+  writeFileSync(join(dir, '.gitattributes'), '*.txt diff=helper\n')
+  git('config', 'diff.helper.command', helper)
+  git('config', 'diff.helper.textconv', helper)
+  return join(dir, 'helper-ran')
+}
+
+type Registered = Parameters<PiExtensionApi['registerTool']>[0]
+
+function registered(): Map<string, Registered> {
+  const tools = new Map<string, Registered>()
+  piExtension({ registerTool: (tool) => tools.set(tool.name, tool), on: () => {} })
+  return tools
+}
+
+function call(name: string, params: unknown): Promise<string> {
+  const tool = registered().get(name)
+  if (!tool) throw new Error(`${name} is not registered`)
+  return tool.execute('id', params, undefined, undefined, { cwd: dir }).then((result) => result.content[0]?.text ?? '')
+}
+
+describe('runCommand', () => {
+  it('runs git log in the repo', async () => {
+    const out = await runCommand('git', gitArgv('log', ['--format=%s']), { cwd: gitRepo() })
+    expect(out.trim()).toBe('first commit')
+  })
+
+  it('does not hang on log --stdin, since stdin is closed', async () => {
+    const out = await runCommand('git', gitArgv('log', ['--stdin', '--format=%s', 'HEAD']), { cwd: gitRepo(), timeoutMs: 5_000 })
+    expect(out.trim()).toBe('first commit')
+  })
+
+  it('fails on exit 1 unless told it means the inputs differ', async () => {
+    const exit = ['-e', 'process.stdout.write("out"); process.exit(1)']
+    await expect(runCommand(process.execPath, exit, { cwd: dir })).rejects.toThrow('exited with code 1')
+    expect(await runCommand(process.execPath, exit, { cwd: dir, diffExit: true })).toBe('out')
+  })
+
+  it('fails with git stderr on a nonzero exit', async () => {
+    await expect(runCommand('git', gitArgv('show', ['nope']), { cwd: gitRepo() })).rejects.toThrow(/git exited with code 128: .*nope/)
+  })
+
+  it('kills the command after the timeout', async () => {
+    const hang = runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 10_000)'], { cwd: dir, timeoutMs: 100 })
+    await expect(hang).rejects.toThrow('timed out after 0.1s')
+  })
+
+  it('kills the command when the tool is aborted', async () => {
+    const controller = new AbortController()
+    const hang = runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 10_000)'], { cwd: dir, signal: controller.signal })
+    setTimeout(() => controller.abort(), 50)
+    await expect(hang).rejects.toThrow('was aborted')
+  })
+
+  it('truncates output over the cap with a note', async () => {
+    const out = await runCommand(process.execPath, ['-e', 'process.stdout.write("x".repeat(100_000))'], { cwd: dir, cap: 1_000 })
+    expect(out).toBe(`${'x'.repeat(1_000)}\n[output truncated at 1000 bytes; narrow the command]`)
+  })
+})
+
+describe('readRange', () => {
+  it('reads a slice of a line longer than the cap, at most 50KB at a time', async () => {
+    const path = join(dir, 'long.min.js')
+    writeFileSync(path, `${'a'.repeat(maxRangeBytes)}${'b'.repeat(10_000)}\n`)
+    const first = await readRange(path, 0, 80_000)
+    expect(first).toBe(`${'a'.repeat(maxRangeBytes)}\n[bytes 0-${maxRangeBytes} of ${maxRangeBytes + 10_001}]`)
+    const rest = await readRange(path, maxRangeBytes, 20_000)
+    expect(rest).toBe(`${'b'.repeat(10_000)}\n\n[bytes ${maxRangeBytes}-${maxRangeBytes + 10_001} of ${maxRangeBytes + 10_001}]`)
+  })
+
+  it('returns nothing past the end of the file', async () => {
+    writeFileSync(join(dir, 'a.txt'), 'abc')
+    expect(await readRange(join(dir, 'a.txt'), 10, 5)).toBe('\n[bytes 10-10 of 3]')
+  })
+
+  it.each([
+    [-1, 5, 'offset must be a non-negative integer'],
+    [1.5, 5, 'offset must be a non-negative integer'],
+    [0, 0, 'length must be a positive integer'],
+  ])('refuses offset %s and length %s', async (offset, length, error) => {
+    await expect(readRange(join(dir, 'a.txt'), offset, length)).rejects.toThrow(error)
+  })
+})
+
+describe('piExtension', () => {
+  it('registers git and read_range with JSON Schema parameters', () => {
+    const tools = registered()
+    expect([...tools.keys()]).toEqual(['git', 'read_range'])
+    expect(tools.get('git')?.parameters).toMatchObject({
+      type: 'object',
+      properties: { subcommand: { type: 'string', enum: ['log', 'show', 'blame', 'diff', 'merge-base'] }, args: { type: 'array' } },
+      required: ['subcommand'],
+    })
+    expect(tools.get('read_range')?.parameters).toMatchObject({
+      type: 'object',
+      properties: { path: { type: 'string' }, offset: { type: 'integer' }, length: { type: 'integer' } },
+      required: ['path', 'offset', 'length'],
+    })
+  })
+
+  it('runs git in the tool context cwd', async () => {
+    gitRepo()
+    expect((await call('git', { subcommand: 'log', args: ['--format=%s'] })).trim()).toBe('first commit')
+  })
+
+  it('refuses remerge and signature args from the tool', async () => {
+    gitRepo()
+    await expect(call('git', { subcommand: 'show', args: ['--remerge-diff'] })).rejects.toThrow('--remerge-diff')
+    await expect(call('git', { subcommand: 'log', args: ['--show-signature'] })).rejects.toThrow('--show-signature')
+  })
+
+  it('refuses an orderfile, so git cannot read /dev/zero into memory', async () => {
+    gitRepo()
+    await expect(call('git', { subcommand: 'log', args: ['-p', '-1', '-O/dev/zero'] })).rejects.toThrow('-O/dev/zero')
+    await expect(call('git', { subcommand: 'show', args: ['--orderfile=/dev/zero'] })).rejects.toThrow('--orderfile')
+    await expect(call('git', { subcommand: 'blame', args: ['-S', '/dev/zero', 'a.txt'] })).rejects.toThrow('-S')
+    await expect(call('git', { subcommand: 'blame', args: ['--ignore-revs-file=/dev/zero', 'a.txt'] })).rejects.toThrow('--ignore-revs')
+  })
+
+  it('returns the diff when git diff exits 1 because the inputs differ', async () => {
+    gitRepo()
+    writeFileSync(join(dir, 'b.txt'), 'two\n')
+    expect(await call('git', { subcommand: 'diff', args: ['--no-index', 'a.txt', 'b.txt'] })).toContain('-one\n+two')
+    writeFileSync(join(dir, 'a.txt'), 'changed\n')
+    expect(await call('git', { subcommand: 'diff', args: ['--exit-code'] })).toContain('+changed')
+    expect(await call('git', { subcommand: 'diff', args: ['--quiet'] })).toBe('')
+  })
+
+  it('fails when git diff is given an invalid input', async () => {
+    gitRepo()
+    await expect(call('git', { subcommand: 'diff', args: ['--no-index', 'a.txt', 'nope.txt'] })).rejects.toThrow(
+      /git exited with code 1: .*nope\.txt/,
+    )
+    await expect(call('git', { subcommand: 'diff', args: ['nope'] })).rejects.toThrow(/git exited with code 128: .*nope/)
+  })
+
+  it('runs the repo diff helper only when the forced flags are missing', async () => {
+    const ran = helperRepo()
+    await runCommand('git', ['-c', 'diff.external=', 'diff', '--no-index', '--ext-diff', 'a.txt', 'b.txt'], { cwd: dir, diffExit: true })
+    expect(existsSync(ran)).toBe(true)
+    rmSync(ran)
+    await runCommand('git', ['blame', 'a.txt'], { cwd: dir })
+    expect(existsSync(ran)).toBe(true)
+    rmSync(ran)
+    await call('git', { subcommand: 'diff', args: ['--no-index', 'a.txt', 'b.txt'] })
+    await call('git', { subcommand: 'log', args: ['-p'] })
+    await call('git', { subcommand: 'blame', args: ['a.txt'] })
+    expect(existsSync(ran)).toBe(false)
+  })
+
+  it.each(['--ext-di', '--ext-diff', '--textcon', '--textconv'])('never runs the repo diff helper for %s', async (arg) => {
+    const ran = helperRepo()
+    for (const [subcommand, args] of [
+      ['diff', ['--no-index', arg, 'a.txt', 'b.txt']],
+      ['diff', [arg, 'HEAD']],
+      ['log', ['-p', arg]],
+      ['blame', [arg, 'a.txt']],
+    ] as const) {
+      await expect(call('git', { subcommand, args })).rejects.toThrow(arg)
+    }
+    expect(existsSync(ran)).toBe(false)
+  })
+
+  it('reads a range of a path relative to the tool context cwd, ignoring a leading @', async () => {
+    writeFileSync(join(dir, 'a.txt'), 'hello world')
+    expect(await call('read_range', { path: '@a.txt', offset: 6, length: 5 })).toBe('world\n[bytes 6-11 of 11]')
+  })
+})
+
+type Content = { type: string; text?: string }
+
+type Hooks = {
+  agentStart?: (event: { systemPromptOptions: { contextFiles: { path: string; content: string }[] } }, ctx: { cwd: string }) => void
+  toolResult?: (event: ReturnType<typeof toolResult>, ctx: { cwd: string }) => { content: Content[] } | undefined
+}
+
+function hooks(): Hooks {
+  const found: Hooks = {}
+  piExtension({
+    registerTool: () => {},
+    on: (event: string, handler: never) => {
+      if (event === 'before_agent_start') found.agentStart = handler
+      if (event === 'tool_result') found.toolResult = handler
+    },
+  })
+  return found
+}
+
+function write(path: string, content: string): void {
+  mkdirSync(dirname(join(dir, path)), { recursive: true })
+  writeFileSync(join(dir, path), content)
+}
+
+function toolResult(toolName: string, path: unknown, isError = false) {
+  return { toolName, input: { path }, content: [{ type: 'text', text: 'file text' }], isError }
+}
+
+function boom(): never {
+  throw new Error('boom')
+}
+
+describe('piExtension instruction hooks', () => {
+  it('registers no hooks unless YOKE_PI_INSTRUCTIONS is 1', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '')
+    expect(hooks()).toEqual({})
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', 'true')
+    expect(hooks()).toEqual({})
+  })
+
+  it("appends the cwd's instructions to the context files at every run start", () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('CLAUDE.md', 'root rules')
+    const { agentStart } = hooks()
+    const existing = { path: 'x', content: 'y' }
+    for (let run = 0; run < 2; run++) {
+      const event = { systemPromptOptions: { contextFiles: [existing] } }
+      agentStart?.(event, { cwd: dir })
+      expect(event.systemPromptOptions.contextFiles).toEqual([
+        existing,
+        { path: join(realpathSync(dir), 'CLAUDE.md'), content: 'root rules' },
+      ])
+    }
+  })
+
+  it('appends the instructions a read triggers, resolving @ like pi, and loads each once', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('sub/AGENTS.md', 'sub rules')
+    write('sub/a.ts', 'a')
+    write('sub/b.ts', 'b')
+    const { toolResult: onResult } = hooks()
+    const result = onResult?.(toolResult('read', '@sub/a.ts'), { cwd: dir })
+    expect(result?.content).toEqual([
+      { type: 'text', text: 'file text' },
+      { type: 'text', text: `Contents of ${join(realpathSync(dir), 'sub', 'AGENTS.md')}:\n\nsub rules` },
+    ])
+    expect(onResult?.(toolResult('read_range', '@sub/b.ts'), { cwd: dir })).toBeUndefined()
+  })
+
+  it('appends the instructions a read_range triggers', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('sub/AGENTS.md', 'sub rules')
+    write('sub/a.ts', 'a')
+    const result = hooks().toolResult?.(toolResult('read_range', join(dir, 'sub', 'a.ts')), { cwd: dir })
+    expect(result?.content.at(-1)?.text).toContain('sub rules')
+  })
+
+  it('triggers nothing for an error result, another tool or a missing path, and does not use them up', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    write('sub/AGENTS.md', 'sub rules')
+    write('sub/a.ts', 'a')
+    const { toolResult: onResult } = hooks()
+    expect(onResult?.(toolResult('read', 'sub/a.ts', true), { cwd: dir })).toBeUndefined()
+    expect(onResult?.(toolResult('grep', 'sub/a.ts'), { cwd: dir })).toBeUndefined()
+    expect(onResult?.(toolResult('read', undefined), { cwd: dir })).toBeUndefined()
+    expect(onResult?.(toolResult('read', 'sub/a.ts'), { cwd: dir })?.content).toHaveLength(2)
+  })
+
+  it('never throws on a malformed event', () => {
+    vi.stubEnv('YOKE_PI_INSTRUCTIONS', '1')
+    const { agentStart, toolResult: onResult } = hooks()
+    expect(() =>
+      agentStart?.(
+        {
+          get systemPromptOptions() {
+            return boom()
+          },
+        },
+        { cwd: dir },
+      ),
+    ).not.toThrow()
+    expect(() =>
+      onResult?.(
+        {
+          ...toolResult('read', 'a.ts'),
+          get input() {
+            return boom()
+          },
+        },
+        { cwd: dir },
+      ),
+    ).not.toThrow()
+  })
+})
+
+const request = z.object({
+  tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
+  messages: z.array(z.object({ role: z.string(), content: z.unknown() })),
+})
+
+type Request = z.infer<typeof request>
+
+type Stub = { server: Server; url: string; requests: Request[] }
+
+function chunk(delta: Record<string, unknown>, finish: string | null): string {
+  const body = { id: 'c', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{ index: 0, delta, finish_reason: finish }] }
+  return `data: ${JSON.stringify(body)}\n\n`
+}
+
+function toolCall(index: number, name: string, args: unknown) {
+  return { index, id: `call_${index}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }
+}
+
+const replies = [
+  chunk(
+    {
+      role: 'assistant',
+      tool_calls: [
+        toolCall(0, 'git', { subcommand: 'log', args: ['--format=%s'] }),
+        toolCall(1, 'read_range', { path: 'a.txt', offset: 0, length: 3 }),
+        toolCall(2, 'read', { path: '@sub/b.txt' }),
+      ],
+    },
+    'tool_calls',
+  ),
+  `${chunk({ role: 'assistant', content: 'ok' }, null)}${chunk({}, 'stop')}`,
+]
+
+async function stubServer(): Promise<Stub> {
+  const requests: Request[] = []
+  const server = createServer((req, res) => {
+    let body = ''
+    req.on('data', (data: Buffer) => (body += data.toString('utf8')))
+    req.on('end', () => {
+      const reply = replies[requests.length] ?? replies[1]
+      requests.push(request.parse(JSON.parse(body)))
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.end(`${reply}data: [DONE]\n\n`)
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('stub server has no port')
+  return { server, url: `http://127.0.0.1:${address.port}/v1`, requests }
+}
+
+// Inside the repo, so the bundle resolves its external dependencies from node_modules as the shipped dist/ does.
+const extensionOutDir = join(dirname(fileURLToPath(import.meta.url)), '../../../../node_modules/.cache/yoke-pi-extension-test')
+
+async function buildExtension(outDir: string): Promise<string> {
+  const entry = join(dirname(fileURLToPath(import.meta.url)), 'piExtension.ts')
+  await build({ entry: { piExtension: entry }, outDir, format: ['esm'], target: 'node24', platform: 'node', config: false, silent: true })
+  return join(outDir, 'piExtension.js')
+}
+
+function piCli(): string {
+  return join(dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))), 'bundle', 'cli.js')
+}
+
+describe('pi with the built extension', () => {
+  it('offers the model only read, ls, git and read_range, plus grep and find when present, and runs the yoke tools', async () => {
+    const extension = await buildExtension(extensionOutDir)
+    gitRepo()
+    write('CLAUDE.md', 'root codeword')
+    write('sub/AGENTS.md', 'nested codeword')
+    write('sub/b.txt', 'two')
+    const stub = await stubServer()
+    const agentDir = createPiAgentDir({ baseUrl: stub.url, model: 'm' })
+    const env = { ...process.env, YOKE_PI_API_KEY: 'k', PI_CODING_AGENT_DIR: join(dir, 'user-agent') }
+    const args = piArgs(env, process.platform, ['--model', 'yoke/m'])
+    args[args.indexOf('-e') + 1] = extension
+    const child = spawn(process.execPath, [piCli(), ...args], {
+      cwd: dir,
+      env: piEnv(env, agentDir, true),
+      stdio: ['pipe', 'ignore', 'pipe'],
+    })
+    let stderr = ''
+    child.stderr.on('data', (data: Buffer) => (stderr += data.toString('utf8')))
+    child.stdin.end('Say ok')
+    try {
+      const code = await new Promise<number | null>((resolve) => child.on('close', resolve))
+      expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
+      const names = (stub.requests[0]?.tools ?? []).map((tool) => tool.function.name).toSorted()
+      expect(names).toEqual(args[args.indexOf('--tools') + 1]?.split(',').toSorted())
+      expect(names).toEqual(expect.arrayContaining(['git', 'ls', 'read', 'read_range']))
+      for (const shell of ['bash', 'edit', 'write']) expect(names).not.toContain(shell)
+      const results = stub.requests[1]?.messages
+        .filter((message) => message.role === 'tool')
+        .map((message) => JSON.stringify(message.content))
+      expect(results).toEqual([
+        expect.stringContaining('first commit'),
+        expect.stringContaining('one'),
+        expect.stringMatching(/two.*Contents of .*AGENTS\.md:.*nested codeword/),
+      ])
+      expect(JSON.stringify(stub.requests[0]?.messages)).toMatch(/<project_instructions path=\\".*CLAUDE\.md\\">\\nroot codeword/)
+    } finally {
+      child.kill()
+      stub.server.close()
+      removeDir(agentDir)
+    }
+  }, 60_000)
+})

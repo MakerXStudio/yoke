@@ -4,6 +4,7 @@ import { parseUsage, type TokenUsage } from './usage'
 export type HarnessEvent =
   | { kind: 'activity'; text: string }
   | { kind: 'final'; text: string; usage?: TokenUsage }
+  | { kind: 'message'; text: string; stopReason: string; errorMessage?: string; usage?: TokenUsage; model?: string }
   | { kind: 'usage'; usage: TokenUsage }
   | { kind: 'model'; model: string }
   | { kind: 'error'; message: string }
@@ -29,6 +30,11 @@ function text(input: Json, key: string): string | undefined {
 
 function toolSummary(input: unknown): string {
   if (!isJson(input)) return ''
+  const subcommand = text(input, 'subcommand')
+  if (subcommand) {
+    const args = Array.isArray(input.args) ? input.args.filter((arg) => typeof arg === 'string') : []
+    return truncate([subcommand, ...args].join(' '))
+  }
   const pattern = text(input, 'pattern')
   if (pattern) {
     const scope = text(input, 'path')
@@ -98,6 +104,44 @@ function codexEvent(event: Json): HarnessEvent {
   return { kind: 'ignore' }
 }
 
+function piUsage(raw: unknown): TokenUsage | undefined {
+  return parseUsage(raw, { input: 'input', output: 'output', cacheRead: 'cacheRead', cacheWrite: 'cacheWrite' })
+}
+
+function piText(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  return content
+    .filter((block): block is Json => isJson(block) && block.type === 'text')
+    .map((block) => text(block, 'text') ?? '')
+    .join('\n')
+}
+
+function piMessage(message: Json): HarnessEvent {
+  const stopReason = text(message, 'stopReason')
+  if (message.role !== 'assistant' || !stopReason) return { kind: 'ignore' }
+  const usage = piUsage(message.usage)
+  const errorMessage = text(message, 'errorMessage')
+  const model = text(message, 'model')
+  return {
+    kind: 'message',
+    text: piText(message.content),
+    stopReason,
+    ...(errorMessage ? { errorMessage } : {}),
+    ...(usage ? { usage } : {}),
+    ...(model ? { model } : {}),
+  }
+}
+
+function piEvent(event: Json): HarnessEvent {
+  if (event.type === 'message_end' && isJson(event.message)) return piMessage(event.message)
+  if (event.type === 'tool_execution_start')
+    return { kind: 'activity', text: describeTool(text(event, 'toolName') ?? 'tool', toolSummary(event.args)) }
+  const usage = event.type === 'compaction_end' && isJson(event.result) ? piUsage(event.result.usage) : undefined
+  return usage ? { kind: 'usage', usage } : { kind: 'ignore' }
+}
+
+const parsers: Record<Harness, (event: Json) => HarnessEvent> = { claude: claudeEvent, codex: codexEvent, pi: piEvent }
+
 export function parseHarnessEvent(harness: Harness, line: string): HarnessEvent {
   let event: unknown
   try {
@@ -106,5 +150,5 @@ export function parseHarnessEvent(harness: Harness, line: string): HarnessEvent 
     return { kind: 'ignore' }
   }
   if (!isJson(event)) return { kind: 'ignore' }
-  return harness === 'claude' ? claudeEvent(event) : codexEvent(event)
+  return parsers[harness](event)
 }

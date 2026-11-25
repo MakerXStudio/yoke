@@ -8,7 +8,7 @@ on:
         type: string
         default: litellm
       reviewer1-harness:
-        description: claude or codex
+        description: claude, codex or pi
         type: string
         default: claude
       reviewer1-model:
@@ -16,7 +16,7 @@ on:
         type: string
         required: true
       reviewer2-harness:
-        description: claude or codex
+        description: claude, codex or pi
         type: string
         default: codex
       reviewer2-model:
@@ -24,7 +24,7 @@ on:
         type: string
         required: true
       synthesis-harness:
-        description: 'claude or codex. Default: reviewer1-harness'
+        description: 'claude, codex or pi. Default: reviewer1-harness'
         type: string
         default: ''
       synthesis-model:
@@ -138,7 +138,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Install yoke, Claude Code and Codex from the lockfile
+      - name: Install yoke, Claude Code, Codex and Pi from the lockfile
         working-directory: yoke/ci/review-tools
         run: |
           npm ci

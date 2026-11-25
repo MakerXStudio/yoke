@@ -36,7 +36,9 @@ function fakeDeps(
     if (path === 'repos/o/r/actions/runs/900') return { workflow_id: 77 }
     if (path === 'repos/o/r/commits/abcdef123/statuses?per_page=100') return approvals
     if (path === 'repos/o/r/actions/workflows/77/runs?event=pull_request&head_sha=abcdef123&per_page=100') return { workflow_runs: runs }
-    if (/runs\/\d+\/jobs$/.test(path)) return { jobs }
+    const page = Number(/runs\/\d+\/jobs\?per_page=100&page=(\d+)$/.exec(path)?.[1])
+    if (page)
+      return { jobs: jobs.slice((page - 1) * 100, page * 100).map((job) => ({ status: 'completed', conclusion: 'success', ...job })) }
     const id = Number(/runs\/(\d+)$/.exec(path)?.[1])
     return { id, run_number: runNumbers[id] ?? 1, status: statuses.shift() ?? 'completed' }
   }
@@ -182,6 +184,17 @@ describe('handOffApprovedReview', () => {
     expect(deps.sleep).toHaveBeenCalledTimes(2)
     expect(deps.sleep).toHaveBeenCalledWith(runPollInterval)
     expect(deps.post).toHaveBeenLastCalledWith('repos/o/r/actions/jobs/71/rerun', {})
+  })
+
+  it('pages past a full page of jobs to find the gate to re-run', async () => {
+    const matrix = Array.from({ length: 100 }, (_, i) => ({ id: 100 + i, name: `build (${i})` }))
+    const deps = fakeDeps([{ id: 2, run_number: 4, status: 'completed' }], [], [...matrix, { id: 71, name: 'review / gate' }])
+    expect((await handOffApprovedReview('success', context(), deps)).message).toContain('Re-ran the gate for abcdef1')
+    expect(deps.post).toHaveBeenLastCalledWith('repos/o/r/actions/jobs/71/rerun', {})
+    expect(deps.paths.filter((path) => path.includes('/jobs?'))).toEqual([
+      'repos/o/r/actions/runs/2/jobs?per_page=100&page=1',
+      'repos/o/r/actions/runs/2/jobs?per_page=100&page=2',
+    ])
   })
 
   it('only records the review when no pull_request run exists for the head', async () => {

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -11,8 +11,9 @@ import type { Harness, HarnessResult, HarnessRun } from './harness'
 import { type PostDeps, postFailure, postFindings } from './post'
 import { ReviewError } from './pr'
 import type { PullRequest } from './request'
-import { assertHead, reviewRunDir, saveReview } from './review'
+import { assertHead, saveReview } from './review'
 import { type ReviewContext, ReviewFailure, runReview } from './run'
+import { reviewRunDir } from './runDir'
 import type { ReviewSlots } from './slots'
 import { lineUi } from './status'
 import type { StepName } from './usedModels'
@@ -69,6 +70,12 @@ function context({ reviews = {}, synthesis: synthesised = synthesis }: Fake = {}
   }
 }
 
+function repoWith(...paths: string[]): string {
+  const repo = join(reviewDir, 'repo')
+  for (const path of paths) mkdirSync(join(repo, path), { recursive: true })
+  return repo
+}
+
 function cache(step: StepName, output: string, slot: string): void {
   writeFileSync(join(reviewDir, `${step}.md`), output)
   recordSlot(reviewDir, step, slot)
@@ -87,9 +94,15 @@ describe('runReview', () => {
     expect(parsed?.findings.map((f) => f.title)).toEqual(['Crash'])
   })
 
+  it('loads repo instructions in the reviewer runs of a trusted review, not the synthesis', async () => {
+    await runReview('request', context())
+    expect(runs.map((r) => r.instructions)).toEqual([true, true, false])
+  })
+
   it('marks every harness run untrusted when reviewing an approved head', async () => {
     await runReview('request', { ...context(), untrusted: true })
     expect(runs.map((r) => r.untrusted)).toEqual([true, true, true])
+    expect(runs.map((r) => r.instructions)).toEqual([false, false, false])
   })
 
   it('returns the token usage each slot that ran reported, leaving cached slots out', async () => {
@@ -165,6 +178,67 @@ describe('runReview', () => {
     expect(runs.at(-1)).toMatchObject({ harness: 'codex', override: undefined })
   })
 
+  const piOverride = { args: ['--model', 'yoke/kimi'], env: { YOKE_PI_API_KEY: 'k' }, pi: { baseUrl: 'https://llm/v1', model: 'kimi' } }
+  const piSlot = { harness: 'pi', model: 'kimi', provider: 'litellm', override: piOverride } as const
+
+  it("runs an unset synthesis slot on reviewer 1's whole pi slot, provider and model included", async () => {
+    await runReview('request', context({}, { reviewer1: piSlot, reviewer2: { harness: 'codex' } }))
+    expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+    expect(logs).toContain('synthesis (pi: litellm/kimi)…')
+  })
+
+  it('copies a pi reviewer 2 whole for the synthesis when reviewer 1 fails', async () => {
+    const slots: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: piSlot }
+    await runReview('request', context({ reviews: { claude: new Error('down') } }, slots))
+    expect(runs.at(-1)).toMatchObject({ harness: 'pi', override: piOverride, outputPath: join(reviewDir, 'synthesis.md') })
+  })
+
+  const piReviewer1: ReviewSlots = { ...ownAuth, reviewer1: { harness: 'pi' } }
+  const piSlots: [string, ReviewSlots][] = [
+    ['reviewer 1', piReviewer1],
+    ['reviewer 2', { ...ownAuth, reviewer2: { harness: 'pi' } }],
+    ['synthesis', { ...ownAuth, synthesis: { harness: 'pi' } }],
+  ]
+
+  it.each(piSlots)('stops before any reviewer runs when %s uses pi and the repo has .pi/commands but no .pi/prompts', async (_, slots) => {
+    const review = runReview('request', { ...context({}, slots), cwd: repoWith('.pi/commands') })
+    await expect(review).rejects.toThrow(ReviewFailure)
+    await expect(review).rejects.toMatchObject({ reason: "pi can't review this repo" })
+    expect(runs).toEqual([])
+  })
+
+  it('reviews with pi and leaves a dangling .pi/commands symlink alone', async () => {
+    const repo = repoWith('.pi')
+    const target = join(repo, 'missing')
+    symlinkSync(target, join(repo, '.pi', 'commands'))
+    await runReview('request', { ...context({}, piReviewer1), cwd: repo })
+    expect(runs).toHaveLength(3)
+    expect(readlinkSync(join(repo, '.pi', 'commands'))).toBe(target)
+  })
+
+  it('reviews with pi when .pi is a file', async () => {
+    const repo = repoWith()
+    mkdirSync(repo, { recursive: true })
+    writeFileSync(join(repo, '.pi'), '')
+    await runReview('request', { ...context({}, piReviewer1), cwd: repo })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews a repo with .pi/commands when no slot uses pi', async () => {
+    await runReview('request', { ...context(), cwd: repoWith('.pi/commands') })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews with pi when the repo has both .pi/commands and .pi/prompts', async () => {
+    await runReview('request', { ...context({}, piReviewer1), cwd: repoWith('.pi/commands', '.pi/prompts') })
+    expect(runs).toHaveLength(3)
+  })
+
+  it('reviews with pi when the repo has only .pi/prompts', async () => {
+    await runReview('request', { ...context({}, piReviewer1), cwd: repoWith('.pi/prompts') })
+    expect(runs).toHaveLength(3)
+  })
+
   it('fails when every reviewer fails', async () => {
     const review = runReview('request', context({ reviews: { claude: new Error('down'), codex: new Error('down') } }))
     await expect(review).rejects.toThrow(ReviewError)
@@ -230,6 +304,19 @@ describe('runReview', () => {
     cache('synthesis', synthesis, 'claude: default model')
     await runReview('request', context())
     expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer2.md', 'synthesis.md'])
+  })
+
+  it('reruns a pi slot whose context window changed, and reuses one set to the default', async () => {
+    const slot = { harness: 'pi', model: 'kimi', provider: 'litellm', override: piOverride } as const
+    cache('reviewer1', 'pi', 'pi: litellm/kimi')
+    cache('reviewer2', 'pi', 'pi: litellm/kimi')
+    cache('synthesis', synthesis, 'pi: litellm/kimi')
+    await runReview('request', {
+      ...context(),
+      slots: { reviewer1: { ...slot, contextWindow: 128_000 }, reviewer2: { ...slot, contextWindow: 200_000 }, synthesis: slot },
+    })
+    expect(runs.map((r) => basename(r.outputPath))).toEqual(['reviewer1.md', 'synthesis.md'])
+    expect(logs).toContain('reviewer2 (pi: litellm/kimi): cached')
   })
 
   it('does not cache the output of a failed reviewer', async () => {

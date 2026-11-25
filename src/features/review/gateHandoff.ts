@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { approverRejection } from './approver'
-import type { GateContext, GateDeps, Verdict } from './gate'
+import { type GateContext, type GateDeps, runJobs, type Verdict } from './gate'
 
 export const approvedReviewContext = 'review / approved review'
 
@@ -12,8 +12,6 @@ export const runPollInterval = 15_000
 const runSchema = z.object({ id: z.number(), run_number: z.number(), status: z.string().nullable() })
 
 const runsSchema = z.object({ workflow_runs: z.array(runSchema) })
-
-const jobsSchema = z.object({ jobs: z.array(z.object({ id: z.number(), name: z.string() })) })
 
 const statusesSchema = z.array(z.object({ context: z.string(), target_url: z.string().nullable() }))
 
@@ -64,8 +62,7 @@ async function rerunHeadGate(context: GateContext, deps: GateDeps): Promise<stri
   const run = await latestPullRequestRun(context, deps)
   if (!run) return `No pull_request run of this workflow exists for ${sha}; its gate reads this result when it runs.`
   await settledRun(repo, run.id, run.status, deps)
-  const { jobs } = jobsSchema.parse(await deps.get(`repos/${repo}/actions/runs/${run.id}/jobs`))
-  const gate = jobs.find((job) => job.name.endsWith(' / gate'))
+  const gate = (await runJobs(repo, run.id, deps)).find((job) => job.name.endsWith(' / gate'))
   const url = `${serverUrl}/${repo}/actions/runs/${run.id}`
   if (!gate) return `Run ${url} for ${sha} has no gate job to re-run; its gate reads this result when it runs.`
   await deps.post(`repos/${repo}/actions/jobs/${gate.id}/rerun`, {})

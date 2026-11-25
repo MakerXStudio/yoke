@@ -6,7 +6,8 @@ import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import type { HarnessRun, RunHarness } from './harness'
 import { ReviewError } from './pr'
 import { buildReviewerPrompt, buildSynthesisPrompt } from './prompts'
-import type { Reviewer, ReviewSlots, Slot } from './slots'
+import { piContextWindow } from './provider'
+import { implicitSynthesis, type Reviewer, type ReviewSlots, type Slot, usesPi } from './slots'
 import type { StatusUi } from './status'
 import type { StepUsage } from './usage'
 import { forgetUsedModel, recordUsedModel, type StepName } from './usedModels'
@@ -48,8 +49,9 @@ function seconds(since: number): string {
   return `${Math.round((Date.now() - since) / 1000)}s`
 }
 
-function describeSlot({ harness, model, provider }: Slot): string {
-  return `${harness}: ${provider ? `${provider}/` : ''}${model ?? 'default model'}`
+function describeSlot({ harness, model, provider, contextWindow = piContextWindow }: Slot): string {
+  const window = contextWindow === piContextWindow ? '' : `, ${contextWindow} context`
+  return `${harness}: ${provider ? `${provider}/` : ''}${model ?? 'default model'}${window}`
 }
 
 async function runStep({ name, label, slot, ...step }: Step, context: RunContext): Promise<boolean> {
@@ -61,6 +63,7 @@ async function runStep({ name, label, slot, ...step }: Step, context: RunContext
     harness,
     override,
     untrusted: context.untrusted,
+    instructions: name !== 'synthesis' && !context.untrusted,
     cwd: context.cwd,
     reviewDir: context.reviewDir,
     onProgress: status.update,
@@ -117,7 +120,7 @@ function rawReviews(succeeded: Reviewer[], context: ReviewContext): Outcome {
 
 function synthesisSlot(succeeded: Reviewer[], context: ReviewContext): Slot {
   const [first = 'reviewer1'] = succeeded
-  return context.slots.synthesis ?? { harness: context.slots[first].harness }
+  return context.slots.synthesis ?? implicitSynthesis(context.slots[first])
 }
 
 async function synthesise(requestPath: string, succeeded: Reviewer[], reviewersRan: boolean, context: RunContext): Promise<Outcome> {
@@ -136,7 +139,17 @@ async function synthesise(requestPath: string, succeeded: Reviewer[], reviewersR
   return rawReviews(succeeded, context)
 }
 
+function assertPiCanReview({ cwd, slots }: ReviewContext): void {
+  if (!usesPi(slots) || !existsSync(join(cwd, '.pi', 'commands'))) return
+  if (existsSync(join(cwd, '.pi', 'prompts'))) return
+  throw new ReviewFailure(
+    "pi can't review this repo",
+    'pi renames .pi/commands to .pi/prompts when it starts, which would change the repo under review. Move .pi/commands to .pi/prompts in the repo, or use claude or codex for this review.',
+  )
+}
+
 export async function runReview(request: string, reviewContext: ReviewContext): Promise<ReviewResult> {
+  assertPiCanReview(reviewContext)
   const context: RunContext = { ...reviewContext, usage: {} }
   const requestPath = join(context.reviewDir, 'request.md')
   writeFileSync(requestPath, request)

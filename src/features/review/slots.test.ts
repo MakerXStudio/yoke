@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ReviewError } from './pr'
-import { resolveSlots } from './slots'
+import { type ReviewSlots, resolveSlots, usesPi } from './slots'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -96,7 +96,83 @@ describe('resolveSlots', () => {
 
   it('names an unknown harness and provider', () => {
     const message = errorOf(() => resolveSlots({ 'review.synthesis.harness': 'gemini', 'review.synthesis.provider': 'openrouter' }))
-    expect(message).toContain('- review.synthesis.harness "gemini" must be claude or codex; pass --synthesis-harness')
+    expect(message).toContain('- review.synthesis.harness "gemini" must be claude, codex or pi; pass --synthesis-harness')
     expect(message).toContain('- review.synthesis.provider "openrouter" must be litellm or foundry; pass --synthesis-provider')
+  })
+})
+
+describe('pi slots', () => {
+  it('runs a pi slot through the provider with a chat completions probe', () => {
+    const slots = resolveSlots({
+      ...foundry,
+      'review.reviewer1.harness': 'pi',
+      'review.reviewer1.provider': 'foundry',
+      'review.reviewer1.model': 'kimi',
+    })
+    expect(slots.reviewer1).toMatchObject({
+      harness: 'pi',
+      provider: 'foundry',
+      override: { args: ['--model', 'yoke/kimi'], pi: { baseUrl: 'https://res/openai/v1', model: 'kimi' } },
+      probe: { url: 'https://res/openai/v1/chat/completions' },
+    })
+  })
+
+  it("carries a pi slot's context window into its model and probe", () => {
+    const slots = resolveSlots({
+      ...foundry,
+      'review.reviewer1.harness': 'pi',
+      'review.reviewer1.provider': 'foundry',
+      'review.reviewer1.model': 'kimi',
+      'review.reviewer1.contextWindow': '64000',
+    })
+    expect(slots.reviewer1).toMatchObject({
+      model: 'kimi',
+      contextWindow: 64000,
+      override: { pi: { contextWindow: 64000 } },
+      probe: { body: { max_completion_tokens: 32000 } },
+    })
+  })
+
+  it("accepts a context window on a synthesis slot that inherits reviewer1's pi harness", () => {
+    const slots = resolveSlots({
+      ...foundry,
+      'review.reviewer1.harness': 'pi',
+      'review.synthesis.provider': 'foundry',
+      'review.synthesis.model': 'kimi',
+      'review.synthesis.contextWindow': '8000',
+    })
+    expect(slots.synthesis).toMatchObject({ harness: 'pi', override: { pi: { contextWindow: 8000 } } })
+  })
+
+  it('rejects a context window on a slot that does not run pi through a provider', () => {
+    for (const settings of [
+      { 'review.reviewer1.contextWindow': '64000' },
+      { ...foundry, 'review.synthesis.provider': 'foundry', 'review.synthesis.model': 'sonnet', 'review.synthesis.contextWindow': '64000' },
+      { 'review.reviewer2.harness': 'pi', 'review.reviewer2.contextWindow': '64000' },
+    ])
+      expect(errorOf(() => resolveSlots(settings))).toMatch(
+        /- review\.\w+\.contextWindow only applies to a slot that runs pi through a provider/,
+      )
+  })
+
+  it.each(['0', '-5', '1.5', '64k'])('rejects a context window of %s', (value) => {
+    const message = errorOf(() =>
+      resolveSlots({
+        ...foundry,
+        'review.reviewer1.harness': 'pi',
+        'review.reviewer1.provider': 'foundry',
+        'review.reviewer1.model': 'kimi',
+        'review.reviewer1.contextWindow': value,
+      }),
+    )
+    expect(message).toContain(`- review.reviewer1.contextWindow "${value}" must be a positive integer; pass --reviewer-1-context-window`)
+  })
+
+  it('says whether any slot uses pi', () => {
+    const own: ReviewSlots = { reviewer1: { harness: 'claude' }, reviewer2: { harness: 'codex' } }
+    expect(usesPi(own)).toBe(false)
+    expect(usesPi({ ...own, reviewer1: { harness: 'pi' } })).toBe(true)
+    expect(usesPi({ ...own, reviewer2: { harness: 'pi' } })).toBe(true)
+    expect(usesPi({ ...own, synthesis: { harness: 'pi' } })).toBe(true)
   })
 })

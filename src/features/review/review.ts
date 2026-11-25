@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Settings } from '../config/settings'
@@ -7,12 +7,14 @@ import { isCi, reportFailure } from './ciRun'
 import { withEntraToken } from './entra'
 import { formatSynthesis, parseSynthesis, type Synthesis } from './findings'
 import { runHarness } from './harness'
+import { installSearchTools, type SearchToolDeps, withSearchTools } from './pi/searchTools'
 import { postFindings } from './post'
 import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github, ReviewError } from './pr'
 import { assertViable } from './preflight'
 import { buildRequest, type PullRequest } from './request'
 import { logged, reviewLog } from './reviewLog'
 import { type ReviewResult, ReviewFailure, runReview } from './run'
+import { prepareRunDir, reviewRunDir } from './runDir'
 import { type ReviewSlots, resolveSlots } from './slots'
 import { type StatusUi, timed } from './status'
 import { type StepUsage, writeJobSummary } from './usage'
@@ -22,19 +24,6 @@ type Log = (line: string) => void
 
 function maskInCi(secret: string): void {
   if (isCi()) process.stdout.write(`::add-mask::${secret}\n`)
-}
-
-export function reviewRunDir(pr: PullRequest, env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
-  const [, owner = '', repo = ''] = new URL(pr.url).pathname.split('/')
-  const run = `${pr.number}-${pr.baseRefOid}-${pr.headRefOid}`
-  return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yoke', 'reviews', owner, repo, run)
-}
-
-const cachedOutputs = ['reviewer1.md', 'reviewer2.md', 'synthesis.md', 'review.md', 'models.json', 'slots.json']
-
-function prepareRunDir(reviewDir: string, force: boolean): void {
-  mkdirSync(reviewDir, { recursive: true })
-  if (force) for (const name of cachedOutputs) rmSync(join(reviewDir, name), { force: true })
 }
 
 async function reviewAtHead(
@@ -56,6 +45,11 @@ async function reviewAtHead(
   } finally {
     rmSync(checkoutDir, { recursive: true, force: true })
   }
+}
+
+function reviewWithSearchTools(...[pr, reviewDir, request, slots, ui, options]: Parameters<typeof reviewAtHead>): Promise<ReviewResult> {
+  const install = (deps: SearchToolDeps) => timed(ui, 'installing fd and rg for pi', () => installSearchTools(deps))
+  return withSearchTools(slots, (withTools) => reviewAtHead(pr, reviewDir, request, withTools, ui, options), { install })
 }
 
 export type ReviewOptions = { post: boolean; force: boolean; head?: string }
@@ -113,7 +107,7 @@ export async function reviewPr(
     }
     await timed(ui, 'checking each reviewer can run', () => assertViable(slots))
     log(`review folder: ${reviewDir}`)
-    const result = await reviewAtHead(pr, reviewDir, buildRequest(pr, diff, prior), slots, ui, {
+    const result = await reviewWithSearchTools(pr, reviewDir, buildRequest(pr, diff, prior), slots, ui, {
       strict: ci,
       untrusted: head !== undefined,
     })
