@@ -3,9 +3,9 @@
   "private": true,
   "description": "Tools the CI review installs with npm ci, so every package is checked against this lockfile",
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.316",
+    "@anthropic-ai/claude-code": "2.1.329",
     "@earendil-works/pi-coding-agent": "1.5.2",
-    "@makerx/yoke": "0.18.0",
-    "@openai/codex": "0.166.0"
+    "@makerx/yoke": "0.18.1",
+    "@openai/codex": "0.171.0"
   }
 }
