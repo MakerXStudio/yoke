@@ -8,6 +8,7 @@ import { enforceReviewGate, type GateApi, type Repo, repoSchema } from './ciGate
 import { appKeySecret } from './ciRisk'
 import { appNames, findCaller, workflowCheck } from './ciRiskCaller'
 import { defaultClientIdVariable } from './ciRiskLocal'
+import { lockFileProblem } from './ciRiskLockFiles'
 import { mergeModeCheck, type RiskApi } from './ciRiskMerge'
 import { orgCheck, secretKind, variableKind } from './ciRiskOrg'
 import { appCheck, workingCheck } from './ciRiskRuns'
@@ -45,7 +46,9 @@ function localPolicy(root: string): LocalPolicy {
   const path = join(root, riskPolicyPath)
   if (!existsSync(path)) return {}
   try {
-    return { mode: parseRiskPolicy(readFileSync(path, 'utf8')).mode }
+    const policy = parseRiskPolicy(readFileSync(path, 'utf8'))
+    const lockFiles = lockFileProblem(policy.alwaysHuman)
+    return { mode: policy.mode, ...(lockFiles ? { error: `${riskPolicyPath} ${lockFiles}` } : {}) }
   } catch (error) {
     if (error instanceof RiskPolicyError) return { error: error.message }
     throw error

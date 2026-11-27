@@ -13,7 +13,7 @@ If \`yoke\` is not found, run \`npm i -g @makerx/yoke\`.
 
 ## Policy
 
-When the Policy line fails because \`.github/yoke-risk.yml\` is missing, draft one; when it shows a parse error, fix the file. Run \`yoke review ci-risk --example-policy\` for the example policy and its comments.
+When the Policy line fails because \`.github/yoke-risk.yml\` is missing, draft one; when it fails on the local file, fix the file as it says. Run \`yoke review ci-risk --example-policy\` for the example policy and its comments.
 
 Read the repo's layout (\`git ls-files\`, its top-level directories and package manifests) before drafting, and tailor these keys to it:
 
@@ -21,9 +21,9 @@ Read the repo's layout (\`git ls-files\`, its top-level directories and package 
 - \`lowRisk\`: globs for files no one needs to eyeball in this repo, such as docs, naming paths that exist here rather than the example's.
 - \`alwaysHuman\`: globs for files that always need a human here, such as auth, payments, migrations, infrastructure, deployment and secrets handling, naming paths that exist here.
 
-Keep the example's other keys and comments. Show the draft with a one-line reason for each glob and get the user's sign-off before writing it; fold in their changes and ask again until they approve.
+Keep the example's other keys and comments. Write the draft to \`.github/yoke-risk.yml\` without committing it and run \`yoke review ci-risk\` again; while its Policy line fails on the local file, fix the file as it says and run it again.
 
-Write the approved policy to \`.github/yoke-risk.yml\` and run \`yoke review ci-risk\` again; its Policy line shows the local file's parse error if it has one.
+Then show the draft with a one-line reason for each glob and get the user's sign-off before committing it; fold in their changes, check them with \`yoke review ci-risk\` the same way, and ask again until they approve.
 
 ## Setup PR
 

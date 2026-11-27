@@ -293,6 +293,22 @@ describe('checkRiskSetup', () => {
     expect(policy.detail).toMatch(/^The local \.github\/yoke-risk\.yml is invalid/)
   })
 
+  it('fails a local policy that lists lock files in alwaysHuman', async () => {
+    const { byName } = await check({
+      local: { '.github/yoke-risk.yml': "alwaysHuman:\n  - 'infra/**'\n  - 'package-lock.json'\n  - '**/yarn.lock'\n" },
+    })
+    expect(byName('Policy')).toMatchObject({
+      passed: false,
+      detail:
+        'The local .github/yoke-risk.yml lists lock files in `alwaysHuman` (`package-lock.json`, `**/yarn.lock`); no one reviews a lock file by hand, so remove them.',
+    })
+  })
+
+  it('passes a local policy whose alwaysHuman names no lock file', async () => {
+    const { byName } = await check({ local: { '.github/yoke-risk.yml': "alwaysHuman:\n  - 'package.json'\n" } })
+    expect(byName('Policy').passed).toBe(true)
+  })
+
   it('reports the App as not installed from a failed App token step, with the install link', async () => {
     const { byName } = await check({
       runs: [
