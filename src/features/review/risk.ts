@@ -11,7 +11,7 @@ import { type Decision, decide, riskSection, withRiskSection } from './riskDecis
 import { fetchPolicy, fetchPull, type Policy, type PostedReview, type PullInfo, rate, reviewAuthor } from './riskInputs'
 import { type AppClient, enableMerge, withdraw } from './riskMerge'
 import { riskPolicyPath, type RiskPolicy, withAiRating } from './riskPolicy'
-import { sample } from './riskSample'
+import { markSampled, rollSample, type Sampled } from './riskSample'
 
 export type RiskDeps = {
   get: (path: string) => Promise<unknown>
@@ -28,14 +28,28 @@ function evidence(head: string, policy: Policy, mode: string | undefined): strin
   return `Head: \`${head}\` · Policy: [\`${riskPolicyPath}\`](${policy.url}) at \`${policy.sha}\` on \`${policy.branch}\`${mode ? ` · Mode: \`${mode}\`` : ''}`
 }
 
-type Act = { repo: string; pull: PullInfo; reviews: PostedReview[]; policy: RiskPolicy | null; app: AppClient }
+type Act = { repo: string; pull: PullInfo; reviews: PostedReview[]; policy: RiskPolicy | null; app: AppClient; sampled: Sampled | null }
 
-async function act(decision: Decision, approvalBody: string, { repo, pull, reviews, policy, app }: Act, deps: RiskDeps) {
+const sampledWithdrawal = (head: string) => ({
+  because: 'this PR was sampled for a human check',
+  message: `${head} was sampled for a human check, so it needs a manual approval.`,
+})
+
+async function act(decision: Decision, approvalBody: string, { repo, pull, reviews, policy, app, sampled }: Act, deps: RiskDeps) {
+  if (sampled && policy)
+    return [
+      ...(sampled.fresh ? await markSampled(repo, pull, policy, app) : []),
+      ...(await withdraw(repo, pull, reviews, app, sampledWithdrawal(pull.head.sha))),
+    ]
   if (!decision.approved || !policy) return withdraw(repo, pull, reviews, app)
   await app.post(`repos/${repo}/pulls/${pull.number}/reviews`, { commit_id: pull.head.sha, event: 'APPROVE', body: approvalBody })
   deps.log(`Approved #${pull.number} at ${pull.head.sha} as ${app.login}.`)
-  const sampled = await sample(repo, pull, policy, app, deps.random)
-  return [...sampled, ...(policy.mode === 'merge' ? [await enableMerge(repo, pull, policy, app)] : [])]
+  return policy.mode === 'merge' ? [await enableMerge(repo, pull, policy, app)] : []
+}
+
+function sampleDecision(decision: Decision, policy: RiskPolicy | null, pull: PullInfo, random: () => number) {
+  const sampled = decision.approved && policy ? rollSample(pull, policy, random) : null
+  return { sampled, decision: sampled ? { ...decision, approved: false, blockers: [sampled.reason] } : decision }
 }
 
 function authorCheck(repo: string, pull: PullInfo, policy: RiskPolicy | null, deps: RiskDeps): Promise<AuthorCheck> {
@@ -64,7 +78,7 @@ export async function riskReview(reviewResult: string, { repo, event }: GateCont
   if (reviewResult === 'skipped') return unreviewedPush(repo, pull, reviews, deps.app)
   const { policy, rating } = rate(policyFile.text, files, pull)
   const synthesis = posted ? deps.findings(pull) : null
-  const decision = decide(withAiRating(rating, synthesis?.risk), {
+  const decided = decide(withAiRating(rating, synthesis?.risk), {
     reviewResult,
     repo,
     pull,
@@ -73,8 +87,11 @@ export async function riskReview(reviewResult: string, { repo, event }: GateCont
     hasApp: !!deps.app,
     author: await authorCheck(repo, pull, policy, deps),
   })
+  const { sampled, decision } = sampleDecision(decided, policy, pull, deps.random)
   const proof = evidence(pull.head.sha, policyFile, policy?.mode)
-  const actions = deps.app ? await act(decision, riskSection(decision, proof), { repo, pull, reviews, policy, app: deps.app }, deps) : []
+  const actions = deps.app
+    ? await act(decision, riskSection(decision, proof), { repo, pull, reviews, policy, app: deps.app, sampled }, deps)
+    : []
   const section = riskSection(decision, proof, actions)
   if (posted)
     await deps.put(`repos/${repo}/pulls/${pull.number}/reviews/${posted.id}`, {

@@ -28,7 +28,6 @@ const policySchema = z
     sample: z
       .object({
         rate: z.number().min(0).max(1).default(0),
-        reviewers: z.array(principal).default([]),
         label: z.string().trim().min(1).max(50).default(sampleLabel),
       })
       .prefault({}),

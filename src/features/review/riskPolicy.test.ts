@@ -12,7 +12,7 @@ describe('parseRiskPolicy', () => {
       alwaysHuman: ['src/auth/**'],
       author: { minMergedPrs: 1 },
       trusted: [],
-      sample: { rate: 0, reviewers: [], label: 'yoke-risk-sampled' },
+      sample: { rate: 0, label: 'yoke-risk-sampled' },
     })
   })
 
@@ -23,7 +23,7 @@ describe('parseRiskPolicy', () => {
       alwaysHuman: [],
       author: { minMergedPrs: 1 },
       trusted: [],
-      sample: { rate: 0, reviewers: [], label: 'yoke-risk-sampled' },
+      sample: { rate: 0, label: 'yoke-risk-sampled' },
     })
   })
 
@@ -35,7 +35,7 @@ describe('parseRiskPolicy', () => {
     ).toMatchObject({
       author: { minMergedPrs: 3 },
       trusted: ['alice', 'o/leads'],
-      sample: { rate: 0.1, reviewers: ['bob', 'o/qa'], label: 'yoke-risk-sampled' },
+      sample: { rate: 0.1, label: 'yoke-risk-sampled' },
     })
   })
 
@@ -50,7 +50,6 @@ describe('parseRiskPolicy', () => {
     ['an unknown merge method', 'mergeMethod: fast-forward', 'is invalid'],
     ['a first-time author allowed through', 'author:\n  minMergedPrs: 0', 'is invalid'],
     ['a sample rate above 1', 'sample:\n  rate: 10', 'is invalid'],
-    ['a sample reviewer that is not a login or team', 'sample:\n  reviewers: ["@bob"]', 'must be a login or an org/team-slug'],
     ['a trusted entry that is not a login or team', 'trusted: ["a b"]', 'must be a login or an org/team-slug'],
   ])('rejects %s', (_, text, message) => {
     expect(() => parseRiskPolicy(text)).toThrow(RiskPolicyError)

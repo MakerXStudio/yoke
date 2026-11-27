@@ -143,8 +143,6 @@ trusted:
   - MakerXStudio/leads
 sample:
   rate: 0.1
-  reviewers:
-    - MakerXStudio/leads
 ```
 
 | Key | Description |
@@ -155,8 +153,7 @@ sample:
 | `alwaysHuman` | Globs that always need a human. |
 | `author.minMergedPrs` | Merged PRs in the repo the author needs, at least 1. Fewer makes them a first-time author. Default: `1`. |
 | `trusted` | Logins, and `org/team-slug` teams, exempt from `minMergedPrs`. Default: none. |
-| `sample.rate` | Share of auto-approved PRs, from 0 to 1, sent to a human for a check. Default: `0`. |
-| `sample.reviewers` | Logins, and `org/team-slug` teams in the repo's org, asked to review a sampled PR. Default: none. |
+| `sample.rate` | Share of low-risk PRs, from 0 to 1, left for a human to approve instead of the App. Default: `0`. |
 | `sample.label` | Label added to a sampled PR. Default: `yoke-risk-sampled`. |
 
 The policy is always read from the default branch through the API, never from the PR, so a PR can't loosen its own rating. The rating:
@@ -204,14 +201,14 @@ For `merge` mode, turn on **Allow auto-merge** in the repo's general settings, a
 
 #### Sampled human check
 
-After approving a PR, the App picks it at random with the chance `sample.rate`, labels it `sample.label` and requests a review from `sample.reviewers` (leaving out the PR's author), so a human can approve or request changes before or after it merges. Sampling doesn't hold the PR back: in `merge` mode auto-merge is still enabled. A PR that already has the label isn't sampled again. Each step is listed under **Actions** in the `## Risk` section, including a label or review request GitHub refused.
+Instead of approving a low-risk PR, the App picks it at random with the chance `sample.rate`. A sampled PR isn't approved or auto-merged: the `## Risk` section says it was sampled and would otherwise have been approved (and, in `merge` mode, auto-merged), so it needs a manual approval. The App labels it `sample.label` and withdraws any approval or auto-merge it gave an earlier push. A PR with the label stays sampled on later pushes. Each step is listed under **Actions**, including a label GitHub refused.
 
-`yoke review risk-report [owner/repo...]` lists, for each repo (default: the current one), the risk decision on each of its 30 most recently updated PRs (`--limit`, up to 100), and for each sampled PR the last human approval or changes request, so you can see how often a person disagreed with an automated approval and tune the policy. It reads the decisions from the `## Risk` sections the review posted, and the label from each repo's policy.
+`yoke review risk-report [owner/repo...]` lists, for each repo (default: the current one), the risk decision on each of its 30 most recently updated PRs (`--limit`, up to 100), and for each sampled PR the last human approval or changes request, so you can see how often a person disagreed with what would have been an automated approval and tune the policy. It reads the decisions from the `## Risk` sections the review posted, and the label from each repo's policy.
 
 ```text
-o/r: 4 of the 30 most recently updated PRs have a risk decision; 3 auto-approved, 2 sampled (1 approved, 1 changes requested, 0 without a verdict)
-  #41 merged: low risk, approved by yoke-review · sampled: approved by alice
-  #40 open: low risk, approved by yoke-review · sampled: changes requested by bob
+o/r: 4 of the 30 most recently updated PRs have a risk decision; 1 auto-approved, 2 sampled (1 approved, 1 changes requested, 0 without a verdict)
+  #41 merged: low risk, needs a human · sampled: approved by alice
+  #40 open: low risk, needs a human · sampled: changes requested by bob
   #39 open: medium risk, needs a human
   #38 merged: low risk, approved by yoke-review
 ```

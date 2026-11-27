@@ -509,30 +509,56 @@ describe('riskReview', () => {
   })
 
   describe('sampling', () => {
-    const samplePolicy = 'lowRisk: ["**/*.md"]\nsample:\n  rate: 0.25\n  reviewers: [alice, dev, o/leads, x/other]'
+    const samplePolicy = 'lowRisk: ["**/*.md"]\nsample:\n  rate: 0.25'
 
-    it('labels a sampled auto-approved PR and requests review from the sample reviewers', async () => {
+    it('leaves a sampled low-risk PR for a manual approval and labels it', async () => {
       const { riskDeps, approve } = deps({ policy: samplePolicy, roll: 0.1 })
       const section = await riskReview('success', context(), riskDeps)
-      expect(approve).toHaveBeenNthCalledWith(1, 'repos/o/r/pulls/5/reviews', expect.objectContaining({ event: 'APPROVE' }))
+      expect(approve).not.toHaveBeenCalledWith('repos/o/r/pulls/5/reviews', expect.anything())
       expect(approve).toHaveBeenCalledWith('repos/o/r/issues/5/labels', { labels: ['yoke-risk-sampled'] })
-      expect(approve).toHaveBeenCalledWith('repos/o/r/pulls/5/requested_reviewers', { reviewers: ['alice'], team_reviewers: ['leads'] })
+      expect(section).toContain('**Decision:** low risk, needs a human')
       expect(section).toContain(
-        '**Actions:**\n- sampled for a human check, one of 25% of auto-approved PRs; a human can approve or request changes before or after merge\n- labelled `yoke-risk-sampled`\n- requested a review from `alice`, `o/leads`',
+        '- sampled for a human check, one of 25% of low-risk PRs: it would otherwise have been approved by `yoke-review`, so it needs a manual approval',
       )
+      expect(approve).toHaveBeenCalledOnce()
+      expect(section).toContain('**Actions:**\n- labelled `yoke-risk-sampled`')
     })
 
-    it('does not sample when the roll is above the rate', async () => {
+    it('says a sampled PR would otherwise have been auto-merged in merge mode, and does not enable auto-merge', async () => {
+      const { riskDeps, graphql } = deps({ policy: `mode: merge\n${samplePolicy}`, roll: 0 })
+      const section = await riskReview('success', context(), riskDeps)
+      expect(section).toContain('it would otherwise have been approved and auto-merged by `yoke-review`, so it needs a manual approval')
+      expect(graphql).not.toHaveBeenCalled()
+    })
+
+    it('approves when the roll is above the rate', async () => {
       const { riskDeps, approve } = deps({ policy: samplePolicy, roll: 0.25 })
       expect(await riskReview('success', context(), riskDeps)).not.toContain('sampled')
       expect(approve).toHaveBeenCalledOnce()
+      expect(approve).toHaveBeenCalledWith('repos/o/r/pulls/5/reviews', expect.objectContaining({ event: 'APPROVE' }))
     })
 
-    it('does not sample again a PR already labelled', async () => {
-      const { riskDeps, approve, random } = deps({ policy: `${samplePolicy}\n  label: spot-check`, roll: 0, labels: ['spot-check'] })
-      expect(await riskReview('success', context(), riskDeps)).toContain('already sampled for a human check (labelled `spot-check`)')
+    it('keeps a labelled PR for a manual approval on later pushes without labelling or requesting again', async () => {
+      const { riskDeps, approve, random } = deps({ policy: `${samplePolicy}\n  label: spot-check`, roll: 0.99, labels: ['spot-check'] })
+      const section = await riskReview('success', context(), riskDeps)
+      expect(section).toContain('already sampled for a human check (labelled `spot-check`): it would otherwise have been approved')
       expect(random).not.toHaveBeenCalled()
-      expect(approve).toHaveBeenCalledOnce()
+      expect(approve).not.toHaveBeenCalled()
+    })
+
+    it("withdraws the App's earlier approval and auto-merge when a PR is sampled", async () => {
+      const appApproval = { id: 40, body: '## Risk', state: 'APPROVED', commit_id: 'old', user: { login: 'yoke-review[bot]' } }
+      const posted = { id: 77, body: postedBody, state: 'COMMENTED', commit_id: head, user: { login: 'github-actions[bot]' } }
+      const { riskDeps, graphql } = deps({
+        policy: samplePolicy,
+        roll: 0,
+        reviews: [appApproval, posted],
+        autoMerge: { enabled_by: { login: 'yoke-review[bot]' } },
+      })
+      const section = await riskReview('success', context(), riskDeps)
+      expect(section).toContain('- dismissed the `yoke-review[bot]` approval of `old`, because this PR was sampled for a human check')
+      expect(section).toContain('- disabled the auto-merge `yoke-review[bot]` enabled, because this PR was sampled for a human check')
+      expect(graphql).toHaveBeenCalledOnce()
     })
 
     it('does not sample a PR that is not approved', async () => {
@@ -542,19 +568,11 @@ describe('riskReview', () => {
       expect(approve).not.toHaveBeenCalled()
     })
 
-    it('records a label or review request GitHub refused, and a policy with no reviewers', async () => {
+    it('records a label GitHub refused', async () => {
       const { riskDeps, approve } = deps({ policy: 'lowRisk: ["**/*.md"]\nsample: { rate: 1 }', roll: 0.99 })
-      approve.mockResolvedValueOnce({}).mockRejectedValueOnce(new ReviewError('`gh api` failed: forbidden'))
+      approve.mockRejectedValueOnce(new ReviewError('`gh api` failed: forbidden'))
       const section = await riskReview('success', context(), riskDeps)
       expect(section).toContain('- the `yoke-risk-sampled` label could not be added: `gh api` failed: forbidden')
-      expect(section).toContain('- no review requested: the policy names no `sample.reviewers`')
-    })
-
-    it('samples before enabling auto-merge in merge mode', async () => {
-      const { riskDeps, graphql } = deps({ policy: `mode: merge\n${samplePolicy}`, roll: 0 })
-      const section = await riskReview('success', context(), riskDeps)
-      expect(section).toMatch(/sampled for a human check[\s\S]*auto-merge enabled/)
-      expect(graphql).toHaveBeenCalledOnce()
     })
   })
 

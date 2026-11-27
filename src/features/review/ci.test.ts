@@ -711,7 +711,7 @@ describe('risk-based review', () => {
       expect(parseRiskPolicy(written)).toMatchObject({
         mode: 'approve',
         lowRisk: ['**/*.md'],
-        sample: { rate: 0.1, reviewers: [] },
+        sample: { rate: 0.1 },
       })
       expect(writeExamplePolicy(root)).toBe('kept')
     } finally {

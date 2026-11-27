@@ -12,18 +12,18 @@ const person = (login: string) => ({ login, type: 'User' })
 function deps(policy: string | null = 'sample:\n  rate: 0.5\n  label: spot'): ReportDeps & { get: ReturnType<typeof vi.fn> } {
   const reviews: Record<number, unknown[]> = {
     1: [
-      { body: risk('low risk, approved by `yoke-review`'), state: 'COMMENTED', user: bot },
+      { body: risk('low risk, needs a human'), state: 'COMMENTED', user: bot },
       { body: 'lgtm', state: 'APPROVED', user: person('alice') },
     ],
     2: [
-      { body: risk('low risk, approved by `yoke-review`', 'sampled for a human check, one of 50%'), state: 'COMMENTED', user: bot },
+      { body: risk('low risk, needs a human', 'sampled for a human check, one of 50%'), state: 'COMMENTED', user: bot },
       { body: '', state: 'APPROVED', user: person('dev') },
       { body: 'no', state: 'CHANGES_REQUESTED', user: person('bob') },
     ],
-    3: [{ body: risk('medium risk, needs a human'), state: 'COMMENTED', user: bot }],
+    3: [{ body: risk('low risk, approved by `yoke-review`'), state: 'COMMENTED', user: bot }],
     4: [{ body: '## Adversarial review\n\nno risk section', state: 'COMMENTED', user: bot }],
     5: [
-      { body: risk('low risk, approved by `yoke-review`'), state: 'COMMENTED', user: bot },
+      { body: risk('low risk, needs a human'), state: 'COMMENTED', user: bot },
       { body: 'hmm', state: 'COMMENTED', user: person('carol') },
     ],
   }
@@ -55,11 +55,11 @@ describe('riskReport', () => {
   it("lists each risk decision and each sampled PR's human verdict", async () => {
     expect(await riskReport('o/r', 30, deps())).toBe(
       [
-        'o/r: 4 of the 5 most recently updated PRs have a risk decision; 3 auto-approved, 3 sampled (1 approved, 1 changes requested, 1 without a verdict)',
-        '  #1 merged: low risk, approved by yoke-review · sampled: approved by alice',
-        '  #2 open: low risk, approved by yoke-review · sampled: changes requested by bob',
-        '  #3 open: medium risk, needs a human',
-        '  #5 open: low risk, approved by yoke-review · sampled: commented, no verdict yet',
+        'o/r: 4 of the 5 most recently updated PRs have a risk decision; 1 auto-approved, 3 sampled (1 approved, 1 changes requested, 1 without a verdict)',
+        '  #1 merged: low risk, needs a human · sampled: approved by alice',
+        '  #2 open: low risk, needs a human · sampled: changes requested by bob',
+        '  #3 open: low risk, approved by yoke-review',
+        '  #5 open: low risk, needs a human · sampled: commented, no verdict yet',
       ].join('\n'),
     )
   })

@@ -26,10 +26,9 @@ export const examplePolicy = [
   '  minMergedPrs: 1',
   '# Logins and org/team slugs exempt from minMergedPrs, as repo admins and deployment environment reviewers are.',
   'trusted: []',
-  '# Share of auto-approved PRs labelled and sent to these logins or org/team slugs for a human check.',
+  '# Share of low-risk PRs left for a human to approve instead (0.1 = 1 in 10), labelled yoke-risk-sampled.',
   'sample:',
   '  rate: 0.1',
-  '  reviewers: []',
   '',
 ].join('\n')
 
