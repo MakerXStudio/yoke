@@ -10,7 +10,7 @@ describe('parseRiskPolicy', () => {
       mode: 'approve',
       lowRisk: ['**/*.{tsx,md}'],
       alwaysHuman: ['src/auth/**'],
-      author: { minMergedPrs: 1, maxChangesRequested: 1, recentPrs: 20 },
+      author: { minMergedPrs: 1 },
       trusted: [],
       sample: { rate: 0, reviewers: [], label: 'yoke-risk-sampled' },
     })
@@ -21,7 +21,7 @@ describe('parseRiskPolicy', () => {
       mode: 'approve',
       lowRisk: [],
       alwaysHuman: [],
-      author: { minMergedPrs: 1, maxChangesRequested: 1, recentPrs: 20 },
+      author: { minMergedPrs: 1 },
       trusted: [],
       sample: { rate: 0, reviewers: [], label: 'yoke-risk-sampled' },
     })
@@ -33,10 +33,14 @@ describe('parseRiskPolicy', () => {
         'author:\n  minMergedPrs: 3\ntrusted: [alice, o/leads]\nsample:\n  rate: 0.1\n  reviewers: [bob, o/qa]\n  unknown: 1',
       ),
     ).toMatchObject({
-      author: { minMergedPrs: 3, maxChangesRequested: 1, recentPrs: 20 },
+      author: { minMergedPrs: 3 },
       trusted: ['alice', 'o/leads'],
       sample: { rate: 0.1, reviewers: ['bob', 'o/qa'], label: 'yoke-risk-sampled' },
     })
+  })
+
+  it('ignores the removed author.maxChangesRequested and author.recentPrs in an existing policy', () => {
+    expect(parseRiskPolicy('author:\n  minMergedPrs: 2\n  maxChangesRequested: 1\n  recentPrs: 20\n').author).toEqual({ minMergedPrs: 2 })
   })
 
   it.each([

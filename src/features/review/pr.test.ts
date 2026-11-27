@@ -11,6 +11,8 @@ import {
   fetchPriorComments,
   githubDelete,
   githubGraphql,
+  githubLog,
+  githubPatch,
   githubPost,
   openPendingReview,
   ReviewError,
@@ -242,6 +244,27 @@ describe('githubPost', () => {
 
   it('returns null for an empty response', async () => {
     expect(await githubPost('repos/o/r/actions/jobs/1/rerun', {}, returning(''))).toBeNull()
+  })
+})
+
+describe('githubLog', () => {
+  it('returns the raw log text, escape sequences allowed', async () => {
+    const exec = returning('line one\n##[error]boom\n')
+    expect(await githubLog('repos/o/r/actions/jobs/1/logs', exec)).toBe('line one\n##[error]boom\n')
+    expect(exec).toHaveBeenCalledWith('gh', ['api', '--allow-escape-sequences', 'repos/o/r/actions/jobs/1/logs'])
+  })
+})
+
+describe('githubPatch', () => {
+  it('sends the body and parses the response', async () => {
+    const exec = returning('{"allow_auto_merge":true}')
+    expect(await githubPatch('repos/o/r', { allow_auto_merge: true }, exec)).toEqual({ allow_auto_merge: true })
+    expect(exec).toHaveBeenCalledWith(
+      'gh',
+      ['api', '--method', 'PATCH', 'repos/o/r', '--input', '-'],
+      undefined,
+      '{"allow_auto_merge":true}',
+    )
   })
 })
 

@@ -176,6 +176,14 @@ export async function githubPut(path: string, body: unknown, exec: Run = run): P
   return JSON.parse(await exec('gh', ['api', '--method', 'PUT', path, '--input', '-'], undefined, JSON.stringify(body)))
 }
 
+export async function githubPatch(path: string, body: unknown, exec: Run = run): Promise<unknown> {
+  return JSON.parse(await exec('gh', ['api', '--method', 'PATCH', path, '--input', '-'], undefined, JSON.stringify(body)))
+}
+
+export async function githubLog(path: string, exec: Run = run): Promise<string> {
+  return exec('gh', ['api', '--allow-escape-sequences', path])
+}
+
 export async function githubPaginate(path: string, exec: Run = run): Promise<unknown[]> {
   const output = await exec('gh', ['api', '--paginate', path, '--jq', '.[]'])
   return output

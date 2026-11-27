@@ -15,7 +15,7 @@ const workflowSchema = z.looseObject({
 
 type Workflow = z.infer<typeof workflowSchema>
 
-function parseWorkflow(content: string): Workflow | undefined {
+export function parseWorkflow(content: string): Workflow | undefined {
   try {
     const result = workflowSchema.safeParse(parse(content))
     return result.success ? result.data : undefined
@@ -24,7 +24,7 @@ function parseWorkflow(content: string): Workflow | undefined {
   }
 }
 
-function callsReview(uses: unknown, repo: string): boolean {
+export function callsReview(uses: unknown, repo: string): boolean {
   if (typeof uses !== 'string') return false
   if (uses.toLowerCase().startsWith(reviewWorkflowPrefix)) return true
   return repo.toLowerCase() === yokeRepo.toLowerCase() && uses === localReviewWorkflow

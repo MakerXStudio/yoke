@@ -138,7 +138,6 @@ alwaysHuman:
   - 'infra/**'
 author:
   minMergedPrs: 1
-  maxChangesRequested: 1
 trusted:
   - alice
   - MakerXStudio/leads
@@ -155,8 +154,6 @@ sample:
 | `lowRisk` | Globs no one needs to eyeball. |
 | `alwaysHuman` | Globs that always need a human. |
 | `author.minMergedPrs` | Merged PRs in the repo the author needs, at least 1. Fewer makes them a first-time author. Default: `1`. |
-| `author.maxChangesRequested` | Most changes-requested reviews per merged PR, averaged over the author's recent merged PRs. More makes them a high-churn author. Default: `1`. |
-| `author.recentPrs` | How many of the author's most recent merged PRs the churn average covers, up to 100. Default: `20`. |
 | `trusted` | Logins, and `org/team-slug` teams, exempt from `minMergedPrs`. Default: none. |
 | `sample.rate` | Share of auto-approved PRs, from 0 to 1, sent to a human for a check. Default: `0`. |
 | `sample.reviewers` | Logins, and `org/team-slug` teams in the repo's org, asked to review a sampled PR. Default: none. |
@@ -170,7 +167,7 @@ The policy is always read from the default branch through the API, never from th
 
 A low-risk PR is approved only when the review on this run succeeded and raised no `blocker` or `major` finding, including ones already raised earlier, the PR is from the repo itself, not a fork, and not from a bot, and its author passes the track-record check. The approval is submitted on the head commit the review was posted on.
 
-The track-record check searches the author's merged PRs in the repo. A first-time author, with fewer than `author.minMergedPrs`, or a high-churn author, with more than `author.maxChangesRequested` changes-requested reviews per recent merged PR, is never low risk. Repo admins, required reviewers of any deployment environment (directly or through a team), and anyone listed in `trusted` are exempt from the first-time rule, not the churn rule. Team membership is read with the App, so without it team exemptions can't be checked. The outcome is shown as **Author** in the `## Risk` section, on every PR.
+The track-record check searches the author's merged PRs in the repo. A first-time author, with fewer than `author.minMergedPrs`, is never low risk. Repo admins, required reviewers of any deployment environment (directly or through a team), and anyone listed in `trusted` are exempt from this rule. Team membership is read with the App, so without it team exemptions can't be checked. The outcome is shown as **Author** in the `## Risk` section, on every PR.
 
 In `merge` mode, after approving, the App enables auto-merge bound to the approved head commit. It leaves auto-merge someone already enabled as it is, and records in the `## Risk` section when the repo doesn't allow auto-merge or GitHub refuses it.
 
@@ -179,6 +176,18 @@ When a later run on the PR is not approved, for a push that is no longer low ris
 Every review posted in a repo with a policy, failed reviews included, gets a `## Risk` section with the decision, its reasons (including the AI rating and whether it was used), the head commit SHA, and the policy file's commit SHA on the default branch. The approval carries the same section. A step failure never fails the review job.
 
 `yoke review ci --risk` adds the App's input and secret to the caller, writes an example `.github/yoke-risk.yml` if there is none, and prints the App permissions and repo settings below. With `--print` it prints the example policy instead.
+
+To set it up, run `/review-ci-risk` once `/review-ci`'s workflow is merged. It runs `yoke review ci-risk`, drafts a `.github/yoke-risk.yml` from the repo's layout (`mode`, `lowRisk` and `alwaysHuman` globs naming the repo's own paths) for your sign-off, commits it with the caller's App lines and raises the setup PR, then lists only the steps that need an org owner or repo admin. Run it again once the PR is merged and a PR has been reviewed to confirm the setup.
+
+`yoke review ci-risk` checks each requirement against GitHub and prints a pass or fail line, with a link, for each, exiting non-zero until all pass. `yoke review ci-risk --example-policy` prints an example policy, with comments, and checks nothing. The requirements:
+
+- **Gate:** `review / gate` is required on the default branch. It requires it itself, as `ci-gate` does, and otherwise shows `ci-gate`'s reason.
+- **Workflow:** the default branch's caller passes `review-app-client-id` and `YOKE_REVIEW_APP_PRIVATE_KEY` to `review.yml`. When it doesn't, it adds them to the local caller (`.github/workflows/review-pr.yml` unless the default branch's caller is another file) for you to commit and merge.
+- **Org variable** and **Org secret:** they reach the repo. They fail only when the org shares them with selected repos that exclude this one, with the org settings link.
+- **Policy:** `.github/yoke-risk.yml` is on the default branch and parses, or its parse error. A local `.github/yoke-risk.yml` that doesn't parse fails it too, so a draft is checked before it's merged.
+- **Merge mode:** in `merge` mode, read from the local `.github/yoke-risk.yml` if there is one, otherwise the default branch's, **Allow auto-merge** is on and the default branch requires 1 approval and dismisses stale approvals on push, through classic branch protection or rulesets. It turns on what's missing, adding a `yoke risk` ruleset for the approval rule, and says what it changed; without the rights to, it says what a repo admin must do.
+- **App installed:** the App token step of the latest review run that tried it succeeded, read from the job log since the step continues on error; a failed step gives the App's install link.
+- **Working:** the latest `## Risk` section on the 20 most recently updated PRs was posted with the App. Until one is, open or push to a PR once the setup is merged.
 
 To set it up by hand, create a GitHub App named `yoke-review`, with no webhook and these permissions: repository Contents read and write, Pull requests read and write, Metadata read; organization Members read. Install it only on the repos that opt in, then pass its client ID and private key to the caller:
 

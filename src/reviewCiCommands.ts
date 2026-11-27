@@ -1,5 +1,6 @@
 import type { Command } from 'commander'
 
+import { fail } from './cliFail'
 import { addSettingOptions, flagSettings, settingsHelp } from './cliSettings'
 import { resolveSettings, settingKeys } from './features/config/settings'
 import { ConfigError, readUserConfig, userConfigPath } from './features/config/userConfig'
@@ -7,14 +8,12 @@ import {
   callerWorkflow,
   callerWorkflowPath,
   type EntraFlags,
-  gateCheck,
   githubRepo,
   renderCallerWorkflow,
   repoRoot,
   reviewCiReport,
   writeCallerWorkflow,
 } from './features/review/ci'
-import { enforceReviewGate } from './features/review/ciGate'
 import { writeExamplePolicy } from './features/review/ciRisk'
 import { runReviewGate } from './features/review/gate'
 import { githubGet, githubPaginate, ReviewError } from './features/review/pr'
@@ -23,14 +22,9 @@ import { runRiskReview } from './features/review/risk'
 import { riskPolicyPath } from './features/review/riskPolicy'
 import { runRiskReport } from './features/review/riskReport'
 import { runUnapproveReview } from './features/review/unapprove'
+import { addSetupCommands } from './reviewSetupCommands'
 
 const ciKeys = settingKeys.filter((key) => /^review\.\w+\.(harness|model)$/.test(key))
-
-function fail(error: unknown, ...expected: (typeof ReviewError | typeof ConfigError)[]): void {
-  if (!expected.some((type) => error instanceof type) || !(error instanceof Error)) throw error
-  console.error(error.message)
-  process.exitCode = 1
-}
 
 const resultHelp =
   'result of the review job on this event: success, failure, cancelled or skipped; pending marks an approved review as running'
@@ -111,16 +105,7 @@ export function addReviewCiCommands(review: Command): void {
       }
     })
 
-  review
-    .command('ci-gate')
-    .description(`Require the ${gateCheck} check on the default branch with a ruleset, once the CI review workflow is merged`)
-    .action(async () => {
-      try {
-        console.log((await enforceReviewGate()).message)
-      } catch (error) {
-        fail(error, ReviewError)
-      }
-    })
+  addSetupCommands(review)
 
   review
     .command('gate')

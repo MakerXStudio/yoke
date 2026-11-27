@@ -5,10 +5,11 @@ import { join } from 'node:path'
 import { ownerMarker, renderSkill, type Skill } from '../../skill'
 import { prSkill } from '../pr/skill'
 import { reviewCiGateSkill } from '../review/ciGateSkill'
+import { reviewCiRiskSkill } from '../review/ciRiskSkill'
 import { reviewCiSkill } from '../review/ciSkill'
 import { reviewSkill } from '../review/skill'
 
-export const bundledSkills: Skill[] = [prSkill, reviewSkill, reviewCiSkill, reviewCiGateSkill]
+export const bundledSkills: Skill[] = [prSkill, reviewSkill, reviewCiSkill, reviewCiGateSkill, reviewCiRiskSkill]
 
 export type SyncResult = { written: string[]; skipped: string[] }
 

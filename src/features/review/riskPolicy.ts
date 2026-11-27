@@ -22,8 +22,6 @@ const policySchema = z
     author: z
       .object({
         minMergedPrs: z.number().int().min(1).default(1),
-        maxChangesRequested: z.number().min(0).default(1),
-        recentPrs: z.number().int().min(1).max(100).default(20),
       })
       .prefault({}),
     trusted: z.array(principal).default([]),

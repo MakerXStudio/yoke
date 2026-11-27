@@ -94,6 +94,34 @@ describe('syncSkills', () => {
     expect(skill).toContain('say what is missing and how to fix it')
   })
 
+  it('writes a user-level review-ci-risk skill, only the user can invoke, that runs yoke review ci-risk', () => {
+    const home = join(target, 'home', '.claude', 'skills')
+    syncSkills(destination, home)
+    const skill = readFileSync(join(home, 'review-ci-risk', 'SKILL.md'), 'utf8')
+    expect(skill.split('---')[1]).toContain('\ndisable-model-invocation: true\n')
+    expect(skill).toContain('Run `yoke review ci-risk` and relay its checklist.')
+  })
+
+  it("has the review-ci-risk skill draft a policy from the repo's layout, get sign-off and raise the setup PR", () => {
+    const home = join(target, 'home', '.claude', 'skills')
+    syncSkills(destination, home)
+    const skill = readFileSync(join(home, 'review-ci-risk', 'SKILL.md'), 'utf8')
+    expect(skill).toContain('yoke review ci-risk --example-policy')
+    expect(skill).not.toContain('ci --risk --print')
+    expect(skill).toContain("Read the repo's layout")
+    expect(skill).toContain("get the user's sign-off before writing it")
+    expect(skill).toContain('yoke pr raise --help')
+    expect(skill).toContain('Never ask anyone to set the App variable or secret on the repo')
+  })
+
+  it('has the review-ci skill point to /review-ci-risk instead of handling --risk', () => {
+    syncSkills(destination, destination)
+    const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')
+    expect(skill).toContain('Never pass `--risk`')
+    expect(skill).toContain('`/review-ci-risk`')
+    expect(skill).not.toContain('yoke-risk.yml')
+  })
+
   it('has the review-ci skill edit an existing review workflow in place instead of overwriting it', () => {
     syncSkills(destination, destination)
     const skill = readFileSync(join(destination, 'review-ci', 'SKILL.md'), 'utf8')

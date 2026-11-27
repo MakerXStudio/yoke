@@ -53,7 +53,7 @@ type Fixture = {
   app?: boolean
   autoMerge?: { enabled_by: { login: string } } | null
   repoSettings?: Record<string, boolean>
-  history?: { merged: number; rounds: number[] } | Error
+  history?: { merged: number } | Error
   permission?: string
   environments?: unknown[]
   teams?: string[]
@@ -82,7 +82,7 @@ function deps({
   app = true,
   autoMerge = null,
   repoSettings = { allow_auto_merge: true, allow_merge_commit: true, allow_squash_merge: true },
-  history = { merged: 5, rounds: [0, 1, 0, 0, 0] },
+  history = { merged: 5 },
   permission = 'write',
   environments = [],
   teams = [],
@@ -129,7 +129,7 @@ function deps({
     if (history instanceof Error) throw history
     return {
       data: {
-        search: { issueCount: history.merged, nodes: history.rounds.map((totalCount) => ({ reviews: { totalCount } })) },
+        search: { issueCount: history.merged },
       },
     }
   })
@@ -185,7 +185,7 @@ describe('riskReview', () => {
         '## Risk',
         '**Decision:** low risk, approved by `yoke-review`',
         '- every changed file matches `lowRisk` in the policy',
-        '**Author:** passes: `dev` has 5 merged PRs here (at least 1); 0.2 changes-requested reviews per PR over the last 5 merged PRs (at most 1)',
+        '**Author:** passes: `dev` has 5 merged PRs here (at least 1)',
         `Head: \`${head}\` · Policy: [\`.github/yoke-risk.yml\`](https://github.com/o/r/blob/main/.github/yoke-risk.yml) at \`${policySha}\` on \`main\` · Mode: \`approve\``,
       ].join('\n\n'),
     )
@@ -322,28 +322,18 @@ describe('riskReview', () => {
     it("searches the repo for the author's merged PRs", async () => {
       const { riskDeps, searches } = deps()
       await riskReview('success', context(), riskDeps)
-      expect(searches).toHaveBeenCalledWith(expect.stringContaining('first: 20'), {
-        q: 'repo:o/r is:pr is:merged author:dev sort:created-desc',
+      expect(searches).toHaveBeenCalledWith(expect.stringContaining('issueCount'), {
+        q: 'repo:o/r is:pr is:merged author:dev',
       })
     })
 
     it.each<[string, Fixture, string]>([
-      [
-        'a first-time author',
-        { history: { merged: 0, rounds: [] } },
-        '`dev` has 0 merged PRs here (at least 1), so is a first-time author',
-      ],
+      ['a first-time author', { history: { merged: 0 } }, '`dev` has 0 merged PRs here (at least 1), so is a first-time author'],
       [
         'an author below the policy minimum',
         { policy: 'lowRisk: ["**/*.md"]\nauthor:\n  minMergedPrs: 10', permission: 'maintain' },
         'has 5 merged PRs here (at least 10), so is a first-time author',
       ],
-      [
-        'a high-churn author',
-        { history: { merged: 3, rounds: [2, 3, 1] } },
-        '2.0 changes-requested reviews per PR over the last 3 merged PRs (at most 1), so is a high-churn author',
-      ],
-      ['a high-churn admin', { history: { merged: 3, rounds: [2, 3, 1] }, permission: 'admin' }, 'so is a high-churn author'],
       [
         'an author whose history cannot be read',
         { history: new ReviewError('`gh api graphql` failed: boom') },
@@ -359,7 +349,7 @@ describe('riskReview', () => {
       expect(approve).not.toHaveBeenCalled()
     })
 
-    const firstTime = { history: { merged: 0, rounds: [] } }
+    const firstTime = { history: { merged: 0 } }
 
     it.each<[string, Fixture, string]>([
       ['listed as trusted', { policy: 'lowRisk: ["**/*.md"]\ntrusted: [Dev]' }, 'is listed as `trusted` in the policy'],

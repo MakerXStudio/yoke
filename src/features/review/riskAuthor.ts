@@ -17,7 +17,6 @@ const historySchema = z.object({
   data: z.object({
     search: z.object({
       issueCount: z.number(),
-      nodes: z.array(z.object({ reviews: z.object({ totalCount: z.number() }).optional() })),
     }),
   }),
 })
@@ -53,18 +52,13 @@ function isNotFound(error: unknown): boolean {
 
 const sameLogin = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase()
 
-async function history(repo: string, login: string, recent: number, api: AuthorApi) {
+async function mergedPrs(repo: string, login: string, api: AuthorApi): Promise<number> {
   const query = `query($q: String!) {
-  search(query: $q, type: ISSUE, first: ${recent}) {
+  search(query: $q, type: ISSUE, first: 1) {
     issueCount
-    nodes { ... on PullRequest { reviews(states: CHANGES_REQUESTED) { totalCount } } }
   }
 }`
-  const { search } = historySchema.parse(
-    await api.graphql(query, { q: `repo:${repo} is:pr is:merged author:${login} sort:created-desc` }),
-  ).data
-  const rounds = search.nodes.reduce((sum, node) => sum + (node.reviews?.totalCount ?? 0), 0)
-  return { merged: search.issueCount, recent: search.nodes.length, rounds }
+  return historySchema.parse(await api.graphql(query, { q: `repo:${repo} is:pr is:merged author:${login}` })).data.search.issueCount
 }
 
 async function isTeamMember(org: string, slug: string, login: string, api: AuthorApi): Promise<boolean> {
@@ -128,30 +122,17 @@ const plural = (count: number, word: string): string => `${count} ${word}${count
 export async function checkAuthor(repo: string, author: Author, policy: RiskPolicy, api: AuthorApi): Promise<AuthorCheck> {
   const login = `\`${author.login}\``
   if (author.type === 'Bot') return { passed: false, outcome: `fails: ${login} is a bot, so its track record is not checked` }
-  const { minMergedPrs, maxChangesRequested, recentPrs } = policy.author
-  let record: Awaited<ReturnType<typeof history>>
+  const { minMergedPrs } = policy.author
+  let count: number
   try {
-    record = await history(repo, author.login, recentPrs, api)
+    count = await mergedPrs(repo, author.login, api)
   } catch (error) {
     return { passed: false, outcome: `fails: ${login}'s track record could not be read: ${message(error)}` }
   }
-  const perPr = record.recent ? record.rounds / record.recent : 0
-  const churn = `${perPr.toFixed(1)} changes-requested reviews per PR over the last ${plural(record.recent, 'merged PR')} (at most ${maxChangesRequested})`
-  const merged = `${login} has ${plural(record.merged, 'merged PR')} here (at least ${minMergedPrs})`
-  const facts: string[] = []
-  let passed = true
-  if (record.merged < minMergedPrs) {
-    const { reason, notes } = await firstExemption(exemptionChecks(repo, author.login, policy.trusted, api))
-    const unchecked = notes.length ? `; could not check every exemption: ${notes.join('; ')}` : ''
-    if (reason) facts.push(`${merged}, but ${reason}, so the first-time rule does not apply`)
-    else {
-      facts.push(`${merged}, so is a first-time author and not low risk${unchecked}`)
-      passed = false
-    }
-  } else facts.push(merged)
-  if (perPr > maxChangesRequested) {
-    facts.push(`${churn}, so is a high-churn author and not low risk`)
-    passed = false
-  } else facts.push(churn)
-  return { passed, outcome: `${passed ? 'passes' : 'fails'}: ${facts.join('; ')}` }
+  const merged = `${login} has ${plural(count, 'merged PR')} here (at least ${minMergedPrs})`
+  if (count >= minMergedPrs) return { passed: true, outcome: `passes: ${merged}` }
+  const { reason, notes } = await firstExemption(exemptionChecks(repo, author.login, policy.trusted, api))
+  if (reason) return { passed: true, outcome: `passes: ${merged}, but ${reason}, so the first-time rule does not apply` }
+  const unchecked = notes.length ? `; could not check every exemption: ${notes.join('; ')}` : ''
+  return { passed: false, outcome: `fails: ${merged}, so is a first-time author and not low risk${unchecked}` }
 }
