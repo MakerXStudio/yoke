@@ -8,6 +8,11 @@ const synthesis = `# Code review synthesis
 
 Mostly sound; one crash on empty input.
 
+## Risk
+
+- Rating: Medium
+- Reason: Changes list handling used by the API.
+
 ## Findings
 
 ### Finding: Style nit
@@ -75,7 +80,19 @@ describe('parseSynthesis', () => {
   })
 
   it('returns nothing for markdown without findings', () => {
-    expect(parseSynthesis('just prose')).toEqual({ summary: '', findings: [] })
+    expect(parseSynthesis('just prose')).toEqual({ summary: '', findings: [], risk: null })
+  })
+
+  it('reads the AI risk rating', () => {
+    expect(parseSynthesis(synthesis).risk).toEqual({ level: 'medium', reason: 'Changes list handling used by the API.' })
+  })
+
+  it.each([
+    ['an unknown rating', '## Risk\n\n- Rating: trivial\n- Reason: Docs only.\n'],
+    ['a missing reason', '## Risk\n\n- Rating: low\n'],
+    ['a missing rating', '## Risk\n\n- Reason: Docs only.\n'],
+  ])('reads no AI risk rating from %s', (_, markdown) => {
+    expect(parseSynthesis(`## Summary\n\nok\n\n${markdown}`).risk).toBeNull()
   })
 })
 
@@ -85,6 +102,10 @@ describe('formatSynthesis', () => {
     expect(output).toContain('[major] src/b.ts:40 — Off by one')
     expect(output).toContain('[nit] no location — Style nit')
     expect(output).toContain('  Recommendation: Return early.')
+  })
+
+  it('prints the AI risk rating', () => {
+    expect(formatSynthesis(parseSynthesis(synthesis))).toContain('Risk: medium — Changes list handling used by the API.')
   })
 
   it('says so when there are no findings', () => {

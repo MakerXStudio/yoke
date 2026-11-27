@@ -25,6 +25,7 @@ yoke sync --user   # ~/.claude/skills
 - `/review [number]` reviews a PR with Claude and Codex, combines their findings and offers to post them. [Configure](src/features/review/README.md#settings).
 - `/review-ci` makes CI review each PR, adding a workflow or switching the repo's existing LLM review workflow over, and helps set its variable and secret. [Details](src/features/review/README.md#ci).
 - `/review-ci-gate` blocks merging until the CI review passes, once its workflow is merged. [Details](src/features/review/README.md#merge-gate).
+- `/review-ci-risk` sets up experimental risk-based review, drafting its policy and raising the setup PR, and confirms it works. [Details](src/features/review/README.md#risk-based-approval).
 
 ## CLI
 
@@ -34,7 +35,10 @@ yoke update                   # update yoke and re-sync its skills where they we
 yoke review [number]          # review a PR (used by /review)
 yoke review ci                # add the CI review workflow (used by /review-ci)
 yoke review ci-gate           # require the review / gate check on the default branch (used by /review-ci-gate)
+yoke review ci-risk           # experimental: check risk-based review's setup, requiring the gate when it can (used by /review-ci-risk)
 yoke review gate <result>     # block merging until the PR's latest, or a fork's approved, review succeeds (used by review.yml)
+yoke review risk <result>     # experimental: approve or auto-merge PRs .github/yoke-risk.yml rates low risk (used by review.yml)
+yoke review risk-report       # experimental: list recent risk decisions and sampled PRs' human verdicts
 yoke models                   # list each provider's models
 ```
 

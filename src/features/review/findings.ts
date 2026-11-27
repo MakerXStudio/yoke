@@ -14,7 +14,11 @@ export type Finding = {
   recommendation: string
 }
 
-export type Synthesis = { summary: string; findings: Finding[] }
+const aiRiskLevels = ['low', 'medium', 'high'] as const
+
+export type AiRisk = { level: (typeof aiRiskLevels)[number]; reason: string }
+
+export type Synthesis = { summary: string; findings: Finding[]; risk?: AiRisk | null }
 
 function oneOf<T extends string>(values: readonly T[], raw: string): T | null {
   const value = raw.toLowerCase()
@@ -46,8 +50,16 @@ function parseFinding(block: string): Finding {
   }
 }
 
-function parseSummary(markdown: string): string {
-  return markdown.match(/^##\s+Summary\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/m)?.[1]?.trim() ?? ''
+function section(markdown: string, heading: string): string | null {
+  return markdown.match(new RegExp(`^##\\s+${heading}\\s*$([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'm'))?.[1]?.trim() ?? null
+}
+
+function parseRisk(markdown: string): AiRisk | null {
+  const block = section(markdown, 'Risk')
+  if (block === null) return null
+  const level = oneOf(aiRiskLevels, field(block, 'Rating'))
+  const reason = field(block, 'Reason')
+  return level && reason ? { level, reason } : null
 }
 
 function rank(finding: Finding): number {
@@ -61,7 +73,11 @@ export function parseSynthesis(markdown: string): Synthesis {
     .split(/^###\s+Finding:\s*/m)
     .slice(1)
     .map(parseFinding)
-  return { summary: parseSummary(markdown), findings: findings.toSorted((a, b) => rank(a) - rank(b)) }
+  return {
+    summary: section(markdown, 'Summary') ?? '',
+    findings: findings.toSorted((a, b) => rank(a) - rank(b)),
+    risk: parseRisk(markdown),
+  }
 }
 
 export function formatLocation({ file, line }: Pick<Finding, 'file' | 'line'>): string {
@@ -69,8 +85,9 @@ export function formatLocation({ file, line }: Pick<Finding, 'file' | 'line'>): 
   return line === null ? file : `${file}:${line}`
 }
 
-export function formatSynthesis({ summary, findings }: Synthesis): string {
+export function formatSynthesis({ summary, findings, risk }: Synthesis): string {
   const lines = [summary || 'No summary.', '']
+  if (risk) lines.push(`Risk: ${risk.level} — ${risk.reason}`, '')
   if (!findings.length) lines.push('No findings.')
   for (const finding of findings) {
     lines.push(`[${finding.severity ?? 'unrated'}] ${formatLocation(finding)} — ${finding.title}`)

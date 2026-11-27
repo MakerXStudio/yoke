@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { Settings } from '../config/settings'
@@ -12,6 +12,7 @@ import { checkoutHead, fetchDiff, fetchPr, fetchPriorComments, github, ReviewErr
 import { assertViable } from './preflight'
 import { buildRequest, type PullRequest } from './request'
 import { logged, reviewLog } from './reviewLog'
+import { reviewRunDir } from './reviewRunDir'
 import { type ReviewResult, ReviewFailure, runReview } from './run'
 import { type ReviewSlots, resolveSlots } from './slots'
 import { type StatusUi, timed } from './status'
@@ -22,12 +23,6 @@ type Log = (line: string) => void
 
 function maskInCi(secret: string): void {
   if (isCi()) process.stdout.write(`::add-mask::${secret}\n`)
-}
-
-export function reviewRunDir(pr: PullRequest, env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
-  const [, owner = '', repo = ''] = new URL(pr.url).pathname.split('/')
-  const run = `${pr.number}-${pr.baseRefOid}-${pr.headRefOid}`
-  return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yoke', 'reviews', owner, repo, run)
 }
 
 const cachedOutputs = ['reviewer1.md', 'reviewer2.md', 'synthesis.md', 'review.md', 'models.json', 'slots.json']

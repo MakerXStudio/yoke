@@ -19,13 +19,13 @@ const gateRuleset = {
 
 const recentPrCount = 20
 
-const repoSchema = z.object({
+export const repoSchema = z.object({
   full_name: z.string(),
   html_url: z.string(),
   default_branch: z.string(),
 })
 
-type Repo = z.infer<typeof repoSchema>
+export type Repo = z.infer<typeof repoSchema>
 
 const branchRulesSchema = z.array(
   z.object({
@@ -60,7 +60,7 @@ async function getUnlessMissing(api: GateApi, path: string): Promise<unknown> {
   }
 }
 
-async function workflowFiles(api: GateApi, repo: Repo): Promise<{ path: string; content: string }[]> {
+export async function workflowFiles(api: GateApi, repo: Repo): Promise<{ path: string; content: string }[]> {
   const ref = `ref=${encodeURIComponent(repo.default_branch)}`
   const listing = await getUnlessMissing(api, `repos/${repo.full_name}/contents/.github/workflows?${ref}`)
   if (listing === undefined) return []

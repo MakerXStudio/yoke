@@ -84,6 +84,8 @@ jobs:
 | `synthesis-harness`, `synthesis-model` | Default: reviewer 1's. |
 | `azure-client-id`, `azure-tenant-id` | Entra app to reach Foundry as, in place of `REVIEW_CI_API_KEY`. See below. |
 | `environment` | GitHub environment the review job runs in. |
+| `yoke-from-source` | `true` runs yoke built from the yoke commit `uses:` resolved to, instead of the locked release, to test an unreleased yoke branch. Default: `false`. See [Verified installs](#verified-installs). |
+| `review-app-client-id` | Experimental: the `yoke-review` App's client ID, with its `YOKE_REVIEW_APP_PRIVATE_KEY` secret. See [Risk-based approval](#risk-based-approval). |
 
 In CI, `yoke review --post` always posts a review, even with no findings, and a failed reviewer or synthesis posts `## Code review failed`. Locally it posts nothing new and synthesises from one reviewer if the other fails. To re-run a CI review, mark the PR as draft, then ready for review.
 
@@ -91,7 +93,7 @@ In CI, `yoke review --post` always posts a review, even with no findings, and a 
 
 CI installs yoke, Claude Code and Codex with `npm ci` from `ci/review-tools/package-lock.json`, checked out from yoke at `job.workflow_sha` (the commit the caller's `uses:` resolved to). npm verifies every package's `sha512` hash.
 
-On a `pull_request` run in `MakerXStudio/yoke` itself, same-repo or fork, each job also builds yoke from that same `job.workflow_sha` and puts it ahead of the locked yoke on `PATH`, so a PR that adds a yoke command and calls it from `review.yml` is tested with that command before it merges and is released. Claude Code and Codex still come from the lockfile. This adds no trust: whoever can open the PR already controls the `review.yml` that run uses, and a fork's `pull_request` run has no secrets and a read-only token. `pull_request_target` runs and every other repo use only the locked yoke, so a maintainer-approved fork review never runs fork code.
+On a `pull_request` run in `MakerXStudio/yoke` itself, same-repo or fork, each job also builds yoke from that same `job.workflow_sha` and puts it ahead of the locked yoke on `PATH`, so a PR that adds a yoke command and calls it from `review.yml` is tested with that command before it merges and is released. Claude Code and Codex still come from the lockfile. This adds no trust: whoever can open the PR already controls the `review.yml` that run uses, and a fork's `pull_request` run has no secrets and a read-only token. A caller can do the same with `yoke-from-source: true`, to test an unreleased yoke branch, e.g. `uses: MakerXStudio/yoke/.github/workflows/review.yml@<branch>`, on its own PRs before that branch merges. This adds no trust either: the caller already runs that commit's `review.yml` and lockfile. `pull_request_target` runs, and other repos without the input, use only the locked yoke, so a maintainer-approved fork review never runs fork code.
 
 Pin `uses:` to a `review-v<version>` tag to run that yoke version; `/review-ci` writes the tag of the yoke that runs it. Releases before this tag existed have none. A release tag `vN` locks the previous yoke, because the lock can only be written once `vN` is published, and `@main` runs whatever yoke `main` locks, which can lag the workflow on it.
 
@@ -117,6 +119,99 @@ Adding the label runs the review on `pull_request_target`, which takes the workf
 `pull_request_target` checks attach to the base branch's commit, not the PR's, so the review job first marks the `review / approved review` commit status on the PR's head commit as pending, and the gate job on that run records the outcome there when it finishes. Each time, it then re-runs the `review / gate` job of that commit's `pull_request` run. A run leaves the status alone when it already belongs to a newer approved review, so overlapping runs can't record an older result over a newer one. The gate reads that status and passes once the approved review succeeded, without anyone pushing again. To re-run a failed approved review, remove the label and add it again.
 
 An approval covers only the commit that was labelled. When the fork pushes again, the `unapprove` job on the `pull_request_target` `synchronize` event runs `yoke review unapprove`, which removes the `review` label, and the gate fails for the new head until a maintainer reads the new commits and adds the label again.
+
+### Risk-based approval
+
+> [!WARNING]
+> Experimental. It approves PRs with no human review; its rules and inputs may change.
+
+With a `.github/yoke-risk.yml` policy on the default branch and the `yoke-review` GitHub App configured, the review job runs `yoke review risk` after posting the review. It rates the PR's risk from the files it changes and the synthesis's AI risk rating and, when that is low, approves the PR as `yoke-review[bot]`, and in `merge` mode enables auto-merge, so it needs no human tick. Everything else waits for a human as before. Without the policy file the step logs that risk review is off and changes nothing.
+
+```yaml
+# .github/yoke-risk.yml
+mode: approve
+# mergeMethod: squash
+lowRisk:
+  - '**/*.{tsx,md}'
+alwaysHuman:
+  - 'src/auth/**'
+  - 'infra/**'
+author:
+  minMergedPrs: 1
+trusted:
+  - alice
+  - MakerXStudio/leads
+sample:
+  rate: 0.1
+```
+
+| Key | Description |
+|---|---|
+| `mode` | `approve` approves a low-risk PR. `merge` also enables auto-merge on it as the App. Default: `approve`. |
+| `mergeMethod` | `merge`, `squash` or `rebase`, for `merge` mode. Default: the first the repo allows of `squash`, `merge` and `rebase`. |
+| `lowRisk` | Globs no one needs to eyeball. |
+| `alwaysHuman` | Globs that always need a human. |
+| `author.minMergedPrs` | Merged PRs in the repo the author needs, at least 1. Fewer makes them a first-time author. Default: `1`. |
+| `trusted` | Logins, and `org/team-slug` teams, exempt from `minMergedPrs`. Default: none. |
+| `sample.rate` | Share of low-risk PRs, from 0 to 1, left for a human to approve instead of the App. Default: `0`. |
+| `sample.label` | Label added to a sampled PR. Default: `yoke-risk-sampled`. |
+
+The policy is always read from the default branch through the API, never from the PR, so a PR can't loosen its own rating. The rating:
+
+- **high** when any changed file, or a renamed file's old path, matches `alwaysHuman` or a built-in exclusion the policy can't remove: `.github/**` (workflows and the policy itself), `.claude/**`, `.codex/**` and `.mcp.json`, at any depth for the last three.
+- **low** when every changed file matches `lowRisk`.
+- otherwise the synthesis's AI risk rating decides: `low`, `medium` or `high` with a one-sentence reason, rating the risk of merging the change unread. Only `low` can be approved, and a missing or unreadable rating leaves the PR **undecided**, which needs a human. The AI can't lower a high rating from the globs or raise an all-`lowRisk` one.
+
+A low-risk PR is approved only when the review on this run succeeded and raised no `blocker` or `major` finding, including ones already raised earlier, the PR is from the repo itself, not a fork, and not from a bot, and its author passes the track-record check. The approval is submitted on the head commit the review was posted on.
+
+The track-record check searches the author's merged PRs in the repo. A first-time author, with fewer than `author.minMergedPrs`, is never low risk. Repo admins, required reviewers of any deployment environment (directly or through a team), and anyone listed in `trusted` are exempt from this rule. Team membership is read with the App, so without it team exemptions can't be checked. The outcome is shown as **Author** in the `## Risk` section, on every PR.
+
+In `merge` mode, after approving, the App enables auto-merge bound to the approved head commit. It leaves auto-merge someone already enabled as it is, and records in the `## Risk` section when the repo doesn't allow auto-merge or GitHub refuses it.
+
+When a later run on the PR is not approved, for a push that is no longer low risk or a review that failed, the App dismisses its earlier approvals and disables the auto-merge it enabled, and lists both under **Actions** in the `## Risk` section. A push the review skips, because a review already started for the PR, isn't rated, so the `push` job does the same and logs it. Auto-merge someone else enabled is left alone.
+
+Every review posted in a repo with a policy, failed reviews included, gets a `## Risk` section with the decision, its reasons (including the AI rating and whether it was used), the head commit SHA, and the policy file's commit SHA on the default branch. The approval carries the same section. A step failure never fails the review job.
+
+`yoke review ci --risk` adds the App's input and secret to the caller, writes an example `.github/yoke-risk.yml` if there is none, and prints the App permissions and repo settings below. With `--print` it prints the example policy instead.
+
+To set it up, run `/review-ci-risk` once `/review-ci`'s workflow is merged. It runs `yoke review ci-risk`, drafts a `.github/yoke-risk.yml` from the repo's layout (`mode`, `lowRisk` and `alwaysHuman` globs naming the repo's own paths) for your sign-off, commits it with the caller's App lines and raises the setup PR, then lists only the steps that need an org owner or repo admin. Run it again once the PR is merged and a PR has been reviewed to confirm the setup.
+
+`yoke review ci-risk` checks each requirement against GitHub and prints a pass or fail line, with a link, for each, exiting non-zero until all pass. `yoke review ci-risk --example-policy` prints an example policy, with comments, and checks nothing. The requirements:
+
+- **Gate:** `review / gate` is required on the default branch. It requires it itself, as `ci-gate` does, and otherwise shows `ci-gate`'s reason.
+- **Workflow:** the default branch's caller passes `review-app-client-id` and `YOKE_REVIEW_APP_PRIVATE_KEY` to `review.yml`. When it doesn't, it adds them to the local caller (`.github/workflows/review-pr.yml` unless the default branch's caller is another file) for you to commit and merge.
+- **Org variable** and **Org secret:** they reach the repo. They fail only when the org shares them with selected repos that exclude this one, with the org settings link.
+- **Policy:** `.github/yoke-risk.yml` is on the default branch and parses, or its parse error. A local `.github/yoke-risk.yml` that doesn't parse, or lists a lock file such as `package-lock.json` in `alwaysHuman`, fails it too, so a draft is checked before it's merged.
+- **Merge mode:** in `merge` mode, read from the local `.github/yoke-risk.yml` if there is one, otherwise the default branch's, **Allow auto-merge** is on and the default branch requires 1 approval and dismisses stale approvals on push, through classic branch protection or rulesets. It turns on what's missing, adding a `yoke risk` ruleset for the approval rule, and says what it changed; without the rights to, it says what a repo admin must do.
+- **App installed:** the App token step of the latest review run that tried it succeeded, read from the job log since the step continues on error; a failed step gives the App's install link.
+- **Working:** the latest `## Risk` section on the 20 most recently updated PRs was posted with the App. Until one is, open or push to a PR once the setup is merged.
+
+To set it up by hand, create a GitHub App named `yoke-review`, with no webhook and these permissions: repository Contents read and write, Pull requests read and write, Metadata read; organization Members read. Install it only on the repos that opt in, then pass its client ID and private key to the caller:
+
+```yaml
+    with:
+      review-app-client-id: ${{ vars.YOKE_REVIEW_APP_CLIENT_ID }}
+    secrets:
+      YOKE_REVIEW_APP_PRIVATE_KEY: ${{ secrets.YOKE_REVIEW_APP_PRIVATE_KEY }}
+```
+
+Don't reuse the `yoke-release` App: it bypasses yoke's `main` ruleset. Without the App token the `## Risk` section records the decision and says nothing was approved.
+
+For `merge` mode, turn on **Allow auto-merge** in the repo's general settings, and on the default branch require the `review / gate` check and an approving review, and dismiss stale approvals when new commits are pushed. Auto-merge stays on across pushes, so these keep a push from merging on an earlier approval before it is rated again, even if the risk step fails.
+
+#### Sampled human check
+
+Instead of approving a low-risk PR, the App picks it at random with the chance `sample.rate`. A sampled PR isn't approved or auto-merged: the `## Risk` section says it was sampled and would otherwise have been approved (and, in `merge` mode, auto-merged), so it needs a manual approval. The App labels it `sample.label` and withdraws any approval or auto-merge it gave an earlier push. A PR with the label stays sampled on later pushes. Each step is listed under **Actions**, including a label GitHub refused.
+
+`yoke review risk-report [owner/repo...]` lists, for each repo (default: the current one), the risk decision on each of its 30 most recently updated PRs (`--limit`, up to 100), and for each sampled PR the last human approval or changes request, so you can see how often a person disagreed with what would have been an automated approval and tune the policy. It reads the decisions from the `## Risk` sections the review posted, and the label from each repo's policy.
+
+```text
+o/r: 4 of the 30 most recently updated PRs have a risk decision; 1 auto-approved, 2 sampled (1 approved, 1 changes requested, 0 without a verdict)
+  #41 merged: low risk, needs a human · sampled: approved by alice
+  #40 open: low risk, needs a human · sampled: changes requested by bob
+  #39 open: medium risk, needs a human
+  #38 merged: low risk, approved by yoke-review
+```
 
 ### Foundry with Entra auth
 

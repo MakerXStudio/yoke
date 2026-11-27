@@ -26,6 +26,8 @@ import {
   writeCallerWorkflow,
 } from './ci'
 import { federatedCredential } from './ciEntra'
+import { examplePolicy, writeExamplePolicy } from './ciRisk'
+import { parseRiskPolicy, riskPolicyPath } from './riskPolicy'
 
 const workflowSchema = z.object({
   on: z.record(
@@ -46,7 +48,17 @@ const workflowSchema = z.object({
       uses: z.string().optional(),
       with: z.record(z.string(), z.string()).optional(),
       secrets: z.record(z.string(), z.string()).optional(),
-      steps: z.array(z.object({ name: z.string().optional(), if: z.string().optional(), run: z.string().optional() })).optional(),
+      steps: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            name: z.string().optional(),
+            if: z.string().optional(),
+            run: z.string().optional(),
+            'continue-on-error': z.boolean().optional(),
+          }),
+        )
+        .optional(),
     }),
   ),
 })
@@ -59,7 +71,10 @@ const reusable = workflowSchema.parse(parse(reusableSource))
 
 const ownCaller = workflowSchema.parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/workflows/review-pr.yml'), 'utf8')))
 
-const models: Settings = { 'review.reviewer1.model': 'bedrock/claude-opus-5-5', 'review.reviewer2.model': 'azure/gpt-6.1-sol' }
+const models: Settings = {
+  'review.reviewer1.model': 'bedrock/claude-opus-5-5',
+  'review.reviewer2.model': 'azure/gpt-6.1-sol',
+}
 
 function generated(settings: Settings = models, provider?: string): Workflow {
   return workflowSchema.parse(parse(renderCallerWorkflow(callerWorkflow(settings, provider))))
@@ -81,11 +96,18 @@ describe('callerWorkflow', () => {
   })
 
   it('lets the gate read earlier runs, record approved reviews and re-run the gate', () => {
-    expect(generated().permissions).toEqual({ actions: 'write', contents: 'read', 'pull-requests': 'write', statuses: 'write' })
+    expect(generated().permissions).toEqual({
+      actions: 'write',
+      contents: 'read',
+      'pull-requests': 'write',
+      statuses: 'write',
+    })
   })
 
   it('passes only the API key secret, never every repository secret', () => {
-    expect(generated().jobs.review?.secrets).toEqual({ REVIEW_CI_API_KEY: '${{ secrets.REVIEW_CI_API_KEY }}' })
+    expect(generated().jobs.review?.secrets).toEqual({
+      REVIEW_CI_API_KEY: '${{ secrets.REVIEW_CI_API_KEY }}',
+    })
   })
 
   it('reads the base URL from a variable', () => {
@@ -94,7 +116,11 @@ describe('callerWorkflow', () => {
 
   it('passes only inputs the reusable workflow declares, including every required one', () => {
     const declared = reusable.on.workflow_call?.inputs ?? {}
-    const passed = inputsOf({ ...models, 'review.synthesis.harness': 'codex', 'review.synthesis.model': 'azure/gpt-6.1-sol' })
+    const passed = inputsOf({
+      ...models,
+      'review.synthesis.harness': 'codex',
+      'review.synthesis.model': 'azure/gpt-6.1-sol',
+    })
     expect(Object.keys(declared)).toEqual(expect.arrayContaining(Object.keys(passed)))
     const required = Object.entries(declared).flatMap(([name, input]) => (input.required ? [name] : []))
     expect(Object.keys(passed)).toEqual(expect.arrayContaining(required))
@@ -155,7 +181,9 @@ describe('callerWorkflow', () => {
 })
 
 describe('reusable workflow', () => {
-  const stepsSchema = z.object({ jobs: z.record(z.string(), z.object({ steps: z.array(z.object({ run: z.string().optional() })) })) })
+  const stepsSchema = z.object({
+    jobs: z.record(z.string(), z.object({ steps: z.array(z.object({ run: z.string().optional() })) })),
+  })
 
   const runs = Object.values(stepsSchema.parse(parse(reusableSource)).jobs).flatMap((job) => job.steps.flatMap((step) => step.run ?? []))
 
@@ -173,7 +201,11 @@ describe('reusable workflow', () => {
   it('runs npm ci against yoke checked out at the commit the caller resolved, in every job', () => {
     const jobSchema = z.object({
       steps: z.array(
-        z.object({ uses: z.string().optional(), with: z.record(z.string(), z.unknown()).optional(), run: z.string().optional() }),
+        z.object({
+          uses: z.string().optional(),
+          with: z.record(z.string(), z.unknown()).optional(),
+          run: z.string().optional(),
+        }),
       ),
     })
     const jobs = z.object({ jobs: z.record(z.string(), jobSchema) }).parse(parse(reusableSource)).jobs
@@ -198,8 +230,12 @@ describe('reusable workflow', () => {
     ).toBe(true)
   })
 
+  it('runs the locked yoke release unless a caller opts into yoke-from-source', () => {
+    expect(parse(reusableSource).on.workflow_call.inputs['yoke-from-source']).toMatchObject({ type: 'boolean', default: false })
+  })
+
   describe("yoke's own pull_request runs", () => {
-    const fromSource = "github.repository == 'MakerXStudio/yoke' && github.event_name == 'pull_request'"
+    const fromSource = "github.event_name == 'pull_request' && (github.repository == 'MakerXStudio/yoke' || inputs.yoke-from-source)"
     const jobSchema = z.object({
       if: z.string().optional(),
       steps: z.array(
@@ -238,7 +274,7 @@ describe('reusable workflow', () => {
       }
     })
 
-    it('builds from source only in the yoke repo on pull_request, never on pull_request_target or in another repo', () => {
+    it('builds from source on pull_request only in the yoke repo or for a caller that sets yoke-from-source, never on pull_request_target', () => {
       const steps = Object.values(jobs).flatMap((job) => job.steps.filter(buildsFromSource))
       expect(steps.length).toBeGreaterThan(0)
       for (const step of steps) expect(step.if).toBe(fromSource)
@@ -254,7 +290,9 @@ describe('reusable workflow', () => {
 
   it('locks no optional package for yoke, so omitting optional deps keeps all of it', () => {
     const lock = z
-      .object({ packages: z.record(z.string(), z.object({ optional: z.boolean().optional() })) })
+      .object({
+        packages: z.record(z.string(), z.object({ optional: z.boolean().optional() })),
+      })
       .parse(JSON.parse(readFileSync(join(import.meta.dirname, '../../../ci/review-tools/package-lock.json'), 'utf8')))
     const optional = Object.entries(lock.packages).flatMap(([path, entry]) => (entry.optional ? [path] : []))
     expect(optional.length).toBeGreaterThan(0)
@@ -268,7 +306,15 @@ describe('review tools lockfile', () => {
     .object({ dependencies: z.record(z.string(), z.string()) })
     .parse(JSON.parse(readFileSync(join(toolsDir, 'package.json'), 'utf8')))
   const lock = z
-    .object({ packages: z.record(z.string(), z.object({ version: z.string().optional(), integrity: z.string().optional() })) })
+    .object({
+      packages: z.record(
+        z.string(),
+        z.object({
+          version: z.string().optional(),
+          integrity: z.string().optional(),
+        }),
+      ),
+    })
     .parse(JSON.parse(readFileSync(join(toolsDir, 'package-lock.json'), 'utf8')))
   const installed = Object.entries(lock.packages).filter(([path]) => path !== '')
 
@@ -333,7 +379,13 @@ describe('review tools lockfile', () => {
 
   it('exposes the ruleset-bypassing App token only to the step that pushes the lock', () => {
     const release = z
-      .object({ jobs: z.object({ release: z.object({ steps: z.array(z.record(z.string(), z.unknown())) }) }) })
+      .object({
+        jobs: z.object({
+          release: z.object({
+            steps: z.array(z.record(z.string(), z.unknown())),
+          }),
+        }),
+      })
       .parse(parse(readFileSync(join(import.meta.dirname, '../../../.github/workflows/release.yml'), 'utf8')))
     const steps = release.jobs.release.steps
     const usesToken = steps.filter((step) => JSON.stringify(step).includes('steps.app-token.outputs.token'))
@@ -373,8 +425,21 @@ describe('gate', () => {
     expect(push?.if?.replace(/\s+/g, ' ')).toBe(
       "github.event_name == 'pull_request' && github.event.action == 'synchronize' && github.event.pull_request.user.type != 'Bot' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft",
     )
-    expect(push?.steps?.at(-1)?.run).toBe('yoke review-push')
-    expect(push?.outputs).toEqual({ review: '${{ steps.decide.outputs.review }}' })
+    expect(push?.steps?.find((step) => step.id === 'decide')?.run).toBe('yoke review-push')
+    expect(push?.outputs).toEqual({
+      review: '${{ steps.decide.outputs.review }}',
+    })
+  })
+
+  it("withdraws the yoke-review App's approval on a push it does not review, only with the App configured", () => {
+    const steps = reusable.jobs.push?.steps ?? []
+    const token = steps.find((step) => step.id === 'review-app')
+    expect(token?.if).toBe("${{ steps.decide.outputs.review != 'true' && inputs.review-app-client-id != '' }}")
+    expect(token?.['continue-on-error']).toBe(true)
+    const withdraw = steps.at(-1)
+    expect(withdraw?.if).toBe("${{ steps.review-app.outputs.token != '' }}")
+    expect(withdraw?.['continue-on-error']).toBe(true)
+    expect(withdraw?.run).toBe('yoke review-risk skipped')
   })
 
   it('reviews a push only when no review has started, and runs it on pull_request_target only for a fork labelled review', () => {
@@ -440,7 +505,10 @@ describe('Entra auth', () => {
     expect(rendered).toContain(
       'permissions:\n  actions: write\n  contents: read\n  pull-requests: write\n  statuses: write\n  id-token: write\n',
     )
-    expect(entraWorkflow().jobs.review?.with).toMatchObject({ 'azure-client-id': 'client-1', 'azure-tenant-id': 'tenant-1' })
+    expect(entraWorkflow().jobs.review?.with).toMatchObject({
+      'azure-client-id': 'client-1',
+      'azure-tenant-id': 'tenant-1',
+    })
     expect(entraWorkflow().jobs.review?.with).not.toHaveProperty('environment')
   })
 
@@ -493,7 +561,10 @@ describe('setupCommands', () => {
   })
 
   it('asks for no API key with Entra auth', () => {
-    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
+    const workflow = callerWorkflow(models, 'foundry', {
+      azureClientId: 'client-1',
+      azureTenantId: 'tenant-1',
+    })
     expect(setupCommands({}, workflow)).toEqual(['gh variable set REVIEW_CI_BASE_URL'])
     expect(workflowSecrets(workflow)).toEqual([])
   })
@@ -594,7 +665,10 @@ describe('reviewCiReport', () => {
   })
 
   it('prints the federated credential to create instead of the API key command with Entra auth', () => {
-    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1' })
+    const workflow = callerWorkflow(models, 'foundry', {
+      azureClientId: 'client-1',
+      azureTenantId: 'tenant-1',
+    })
     const report = reviewCiReport('unchanged', {}, workflow, () => 'o/r')
     expect(report).toContain(`${callerWorkflowPath} already matches`)
     expect(report).toContain('from the repo variable REVIEW_CI_BASE_URL. Set it')
@@ -610,9 +684,79 @@ describe('reviewCiReport', () => {
   })
 
   it('uses the environment subject and names the environment when one is given', () => {
-    const workflow = callerWorkflow(models, 'foundry', { azureClientId: 'client-1', azureTenantId: 'tenant-1', environment: 'review' })
+    const workflow = callerWorkflow(models, 'foundry', {
+      azureClientId: 'client-1',
+      azureTenantId: 'tenant-1',
+      environment: 'review',
+    })
     const report = reviewCiReport('wrote', {}, workflow, () => 'o/r')
     expect(report).toContain('  subject:  repo:o/r:environment:review')
     expect(report).toContain('runs in the review environment')
+  })
+})
+
+describe('risk-based review', () => {
+  const risky = callerWorkflow(models, undefined, {}, true)
+
+  it('passes the yoke-review App client ID variable and private key secret the reusable workflow declares', () => {
+    const job = workflowSchema.parse(parse(renderCallerWorkflow(risky))).jobs.review
+    expect(job?.with?.['review-app-client-id']).toBe('${{ vars.YOKE_REVIEW_APP_CLIENT_ID }}')
+    expect(job?.secrets).toEqual({
+      REVIEW_CI_API_KEY: '${{ secrets.REVIEW_CI_API_KEY }}',
+      YOKE_REVIEW_APP_PRIVATE_KEY: '${{ secrets.YOKE_REVIEW_APP_PRIVATE_KEY }}',
+    })
+    expect(Object.keys(reusable.on.workflow_call?.inputs ?? {})).toContain('review-app-client-id')
+    expect(Object.keys(reusable.on.workflow_call?.secrets ?? {})).toContain('YOKE_REVIEW_APP_PRIVATE_KEY')
+  })
+
+  it('adds the App key alongside Entra auth, which needs no API key', () => {
+    const job = workflowSchema.parse(
+      parse(renderCallerWorkflow(callerWorkflow(models, 'foundry', { azureClientId: 'c', azureTenantId: 't' }, true))),
+    ).jobs.review
+    expect(job?.secrets).toEqual({
+      YOKE_REVIEW_APP_PRIVATE_KEY: '${{ secrets.YOKE_REVIEW_APP_PRIVATE_KEY }}',
+    })
+  })
+
+  it('leaves the App out unless asked', () => {
+    expect(renderCallerWorkflow(callerWorkflow(models))).not.toContain('YOKE_REVIEW_APP')
+    expect(reviewCiReport('wrote', {}, callerWorkflow(models), noRepo)).not.toContain('yoke-review')
+  })
+
+  it('writes an example policy that parses, and never overwrites one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'yoke-risk-'))
+    try {
+      expect(writeExamplePolicy(root)).toBe('wrote')
+      const written = readFileSync(join(root, riskPolicyPath), 'utf8')
+      expect(written).toBe(examplePolicy)
+      expect(parseRiskPolicy(written)).toMatchObject({
+        mode: 'approve',
+        lowRisk: ['**/*.md'],
+        sample: { rate: 0.1 },
+      })
+      expect(writeExamplePolicy(root)).toBe('kept')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('prints the App permissions, its variable and secret, and the repo settings merge mode needs', () => {
+    const report = reviewCiReport('wrote', {}, risky, () => 'acme/app', 'wrote')
+    expect(report).toContain(`Added an example ${riskPolicyPath}`)
+    expect(report).toContain('repository Contents read and write, Pull requests read and write, Metadata read; organization Members read')
+    expect(report).toContain(
+      'https://github.com/organizations/acme/settings/apps/new?name=yoke-review&url=https%3A%2F%2Fgithub.com%2FMakerXStudio%2Fyoke&public=false&webhook_active=false&contents=write&pull_requests=write&metadata=read&members=read',
+    )
+    expect(report).toContain(
+      "  gh variable set YOKE_REVIEW_APP_CLIENT_ID --body '<client-id>'\n  gh secret set YOKE_REVIEW_APP_PRIVATE_KEY < <private-key>.pem",
+    )
+    expect(report).toContain('"Allow auto-merge" at https://github.com/acme/app/settings')
+    expect(report).toContain('dismiss stale approvals')
+    expect(report).not.toMatch(/--(?!body)\w/)
+  })
+
+  it('prints the example policy instead of writing it, and says when one is kept', () => {
+    expect(reviewCiReport('printed', {}, risky, () => 'o/r')).toContain(examplePolicy.trimEnd())
+    expect(reviewCiReport('unchanged', {}, risky, () => 'o/r', 'kept')).toContain(`${riskPolicyPath} already exists`)
   })
 })

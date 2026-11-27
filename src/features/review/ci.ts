@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import packageJson from '../../../package.json' with { type: 'json' }
 import { howToSet, type SettingKey, type Settings } from '../config/settings'
 import { type EntraAuth, entraSetup } from './ciEntra'
+import { appInput, appKeySecret, type PolicyOutcome, riskSetup } from './ciRisk'
 import { ReviewError } from './pr'
 import { isHarness, isProviderKind, type ProviderKind, providerKinds } from './provider'
 import { shellQuote } from './shellQuote'
@@ -26,7 +27,7 @@ type Input = [name: string, value: string]
 
 export type EntraFlags = { azureClientId?: string; azureTenantId?: string; environment?: string }
 
-export type CallerWorkflow = { provider: ProviderKind; inputs: Input[]; entra?: EntraAuth }
+export type CallerWorkflow = { provider: ProviderKind; inputs: Input[]; entra?: EntraAuth; risk?: boolean }
 
 export function workflowSecrets({ entra }: CallerWorkflow): string[] {
   return entra ? [] : [apiKeySecret]
@@ -70,7 +71,11 @@ function slotInputs(settings: Settings, errors: string[]): Input[] {
   return inputs
 }
 
-export function callerWorkflow(settings: Settings, providerFlag?: string, entraFlags: EntraFlags = {}): CallerWorkflow {
+function callerSecrets(workflow: CallerWorkflow): string[] {
+  return [...workflowSecrets(workflow), ...(workflow.risk ? [appKeySecret] : [])]
+}
+
+export function callerWorkflow(settings: Settings, providerFlag?: string, entraFlags: EntraFlags = {}, risk = false): CallerWorkflow {
   const errors: string[] = []
   const provider = providerFlag ?? settings['review.reviewer1.provider'] ?? 'litellm'
   if (!isProviderKind(provider)) errors.push(`provider "${provider}" must be ${providerKinds.join(' or ')}; pass --provider`)
@@ -82,6 +87,7 @@ export function callerWorkflow(settings: Settings, providerFlag?: string, entraF
   return {
     provider,
     inputs: [['provider', provider], ...inputs, ...entra],
+    ...(risk && { risk }),
     ...(entra.length > 0 && { entra: { clientId: entraFlags.azureClientId?.trim() ?? '', ...(environment && { environment }) } }),
   }
 }
@@ -93,7 +99,7 @@ function yamlValue(value: string): string {
 }
 
 export function renderCallerWorkflow(workflow: CallerWorkflow): string {
-  const secrets = workflowSecrets(workflow)
+  const secrets = callerSecrets(workflow)
   return [
     'name: Review PR',
     '',
@@ -116,6 +122,7 @@ export function renderCallerWorkflow(workflow: CallerWorkflow): string {
     '    with:',
     ...workflow.inputs.map(([name, value]) => `      ${name}: ${yamlValue(value)}`),
     `      base-url: \${{ vars.${baseUrlVariable} }}`,
+    ...(workflow.risk ? [`      ${appInput}`] : []),
     ...(secrets.length > 0 ? ['    secrets:', ...secrets.map((secret) => `      ${secret}: \${{ secrets.${secret} }}`)] : []),
     '',
   ].join('\n')
@@ -193,12 +200,19 @@ function variableAndSecretSetup(settings: Settings, workflow: CallerWorkflow): s
   ]
 }
 
-export function reviewCiReport(outcome: ReportOutcome, settings: Settings, workflow: CallerWorkflow, repo: () => string): string {
+export function reviewCiReport(
+  outcome: ReportOutcome,
+  settings: Settings,
+  workflow: CallerWorkflow,
+  repo: () => string,
+  policy?: PolicyOutcome,
+): string {
   return [
     ...reportHeading(outcome, workflow),
     '',
     ...variableAndSecretSetup(settings, workflow),
     ...(workflow.entra ? entraSetup(workflow.entra, repo()) : []),
+    ...(workflow.risk ? riskSetup(policy ?? 'printed', repo()) : []),
     '',
     outcome === 'printed'
       ? "Once the repo's review workflow runs this review, commit and push it; each PR opened from this repo then gets a review."

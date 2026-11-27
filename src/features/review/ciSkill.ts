@@ -25,6 +25,8 @@ If no workflow or setting names the models, ask which model each reviewer runs. 
 
 For Foundry with Entra, reuse the client and tenant IDs from the existing workflow; ask only if none is there.
 
+Never pass \`--risk\`. When the user asks for risk-based review (auto-approving or auto-merging low-risk PRs), set up the review here first, then tell them to run \`/review-ci-risk\`, which sets risk review up.
+
 ## Variable and secret
 
 Never ask whether they are set for the organisation, and don't query org settings.

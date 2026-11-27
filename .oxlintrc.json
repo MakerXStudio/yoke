@@ -21,7 +21,7 @@
   },
   "overrides": [
     {
-      "files": ["src/cli.ts", "src/reviewCiCommands.ts"],
+      "files": ["src/cli.ts", "src/cliFail.ts", "src/reviewCiCommands.ts", "src/reviewSetupCommands.ts"],
       "rules": {
         "no-console": "off"
       }
